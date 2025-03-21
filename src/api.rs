@@ -1,0 +1,157 @@
+use anyhow::{anyhow, Result};
+use colored::*;
+use reqwest::Client;
+use serde_json::json;
+use tokio::time::Duration;
+
+use crate::models::chat::{ApiResponse, ResponseMessage};
+use crate::models::tools::Tools;
+use crate::utils::DebugLevel;
+use crate::utils::debug_log;
+
+pub async fn chat_with_openai(
+    client: &Client,
+    api_key: &str,
+    messages: Vec<ResponseMessage>,
+    debug_level: DebugLevel,
+) -> Result<ApiResponse> {
+    debug_log(debug_level, DebugLevel::Minimal, "\n=== SENDING MESSAGES TO API ===");
+
+    if debug_level >= DebugLevel::Minimal {
+        for (i, msg) in messages.iter().enumerate() {
+            debug_log(
+                debug_level,
+                DebugLevel::Minimal,
+                &format!(
+                    "[{}] role: {}, tool_call_id: {:?}, content length: {}",
+                    i,
+                    msg.role,
+                    msg.tool_call_id,
+                    msg.content.as_ref().map_or(0, |c| c.len())
+                )
+            );
+        }
+    }
+
+    let url = "https://api.openai.com/v1/chat/completions";
+
+    let request_body = json!({
+        "model": "gpt-4o",
+        "messages": messages,
+        "tools": [
+            Tools::shell_definition(),
+            Tools::read_file_definition(),
+            Tools::write_file_definition(),
+            Tools::search_code_definition(),
+            Tools::find_definition_definition(),
+            Tools::user_input_definition()
+        ],
+        "temperature": 0.2
+    });
+
+    if debug_level >= DebugLevel::Verbose {
+        debug_log(
+            debug_level,
+            DebugLevel::Verbose,
+            &format!("Request JSON: {}", serde_json::to_string_pretty(&request_body)?)
+        );
+    }
+
+    // Exponential backoff parameters
+    let max_retries = 5;
+    let initial_delay = Duration::from_secs(1);
+    let max_delay = Duration::from_secs(60);
+    let backoff_factor = 2.0;
+
+    // Retry loop with exponential backoff
+    let mut retries = 0;
+    let mut delay = initial_delay;
+
+    loop {
+        let response = client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&request_body)
+            .send()
+            .await?;
+
+        let status = response.status();
+
+        // Handle rate limiting and server errors
+        if (status == 429 || status.as_u16() >= 500) && retries < max_retries {
+            // Extract retry-after header if available
+            let retry_after = if let Some(retry_header) = response.headers().get("retry-after") {
+                if let Ok(retry_secs) = retry_header.to_str().unwrap_or("0").parse::<u64>() {
+                    Some(Duration::from_secs(retry_secs))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Use retry-after if available, otherwise use exponential backoff
+            let wait_time = retry_after.unwrap_or(delay);
+
+            retries += 1;
+            debug_log(
+                debug_level,
+                DebugLevel::Minimal,
+                &format!(
+                    "API request failed with status {}, retrying in {} seconds (attempt {}/{})",
+                    status, wait_time.as_secs(), retries, max_retries
+                )
+            );
+
+            println!("{} Retrying in {} seconds (attempt {}/{})",
+                "Rate limited by OpenAI API.".yellow().bold(),
+                wait_time.as_secs(), retries, max_retries);
+
+            tokio::time::sleep(wait_time).await;
+
+            // Increase delay for next potential retry (exponential backoff)
+            delay = std::cmp::min(
+                Duration::from_secs((delay.as_secs() as f64 * backoff_factor) as u64),
+                max_delay
+            );
+
+            continue;
+        }
+
+        // For non-retryable errors, just return the error
+        if !status.is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow!("API error: {} - {}", status, error_text));
+        }
+
+        // Success case
+        let api_response: ApiResponse = response.json().await?;
+
+        if debug_level >= DebugLevel::Minimal {
+            debug_log(debug_level, DebugLevel::Minimal, "=== API RESPONSE ===");
+
+            if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
+                if debug_level >= DebugLevel::Verbose {
+                    debug_log(
+                        debug_level,
+                        DebugLevel::Verbose,
+                        &format!("Tool calls: {}", serde_json::to_string_pretty(tool_calls)?)
+                    );
+                } else {
+                    debug_log(
+                        debug_level,
+                        DebugLevel::Minimal,
+                        &format!("Tool calls: {} found", tool_calls.len())
+                    );
+                }
+            } else {
+                debug_log(debug_level, DebugLevel::Minimal, "No tool calls");
+            }
+
+            debug_log(debug_level, DebugLevel::Minimal, "=====================\n");
+        }
+
+        return Ok(api_response);
+    }
+}
