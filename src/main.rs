@@ -9,7 +9,7 @@ use colored::*;
 use std::io::{self, Write};
 use tokio::time::Duration;
 
-use crate::api::chat_with_openai;
+use crate::api::chat_with_api;
 use crate::config::{load_config, configure};
 use crate::models::chat::ResponseMessage;
 use crate::models::cli::{Commands, Cli};
@@ -20,9 +20,11 @@ use crate::utils::debug_log;
 use clap::Parser;
 
 const SYSTEM_PROMPT: &str = r#"
-You are CodeGenius, an AI-powered software engineering assistant specializing in code analysis, refactoring, and software engineering.
+You are CodeGenius, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
 
-Your goal is to help developers understand, modify, and improve codebases through expert analysis and precise code edits.
+Your goal is to help developers understand, modify, and improve products through expert analysis, precise code edits, and feature implementation.
+
+Your goal for any edit is to do a full and complete job. You have met your goal when the changes are done and the code is shippable.
 
 You have access to powerful tools:
 1. shell - Execute shell commands
@@ -110,7 +112,7 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
             }
         }
 
-        let response = chat_with_openai(&client, &config.openai_api_key, messages.clone(), debug_level).await?;
+        let response = chat_with_api(&client, config, messages.clone(), debug_level).await?;
 
         let message = &response.choices[0].message;
 

@@ -2,12 +2,41 @@ use anyhow::{anyhow, Result};
 use colored::*;
 use reqwest::Client;
 use serde_json::json;
+use std::collections::HashMap;
 use tokio::time::Duration;
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
 use crate::models::tools::Tools;
 use crate::utils::DebugLevel;
 use crate::utils::debug_log;
+use crate::config::Config;
+
+pub async fn chat_with_api(
+    client: &Client,
+    config: &Config,
+    messages: Vec<ResponseMessage>,
+    debug_level: DebugLevel,
+    overrides: Option<HashMap<String, String>>,
+) -> Result<ApiResponse> {
+    // Apply overrides to the configuration
+    let mut effective_config = config.clone();
+    if let Some(overrides) = overrides {
+        for (key, value) in overrides {
+            match key.as_str() {
+                "openai_api_key" => effective_config.openai_api_key = value,
+                "service" => effective_config.service = value,
+                "model_name" => effective_config.model_name = value,
+                _ => debug_log(debug_level, DebugLevel::Minimal, &format!("Unknown config override: {}", key)),
+            }
+        }
+    }
+
+    match effective_config.service.as_str() {
+        "openai" => chat_with_openai(client, &effective_config.openai_api_key, messages, debug_level).await,
+        "ollama" => chat_with_ollama(client, &effective_config.model_name, messages, debug_level).await,
+        _ => Err(anyhow!("Unsupported service: {}", effective_config.service)),
+    }
+}
 
 pub async fn chat_with_openai(
     client: &Client,
@@ -15,7 +44,7 @@ pub async fn chat_with_openai(
     messages: Vec<ResponseMessage>,
     debug_level: DebugLevel,
 ) -> Result<ApiResponse> {
-    debug_log(debug_level, DebugLevel::Minimal, "\n=== SENDING MESSAGES TO API ===");
+    debug_log(debug_level, DebugLevel::Minimal, "\n=== SENDING MESSAGES TO OPENAI API ===");
 
     if debug_level >= DebugLevel::Minimal {
         for (i, msg) in messages.iter().enumerate() {
@@ -154,4 +183,69 @@ pub async fn chat_with_openai(
 
         return Ok(api_response);
     }
+}
+
+pub async fn chat_with_ollama(
+    client: &Client,
+    model_name: &str,
+    messages: Vec<ResponseMessage>,
+    debug_level: DebugLevel,
+) -> Result<ApiResponse> {
+    debug_log(debug_level, DebugLevel::Minimal, "\n=== SENDING MESSAGES TO OLLAMA MODEL ===");
+
+    let url = format!("http://localhost:11434/v1/chat/completions");
+
+    let request_body = json!({
+        "messages": messages
+    });
+
+    if debug_level >= DebugLevel::Verbose {
+        debug_log(
+            debug_level,
+            DebugLevel::Verbose,
+            &format!("Request JSON: {}", serde_json::to_string_pretty(&request_body)?)
+        );
+    }
+
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await?;
+
+    let status = response.status();
+
+    if !status.is_success() {
+        let error_text = response.text().await?;
+        return Err(anyhow!("Ollama API error: {} - {}", status, error_text));
+    }
+
+    let api_response: ApiResponse = response.json().await?;
+
+    if debug_level >= DebugLevel::Minimal {
+        debug_log(debug_level, DebugLevel::Minimal, "=== OLLAMA API RESPONSE ===");
+
+        if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
+            if debug_level >= DebugLevel::Verbose {
+                debug_log(
+                    debug_level,
+                    DebugLevel::Verbose,
+                    &format!("Tool calls: {}", serde_json::to_string_pretty(tool_calls)?)
+                );
+            } else {
+                debug_log(
+                    debug_level,
+                    DebugLevel::Minimal,
+                    &format!("Tool calls: {} found", tool_calls.len())
+                );
+            }
+        } else {
+            debug_log(debug_level, DebugLevel::Minimal, "No tool calls");
+        }
+
+        debug_log(debug_level, DebugLevel::Minimal, "=====================\n");
+    }
+
+    Ok(api_response)
 }

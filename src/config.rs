@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub openai_api_key: String,
+    pub service: String, // "openai" or "ollama"
+    pub model_name: String, // Model name for the chosen service
 }
 
 pub fn get_config_path() -> Result<PathBuf> {
@@ -46,14 +48,28 @@ pub fn save_config(config: &Config) -> Result<()> {
 
 pub fn configure() -> Result<()> {
     let mut api_key = String::new();
+    let mut service = String::new();
+    let mut model_name = String::new();
 
     print!("Enter your OpenAI API key: ");
     io::stdout().flush()?;
     io::stdin().read_line(&mut api_key)?;
     let api_key = api_key.trim().to_string();
 
+    print!("Choose service (openai/ollama): ");
+    io::stdout().flush()?;
+    io::stdin().read_line(&mut service)?;
+    let service = service.trim().to_string();
+
+    print!("Enter model name: ");
+    io::stdout().flush()?;
+    io::stdin().read_line(&mut model_name)?;
+    let model_name = model_name.trim().to_string();
+
     let config = Config {
         openai_api_key: api_key,
+        service,
+        model_name,
     };
 
     save_config(&config)?;
