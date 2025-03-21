@@ -66,7 +66,7 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
 
     // Print welcome message
     println!("\n{}", "\x1b[1;36m");
-    println!("\n{}", "🤖 Volition - AI Software Engineering Assistant".cyan().bold());
+    println!("\n{}", "[1;36m Volition - AI Software Engineering Assistant".cyan().bold());
     println!("{}", "Ready to help you understand and improve your codebase.".cyan());
     println!("{}", "Type 'exit' or press Enter on an empty line to quit at any time.".cyan());
     println!("");
@@ -86,94 +86,38 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
         },
     ];
 
-    let mut conversation_active = true;
+    loop {
+        messages = linear_strategy(
+            &client,
+            config,
+            vec!["shell".to_string(), "read_file".to_string(), "write_file".to_string(), "search_code".to_string(), "find_definition".to_string(), "user_input".to_string()],
+            query,
+            SYSTEM_PROMPT,
+            debug_level,
+            messages,
+        ).await?;
 
-    while conversation_active {
-        if debug_level >= DebugLevel::Verbose {
-            debug_log(debug_level, DebugLevel::Verbose, "\n=== CURRENT MESSAGE HISTORY ===");
+        // Ask for follow-up input from user
+        println!("\n{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
+        print!("{} ", ">".green().bold());
+        io::stdout().flush()?;
 
-            for (i, msg) in messages.iter().enumerate() {
-                let content_preview = match &msg.content {
-                    Some(content) => {
-                        if content.len() > 50 {
-                            format!("{}...", &content[..50])
-                        } else {
-                            content.clone()
-                        }
-                    },
-                    None => "[None]".to_string()
-                };
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let input = input.trim().to_string();
 
-                debug_log(
-                    debug_level,
-                    DebugLevel::Verbose,
-                    &format!(
-                        "[{}] role: {}, tool_call_id: {:?}, content: {}",
-                        i, msg.role, msg.tool_call_id, content_preview
-                    )
-                );
-            }
-        }
-
-        let response = chat_with_api(&client, config, messages.clone(), debug_level, None).await?;
-
-        let message = &response.choices[0].message;
-
-        // Print content if there is any
-        if let Some(content) = &message.content {
-            if !content.is_empty() {
-                println!("\n{}", content);
-            }
-        }
-
-        // Store the original response message exactly as received
-        messages.push(ResponseMessage {
-            role: "assistant".to_string(),
-            content: message.content.clone(),
-            tool_calls: message.tool_calls.clone(),
-            tool_call_id: None,
-        });
-
-        // Process tool calls if any
-        if let Some(tool_calls) = &message.tool_calls {
-            if debug_level >= DebugLevel::Minimal {
-                debug_log(
-                    debug_level,
-                    DebugLevel::Minimal,
-                    &format!("Processing {} tool calls", tool_calls.len())
-                );
-            }
-
-            handle_tool_calls(
-                &client,
-                &config.openai_api_key,
-                tool_calls.to_vec(),
-                &mut messages,
-                debug_level
-            ).await?;
+        // Exit if user enters empty string or "exit"
+        if input.is_empty() || input.to_lowercase() == "exit" {
+            println!("\n{}", "Goodbye! Thank you for using Volition.".cyan());
+            break;
         } else {
-            // No tool calls - get follow-up input from user
-            println!("\n{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
-            print!("{} ", ">".green().bold());
-            io::stdout().flush()?;
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-            let input = input.trim().to_string();
-
-            // Exit if user enters empty string or "exit"
-            if input.is_empty() || input.to_lowercase() == "exit" {
-                println!("\n{}", "Goodbye! Thank you for using Volition.".cyan());
-                conversation_active = false;
-            } else {
-                // Add user's follow-up input to messages
-                messages.push(ResponseMessage {
-                    role: "user".to_string(),
-                    content: Some(input),
-                    tool_calls: None,
-                    tool_call_id: None,
-                });
-            }
+            // Add user's follow-up input to messages
+            messages.push(ResponseMessage {
+                role: "user".to_string(),
+                content: Some(input.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+            });
         }
     }
 

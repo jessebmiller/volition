@@ -5,6 +5,7 @@ use crate::models::chat::ResponseMessage;
 use crate::utils::DebugLevel;
 use crate::config::Config;
 use crate::strategies::git_utils;
+use crate::strategies::linear::linear_strategy;
 use anyhow::Result;
 
 /// Simulated Annealing Algorithm
@@ -31,7 +32,7 @@ pub async fn simulated_annealing(
     debug_level: DebugLevel,
 ) -> Result<String> {
     // Create initial solution commit
-    let current_solution = git_utils::commit_current_state(
+    let mut current_solution = git_utils::commit_current_state(
         &format!("Initial solution for goal: {}", user_goal),
         debug_level
     ).await?;
@@ -77,20 +78,19 @@ pub async fn simulated_annealing(
     Ok(best_solution)
 }
 
-/// Generate a neighboring solution
+/// Generate a neighboring solution using the linear strategy
 async fn generate_neighbor(client: &Client, config: &Config, user_goal: &str, iteration: usize, debug_level: DebugLevel) -> Result<String> {
-    // Placeholder for generating a neighboring solution Use
-    // chat_with_api to generate neighbor solutions
+    // Use the linear strategy for generating neighbors
+    linear_strategy(
+        client,
+        config,
+        vec!["shell".to_string(), "read_file".to_string(), "write_file".to_string(), "search_code".to_string(), "find_definition".to_string(), "user_input".to_string()],
+        user_goal,
+        &format!("Generate a neighbor for goal: {}", user_goal),
+        debug_level,
+        vec![], // Provide an empty Vec<ResponseMessage> as the missing argument
+    ).await?;
 
-    // TODO: the LLM at the api is going to need access to the goal,
-    // and to be able to use tools (other than git probably) to make
-    // the changes needed to implement the solution. Rather than using
-    // chat_with_api here, we probably need to implement the linear
-    // strategy and use that to generate a
-    // neighbor. handle_conversation in main.rs is basically the
-    // linear strategy now.
-    let response = chat_with_api(client, config, vec![], debug_level, None).await?;
-    // Commit the new state and return the commit hash
     let commit_message = format!("Neighbor solution for goal: {}, iteration: {}", user_goal, iteration);
     let commit_hash = git_utils::commit_current_state(&commit_message, debug_level).await?;
     Ok(commit_hash)
