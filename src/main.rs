@@ -20,16 +20,14 @@ use crate::utils::debug_log;
 use clap::Parser;
 
 const SYSTEM_PROMPT: &str = r#"
-You are CodeGenius, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
-
+You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
 Your goal is to help developers understand, modify, and improve products through expert analysis, precise code edits, and feature implementation.
-
 Your goal for any edit is to do a full and complete job. You have met your goal when the changes are done and the code is shippable.
 
 You have access to powerful tools:
 1. shell - Execute shell commands
 2. read_file - Read file contents
-3. write_file - Write/edit files with optional backup
+3. write_file - Write/edit files
 4. search_code - Search for patterns in code
 5. find_definition - Locate symbol definitions
 6. user_input - Ask users for decisions
@@ -41,12 +39,13 @@ When a user asks you to help with a codebase:
 4. Execute the plan using your tools
 5. Provide clear explanations about what you're doing
 6. Ask for user confirmation via user_input before making significant changes
+7. Always look for the answer to any questions you may have using your tools before asking the user
 
 Best practices to follow:
 - Use search_code to find relevant code sections
 - Use find_definition to locate where symbols are defined
 - Always read files before suggesting edits
-- Create backups before modifying important files
+- Create git commits we can roll back to before modifying important files
 - Verify changes with targeted tests when possible
 - Explain complex code sections in simple accurate terms
 - Specifically ask for user confirmation before:
@@ -63,7 +62,8 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
         .build()?;
 
     // Print welcome message
-    println!("\n{}", "🧠 CodeGenius - AI Software Engineering Assistant".cyan().bold());
+    println!("\n{}", "[1;36m");
+    println!("\n{}", "🤖 Volition - AI Software Engineering Assistant".cyan().bold());
     println!("{}", "Ready to help you understand and improve your codebase.".cyan());
     println!("{}", "Type 'exit' or press Enter on an empty line to quit at any time.".cyan());
     println!("");
@@ -160,7 +160,7 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
             
             // Exit if user enters empty string or "exit"
             if input.is_empty() || input.to_lowercase() == "exit" {
-                println!("\n{}", "Goodbye! Thank you for using CodeGenius.".cyan());
+                println!("\n{}", "Goodbye! Thank you for using Volition.".cyan());
                 conversation_active = false;
             } else {
                 // Add user's follow-up input to messages
@@ -212,14 +212,14 @@ async fn main() -> Result<()> {
         }
         None => {
             if cli.rest.is_empty() {
-                println!("Welcome to CodeGenius - AI Software Engineering Assistant");
-                println!("Usage: codegenius <command> [arguments]");
+                println!("Welcome to Volition - AI Software Engineering Assistant");
+                println!("Usage: volition <command> [arguments]");
                 println!("Examples:");
-                println!("  codegenius \"Analyze the src directory and list the main components\"");
-                println!("  codegenius \"Find all usages of the login function and refactor it to use async/await\"");
-                println!("  codegenius \"Help me understand how the routing system works in this codebase\"");
-                println!("  codegenius configure    - Set up your API key");
-                println!("  codegenius --help       - Show more information");
+                println!("  volition \"Analyze the src directory and list the main components\"");
+                println!("  volition \"Find all usages of the login function and refactor it to use async/await\"");
+                println!("  volition \"Help me understand how the routing system works in this codebase\"");
+                println!("  volition configure    - Set up your API key");
+                println!("  volition --help       - Show more information");
                 return Ok(());
             }
 

@@ -1,11 +1,9 @@
-use std::process::Command;
-use std::str;
-use anyhow::{Result, Context};
 use crate::utils::DebugLevel;
 use crate::utils::debug_log;
 use crate::models::tools::{SearchCodeArgs, FindDefinitionArgs};
 use crate::tools::shell::run_shell_command;
 use crate::models::tools::ShellArgs;
+use anyhow::Result;
 
 pub async fn search_code(args: SearchCodeArgs, debug_level: DebugLevel) -> Result<String> {
     let pattern = &args.pattern;

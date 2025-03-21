@@ -10,14 +10,7 @@ use crate::models::tools::ToolCall;
 use crate::utils::DebugLevel;
 use crate::utils::debug_log;
 
-pub use shell::run_shell_command;
-pub use file::{read_file, write_file};
-pub use code_search::{search_code, find_definition};
-pub use user_input::get_user_input;
-
 use serde_json::from_str;
-use std::io::{self, Write};
-use colored::*;
 
 pub async fn handle_tool_calls(
     _client: &Client,

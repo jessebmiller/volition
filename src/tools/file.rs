@@ -29,29 +29,13 @@ pub async fn read_file(args: ReadFileArgs, debug_level: DebugLevel) -> Result<St
 pub async fn write_file(args: WriteFileArgs, debug_level: DebugLevel) -> Result<String> {
     let path = &args.path;
     let content = &args.content;
-    let backup = args.backup.unwrap_or(true);
     
     if debug_level >= DebugLevel::Minimal {
         debug_log(
             debug_level,
             DebugLevel::Minimal,
-            &format!("Writing to file: {} (backup: {})", path, backup)
+            &format!("Writing to file: {}", path)
         );
-    }
-
-    // Create a backup if requested and the file exists
-    if backup && Path::new(path).exists() {
-        let backup_path = format!("{}.bak", path);
-        fs::copy(path, &backup_path)
-            .with_context(|| format!("Failed to create backup of file: {}", path))?;
-
-        if debug_level >= DebugLevel::Minimal {
-            debug_log(
-                debug_level,
-                DebugLevel::Minimal,
-                &format!("Created backup at: {}", backup_path)
-            );
-        }
     }
 
     // Create parent directories if they don't exist

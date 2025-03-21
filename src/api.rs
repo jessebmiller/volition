@@ -189,7 +189,7 @@ pub async fn chat_with_openai(
 
 pub async fn chat_with_ollama(
     client: &Client,
-    model_name: &str,
+    _model_name: &str,
     messages: Vec<ResponseMessage>,
     debug_level: DebugLevel,
 ) -> Result<ApiResponse> {

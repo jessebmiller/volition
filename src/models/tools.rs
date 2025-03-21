@@ -29,7 +29,6 @@ pub struct ReadFileArgs {
 pub struct WriteFileArgs {
     pub path: String,
     pub content: String,
-    pub backup: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -103,7 +102,7 @@ impl Tools {
             "type": "function",
             "function": {
                 "name": "write_file",
-                "description": "Write content to a file, optionally creating a backup",
+                "description": "Write content to a file",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -114,10 +113,6 @@ impl Tools {
                         "content": {
                             "type": "string",
                             "description": "Content to write to the file"
-                        },
-                        "backup": {
-                            "type": "boolean",
-                            "description": "Whether to create a backup of the file before writing (defaults to true)"
                         }
                     },
                     "required": ["path", "content"]

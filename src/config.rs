@@ -13,14 +13,14 @@ pub struct Config {
 
 pub fn get_config_path() -> Result<PathBuf> {
     let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("Could not find home directory"))?;
-    Ok(home_dir.join(".config").join("codegenius").join("config.json"))
+    Ok(home_dir.join(".config").join("volition").join("config.json"))
 }
 
 pub fn load_config() -> Result<Config> {
     let config_path = get_config_path()?;
 
     if !config_path.exists() {
-        return Err(anyhow!("Configuration not found. Run 'codegenius configure' first."));
+        return Err(anyhow!("Configuration not found. Run 'volition configure' first."));
     }
 
     let config_str = fs::read_to_string(&config_path)
