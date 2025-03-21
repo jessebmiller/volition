@@ -18,8 +18,10 @@ pub async fn chat_with_api(
     debug_level: DebugLevel,
     overrides: Option<HashMap<String, String>>,
 ) -> Result<ApiResponse> {
-    // Apply overrides to the configuration
+    // Create a clone of the config to modify
     let mut effective_config = config.clone();
+
+    // Apply overrides to the configuration
     if let Some(overrides) = overrides {
         for (key, value) in overrides {
             match key.as_str() {

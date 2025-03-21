@@ -112,7 +112,7 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
             }
         }
 
-        let response = chat_with_api(&client, config, messages.clone(), debug_level).await?;
+        let response = chat_with_api(&client, config, messages.clone(), debug_level, None).await?;
 
         let message = &response.choices[0].message;
 
