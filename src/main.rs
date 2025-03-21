@@ -3,6 +3,7 @@ mod config;
 mod models;
 mod tools;
 mod utils;
+mod strategies; // New module for strategies
 
 use anyhow::{anyhow, Result};
 use colored::*;
@@ -16,6 +17,8 @@ use crate::models::cli::{Commands, Cli};
 use crate::tools::handle_tool_calls;
 use crate::utils::DebugLevel;
 use crate::utils::debug_log;
+use crate::strategies::simulated_annealing::simulated_annealing; // Import simulated annealing
+use crate::strategies::linear::linear_strategy; // Import linear strategy
 
 use clap::Parser;
 
@@ -62,7 +65,7 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
         .build()?;
 
     // Print welcome message
-    println!("\n{}", "[1;36m");
+    println!("\n{}", "\x1b[1;36m");
     println!("\n{}", "🤖 Volition - AI Software Engineering Assistant".cyan().bold());
     println!("{}", "Ready to help you understand and improve your codebase.".cyan());
     println!("{}", "Type 'exit' or press Enter on an empty line to quit at any time.".cyan());
@@ -153,11 +156,11 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
             println!("\n{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
             print!("{} ", ">".green().bold());
             io::stdout().flush()?;
-            
+
             let mut input = String::new();
             io::stdin().read_line(&mut input)?;
             let input = input.trim().to_string();
-            
+
             // Exit if user enters empty string or "exit"
             if input.is_empty() || input.to_lowercase() == "exit" {
                 println!("\n{}", "Goodbye! Thank you for using Volition.".cyan());
