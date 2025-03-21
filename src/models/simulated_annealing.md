@@ -31,6 +31,8 @@ The algorithm interacts with the APIs using the `chat_with_api` function, which 
 
 ## Next Steps
 
+1. **Track Solutions with Git Commits**: Use git commits and tags to keep track of the various solutions the algorithm is trying
+1. **Keep track of the user goal**: Make sure the system keeps track of what the user is trying to acheve. Any given solution must be evaluated against how well it meets the users goal.
 1. **Customize Neighbor Generation**: Implement logic to generate meaningful neighboring solutions.
 2. **Define Energy Calculation**: Determine how to calculate the energy or quality of solutions based on API responses.
 3. **Testing**: Test the integration to ensure it improves the quality of solutions.

@@ -23,6 +23,10 @@ use anyhow::Result;
 pub async fn simulated_annealing(
     client: &Client,
     config: &Config,
+    // TODO: a solution is a "full state of the repo" so is more
+    // likely best represented as a git commit, rather than a response
+    // message. Perhaps things like "best solution" and "current
+    // solution" can be tracked with git tags.
     initial_solution: Vec<ResponseMessage>,
     max_iterations: usize,
     initial_temperature: f64,
@@ -38,6 +42,7 @@ pub async fn simulated_annealing(
         let neighbor_solution = generate_neighbor(&current_solution);
 
         // Evaluate the neighbor solution using the API
+        // TODO: we'll want to cache these evaluations
         let neighbor_energy = evaluate_solution(client, config, &neighbor_solution, debug_level).await?;
         let current_energy = evaluate_solution(client, config, &current_solution, debug_level).await?;
 
@@ -64,6 +69,10 @@ pub async fn simulated_annealing(
 /// Generate a neighboring solution
 fn generate_neighbor(solution: &Vec<ResponseMessage>) -> Vec<ResponseMessage> {
     // Placeholder for generating a neighboring solution
+
+    // TODO: use chat_with_api to generate neighbor solutions. The
+    // agent at the API endpoint will need to be able to use all the
+    // tools to generate a neighbor solution.
     solution.clone()
 }
 
@@ -74,6 +83,8 @@ async fn evaluate_solution(
     solution: &Vec<ResponseMessage>,
     debug_level: DebugLevel,
 ) -> Result<f64> {
+    // TODO an AI agent (using the apis) needs to be able to use all
+    // the tools in order to come up with a solution evaluation
     let response = chat_with_api(client, config, solution.clone(), debug_level, None).await?;
     // Placeholder for calculating the energy based on the API response
     Ok(0.0)
