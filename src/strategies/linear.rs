@@ -15,7 +15,7 @@ use serde_json::Value; // Use Value from serde_json
 /// * `client` - The HTTP client for making API requests.
 /// * `config` - The configuration for API access.
 /// * `tools` - A collection of tools that the strategy can use.
-/// * `system_prompt` - The system prompt to guide the LLM. (depreciated, not used)
+/// * `end_tool` - The tool that, when called, ends the strategy.
 /// * `messages` - The current conversation state.
 ///
 /// # Returns
@@ -24,13 +24,13 @@ pub async fn linear_strategy(
     client: &Client,
     config: &Config,
     tools: Vec<Value>,
-    system_prompt: &str, // TODO remove this unused param
+    end_tool: &str,
     mut messages: Vec<ResponseMessage>,
 ) -> Result<Vec<ResponseMessage>, anyhow::Error> {
     let mut conversation_active = true;
 
     while conversation_active {
-        let response = chat_with_api(client, config, messages.clone(), None, tools.clone(), config.default_temperature).await?;
+        let response = chat_with_api(client, config, messages.clone(), tools.clone(), config.default_temperature).await?;
         let message = &response.choices[0].message;
 
         if let Some(content) = &message.content {
@@ -56,10 +56,10 @@ pub async fn linear_strategy(
                 &mut messages,
             ).await?;
 
-            // TODO add a param to specify a tool that when called by
-            // the api ends the linear strategy. When the AI calls
-            // that tool (or no tool) end the conversation and return
-            // that tool call along with the response messages
+            // Check if the end tool was called
+            if tool_calls.iter().any(|call| call == end_tool) {
+                conversation_active = false;
+            }
         } else {
             conversation_active = false;
         }

@@ -242,3 +242,9 @@ impl Tools {
         })
     }
 }
+
+impl PartialEq<str> for ToolCall {
+    fn eq(&self, other: &str) -> bool {
+        self.call_type == other || self.function.name == other
+    }
+}

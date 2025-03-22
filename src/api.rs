@@ -16,40 +16,23 @@ pub async fn chat_with_api(
     client: &Client,
     config: &Config,
     messages: Vec<ResponseMessage>,
-    overrides: Option<HashMap<String, String>>,
     tools: Vec<ToolDefinition>,
     temperature: Option<f64>,
 ) -> Result<ApiResponse> {
-    // Create a clone of the config to modify
-    let mut effective_config = config.clone();
-    println!("config: {}", config.model_name);
-    // Apply overrides to the configuration
-    if let Some(overrides) = overrides {
-        for (key, value) in overrides {
-            println!("found override {key}: {value}");
-            match key.as_str() {
-                "openai_api_key" => effective_config.openai_api_key = value,
-                "service" => effective_config.service = value,
-                "model_name" => effective_config.model_name = value,
-                _ => info!("Unknown config override: {}", key),
-            }
-        }
-    }
-
     // Use provided temperature or default from config
     let effective_temperature = temperature.unwrap_or_else(|| config.default_temperature.unwrap_or(0.2));
 
-    match effective_config.service.as_str() {
+    match config.service.as_str() {
         "openai" => chat_with_openai(
             client,
-            &effective_config.openai_api_key,
-            &effective_config.model_name,
+            &config.openai_api_key,
+            &config.model_name,
             messages,
             tools,
             effective_temperature,
         ).await,
-        "ollama" => chat_with_ollama(client, &effective_config.model_name, messages).await,
-        _ => Err(anyhow!("Unsupported service: {}", effective_config.service)),
+        "ollama" => chat_with_ollama(client, &config.model_name, messages).await,
+        _ => Err(anyhow!("Unsupported service: {}", config.service)),
     }
 }
 
@@ -64,7 +47,7 @@ pub async fn chat_with_openai(
     info!("\n=== SENDING MESSAGES TO OPENAI API ===");
 
     for (i, msg) in messages.iter().enumerate() {
-        info!(
+        debug!(
             "[{}] role: {}, tool_call_id: {:?}, content length: {}",
             i,
             msg.role,

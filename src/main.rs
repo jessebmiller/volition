@@ -95,7 +95,7 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
 async fn main() -> Result<()> {
     let mut builder = env_logger::Builder::from_default_env();
     if std::env::var("RUST_LOG").is_err() {
-        builder.filter(None, LevelFilter::Warn);
+        builder.filter(None, LevelFilter::Info);
     }
     builder.init();
 

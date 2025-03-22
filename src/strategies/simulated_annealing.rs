@@ -10,6 +10,7 @@ use crate::models::chat::ResponseMessage;
 use crate::constants::SYSTEM_PROMPT;
 use crate::models::tools::SubmitQualityScoreArgs;
 use crate::models::tools::Tools;
+use serde_json::Value;
 
 /// Simulated Annealing Algorithm
 /// This function performs simulated annealing to find an optimal solution.
@@ -83,12 +84,34 @@ pub async fn simulated_annealing(
 async fn generate_neighbor(client: &Client, config: &Config, user_goal: &str, iteration: usize) -> Result<String> {
     // Use the linear strategy for generating neighbors
     let system_prompt = SYSTEM_PROMPT;
-    linear_strategy(
+    let messages = vec![
+        ResponseMessage {
+            role: "system".to_string(),
+            content: Some(system_prompt.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        },
+        ResponseMessage {
+            role: "user".to_string(),
+            content: Some(user_goal.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    ];
+
+    let response_messages = linear_strategy(
         client,
         config,
-        vec![Tools::shell_definition(), Tools::read_file_definition(), Tools::write_file_definition(), Tools::search_code_definition(), Tools::find_definition_definition(), Tools::user_input_definition()],
-        &format!("{} Generate a neighbor for goal: {}", system_prompt, user_goal),
-        vec![], // Provide an empty Vec<ResponseMessage> as the missing argument
+        vec![
+            Tools::shell_definition(),
+            Tools::read_file_definition(),
+            Tools::write_file_definition(),
+            Tools::search_code_definition(),
+            Tools::find_definition_definition(),
+            Tools::user_input_definition(),
+        ],
+        "",
+        messages,
     ).await?;
 
     let commit_message = format!("Neighbor solution for goal: {}, iteration: {}", user_goal, iteration);
@@ -144,17 +167,30 @@ async fn evaluate_solution(
     let response_messages = linear_strategy(
         client,
         config,
-        vec![/* unused param */],
-        &system_prompt,
+        vec![
+            Tools::shell_definition(),
+            Tools::read_file_definition(),
+            Tools::write_file_definition(),
+            Tools::search_code_definition(),
+            Tools::find_definition_definition(),
+            Tools::user_input_definition(),
+            Tools::submit_quality_score_definition(),
+        ],
+        "submit_quality_score",
         messages,
     ).await?;
 
     // Extract the energy value from the response
-    if let Some(last_message) = response_messages.last() {
-        if let Some(content) = &last_message.content {
-            // Parse the content to extract the energy value
-            if let Ok(energy) = content.trim().parse::<f64>() {
-                return Ok(energy);
+    for message in response_messages {
+        if let Some(tool_calls) = message.tool_calls {
+            for tool_call in tool_calls {
+                if tool_call.function.name == "submit_quality_score" {
+                    let arguments = tool_call.function.arguments;
+                    if let Ok(score_args) = serde_json::from_str::<SubmitQualityScoreArgs>(&arguments) {
+                        info!("Extracted energy value: {}", score_args.score);
+                        return Ok(score_args.score);
+                    }
+                }
             }
         }
     }
@@ -162,4 +198,3 @@ async fn evaluate_solution(
     // Return an error if the energy value could not be extracted
     Err(anyhow::anyhow!("Failed to extract energy value from response."))
 }
-
