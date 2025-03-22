@@ -92,7 +92,7 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), anyhow::Error> {
     let mut builder = env_logger::Builder::from_default_env();
     if std::env::var("RUST_LOG").is_err() {
         builder.filter(None, LevelFilter::Info);
@@ -111,6 +111,11 @@ async fn main() -> Result<()> {
 
             let config = load_config()?;
             handle_conversation(&config, &query).await?;
+        }
+        Some(Commands::SimulatedAnnealing { .. }) => {
+            // Handle Simulated Annealing command
+            println!("Simulated Annealing command received.");
+            // Add your handling code here
         }
         None => {
             if cli.rest.is_empty() {

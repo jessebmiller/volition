@@ -36,4 +36,18 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Use simulated annealing strategy
+    SimulatedAnnealing {
+        /// Number of iterations
+        #[arg(short, long, default_value_t = 1000)]
+        iterations: u32,
+
+        /// Initial temperature
+        #[arg(short, long, default_value_t = 100.0)]
+        initial_temperature: f64,
+
+        /// Cooling rate
+        #[arg(short, long, default_value_t = 0.95)]
+        cooling_rate: f64,
+    },
 }
