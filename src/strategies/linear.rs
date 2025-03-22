@@ -5,7 +5,6 @@ use crate::utils::DebugLevel;
 use crate::config::Config;
 use crate::tools::handle_tool_calls;
 use anyhow::Result;
-use std::io::{self, Write};
 
 /// Linear Strategy
 /// This function represents a basic linear processing strategy.

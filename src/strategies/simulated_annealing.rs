@@ -1,10 +1,9 @@
 use rand::Rng;
 use reqwest::Client;
 use crate::api::chat_with_api;
-use crate::models::chat::ResponseMessage;
 use crate::utils::DebugLevel;
 use crate::config::Config;
-use crate::strategies::git_utils;
+use crate::utils::git;
 use crate::strategies::linear::linear_strategy;
 use anyhow::Result;
 
@@ -32,19 +31,19 @@ pub async fn simulated_annealing(
     debug_level: DebugLevel,
 ) -> Result<String> {
     // Create initial solution commit
-    let mut current_solution = git_utils::commit_current_state(
+    let mut current_solution = git::commit_current_state(
         &format!("Initial solution for goal: {}", user_goal),
         debug_level
     ).await?;
 
     let mut best_solution = current_solution.clone();
-    git_utils::tag_solution(&best_solution, "best_solution", debug_level).await?;
+    git::tag_solution(&best_solution, "best_solution", debug_level).await?;
 
     let mut temperature = initial_temperature;
 
     for iteration in 0..max_iterations {
         // Generate and commit a neighboring solution
-        git_utils::checkout_solution(&current_solution, debug_level).await?;
+        git::checkout_solution(&current_solution, debug_level).await?;
         let neighbor_solution = generate_neighbor(client, config, user_goal, iteration, debug_level).await?;
 
         // Evaluate both solutions
@@ -62,7 +61,7 @@ pub async fn simulated_annealing(
         // Update the best solution found
         if neighbor_energy < evaluate_solution(client, config, &best_solution, user_goal, debug_level).await? {
             best_solution = neighbor_solution.clone();
-            git_utils::tag_solution(&best_solution, "best_solution", debug_level).await?;
+            git::tag_solution(&best_solution, "best_solution", debug_level).await?;
         }
 
         // Decrease the temperature
@@ -70,10 +69,10 @@ pub async fn simulated_annealing(
     }
 
     // Return to the best solution before finishing
-    git_utils::checkout_solution(&best_solution, debug_level).await?;
+    git::checkout_solution(&best_solution, debug_level).await?;
 
     // Cleanup temporary branches and tags
-    git_utils::cleanup(debug_level).await?;
+    git::cleanup(debug_level).await?;
 
     Ok(best_solution)
 }
@@ -92,7 +91,7 @@ async fn generate_neighbor(client: &Client, config: &Config, user_goal: &str, it
     ).await?;
 
     let commit_message = format!("Neighbor solution for goal: {}, iteration: {}", user_goal, iteration);
-    let commit_hash = git_utils::commit_current_state(&commit_message, debug_level).await?;
+    let commit_hash = git::commit_current_state(&commit_message, debug_level).await?;
     Ok(commit_hash)
 }
 
@@ -105,7 +104,7 @@ async fn evaluate_solution(
     debug_level: DebugLevel,
 ) -> Result<f64> {
     // Checkout the solution to evaluate
-    git_utils::checkout_solution(solution, debug_level).await?;
+    git::checkout_solution(solution, debug_level).await?;
     // Placeholder for calculating the energy based on the API response
     let response = chat_with_api(client, config, vec![], debug_level, None).await?;
     Ok(0.0)

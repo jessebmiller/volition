@@ -10,14 +10,10 @@ use colored::*;
 use std::io::{self, Write};
 use tokio::time::Duration;
 
-use crate::api::chat_with_api;
 use crate::config::{load_config, configure};
 use crate::models::chat::ResponseMessage;
 use crate::models::cli::{Commands, Cli};
-use crate::tools::handle_tool_calls;
 use crate::utils::DebugLevel;
-use crate::utils::debug_log;
-use crate::strategies::simulated_annealing::simulated_annealing; // Import simulated annealing
 use crate::strategies::linear::linear_strategy; // Import linear strategy
 
 use clap::Parser;
