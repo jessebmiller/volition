@@ -2,112 +2,105 @@ mod shell;
 mod file;
 mod code_search;
 mod user_input;
+mod submit_quality_score;
 
 use anyhow::Result;
 use reqwest::Client;
 use crate::models::chat::ResponseMessage;
 use crate::models::tools::ToolCall;
-use crate::utils::DebugLevel;
-use crate::utils::debug_log;
+use log::info;
 
 use serde_json::from_str;
 
 pub async fn handle_tool_calls(
-    _client: &Client,
-    _api_key: &str,
+    _client: &Client, //TODO remove unused argument
+    _api_key: &str,   //TODO remove unused argument
     tool_calls: Vec<ToolCall>,
     messages: &mut Vec<ResponseMessage>,
-    debug_level: DebugLevel,
 ) -> Result<()> {
     for (i, tool_call) in tool_calls.iter().enumerate() {
-        if debug_level >= DebugLevel::Minimal {
-            debug_log(
-                debug_level,
-                DebugLevel::Minimal,
-                &format!(
-                    "Processing tool call #{}: id={}, name={}",
-                    i, tool_call.id, tool_call.function.name
-                )
-            );
-        }
+        info!(
+            "Processing tool call #{}: id={}, name={}",
+            i, tool_call.id, tool_call.function.name
+        );
 
         match tool_call.function.name.as_str() {
             "shell" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = shell::run_shell_command(args, debug_level).await?;
-                
+                let output = shell::run_shell_command(args).await?;
+
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
                     content: Some(output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
-                
+
                 messages.push(tool_message);
             },
             "read_file" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = file::read_file(args, debug_level).await?;
-                
+                let output = file::read_file(args).await?;
+
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
                     content: Some(output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
-                
+
                 messages.push(tool_message);
             },
             "write_file" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = file::write_file(args, debug_level).await?;
-                
+                let output = file::write_file(args).await?;
+
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
                     content: Some(output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
-                
+
                 messages.push(tool_message);
             },
             "search_code" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = code_search::search_code(args, debug_level).await?;
-                
+                let output = code_search::search_code(args).await?;
+
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
                     content: Some(output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
-                
+
                 messages.push(tool_message);
             },
             "find_definition" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = code_search::find_definition(args, debug_level).await?;
-                
+                let output = code_search::find_definition(args).await?;
+
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
                     content: Some(output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
-                
+
                 messages.push(tool_message);
             },
             "user_input" => {
                 let args = from_str(&tool_call.function.arguments)?;
                 let output = user_input::get_user_input(args)?;
-                
+
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
                     content: Some(output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
-                
+
                 messages.push(tool_message);
             },
             _ => {

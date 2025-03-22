@@ -1,22 +1,21 @@
 use reqwest::Client;
 use crate::api::chat_with_api;
 use crate::models::chat::ResponseMessage;
-use crate::utils::DebugLevel;
+use log::info;
 use crate::config::Config;
 use crate::tools::handle_tool_calls;
-use anyhow::Result;
+use serde_json::Value; // Use Value from serde_json
 
 /// Linear Strategy
-/// This function represents a basic linear processing strategy.
-/// It allows the LLM to use tools until it's done, based on the provided goal and system prompt.
+/// This function represents a basic linear processing strategy.  It
+/// allows the LLM to use tools until it's done, based on the current
+/// conversation state.
 ///
 /// # Arguments
 /// * `client` - The HTTP client for making API requests.
 /// * `config` - The configuration for API access.
 /// * `tools` - A collection of tools that the strategy can use.
-/// * `user_goal` - The goal for the solution.
-/// * `system_prompt` - The system prompt to guide the LLM.
-/// * `debug_level` - The level of debug information to log.
+/// * `system_prompt` - The system prompt to guide the LLM. (depreciated, not used)
 /// * `messages` - The current conversation state.
 ///
 /// # Returns
@@ -24,16 +23,14 @@ use anyhow::Result;
 pub async fn linear_strategy(
     client: &Client,
     config: &Config,
-    tools: Vec<String>,
-    user_goal: &str,
-    system_prompt: &str,
-    debug_level: DebugLevel,
+    tools: Vec<Value>,
+    system_prompt: &str, // TODO remove this unused param
     mut messages: Vec<ResponseMessage>,
-) -> Result<Vec<ResponseMessage>> {
+) -> Result<Vec<ResponseMessage>, anyhow::Error> {
     let mut conversation_active = true;
 
     while conversation_active {
-        let response = chat_with_api(client, config, messages.clone(), debug_level, None).await?;
+        let response = chat_with_api(client, config, messages.clone(), None, tools.clone(), config.default_temperature).await?;
         let message = &response.choices[0].message;
 
         if let Some(content) = &message.content {
@@ -50,17 +47,19 @@ pub async fn linear_strategy(
         });
 
         if let Some(tool_calls) = &message.tool_calls {
-            if debug_level >= DebugLevel::Minimal {
-                println!("Processing {} tool calls", tool_calls.len());
-            }
+            info!("Processing {} tool calls", tool_calls.len());
 
             handle_tool_calls(
                 client,
                 &config.openai_api_key,
                 tool_calls.to_vec(),
                 &mut messages,
-                debug_level
             ).await?;
+
+            // TODO add a param to specify a tool that when called by
+            // the api ends the linear strategy. When the AI calls
+            // that tool (or no tool) end the conversation and return
+            // that tool call along with the response messages
         } else {
             conversation_active = false;
         }

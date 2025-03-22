@@ -1,41 +1,54 @@
 use anyhow::{anyhow, Result};
 use colored::*;
 use reqwest::Client;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::time::Duration;
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
-use crate::models::tools::Tools;
-use crate::utils::DebugLevel;
-use crate::utils::debug_log;
+use log::{debug, info};
 use crate::config::Config;
+
+// Type alias for tool definition
+pub type ToolDefinition = Value;
 
 pub async fn chat_with_api(
     client: &Client,
     config: &Config,
     messages: Vec<ResponseMessage>,
-    debug_level: DebugLevel,
     overrides: Option<HashMap<String, String>>,
+    tools: Vec<ToolDefinition>,
+    temperature: Option<f64>,
 ) -> Result<ApiResponse> {
     // Create a clone of the config to modify
     let mut effective_config = config.clone();
-
+    println!("config: {}", config.model_name);
     // Apply overrides to the configuration
     if let Some(overrides) = overrides {
         for (key, value) in overrides {
+            println!("found override {key}: {value}");
             match key.as_str() {
                 "openai_api_key" => effective_config.openai_api_key = value,
                 "service" => effective_config.service = value,
                 "model_name" => effective_config.model_name = value,
-                _ => debug_log(debug_level, DebugLevel::Minimal, &format!("Unknown config override: {}", key)),
+                _ => info!("Unknown config override: {}", key),
             }
         }
     }
 
+    // Use provided temperature or default from config
+    let effective_temperature = temperature.unwrap_or_else(|| config.default_temperature.unwrap_or(0.2));
+
     match effective_config.service.as_str() {
-        "openai" => chat_with_openai(client, &effective_config.openai_api_key, messages, debug_level).await,
-        "ollama" => chat_with_ollama(client, &effective_config.model_name, messages, debug_level).await,
+        "openai" => chat_with_openai(
+            client,
+            &effective_config.openai_api_key,
+            &effective_config.model_name,
+            messages,
+            tools,
+            effective_temperature,
+        ).await,
+        "ollama" => chat_with_ollama(client, &effective_config.model_name, messages).await,
         _ => Err(anyhow!("Unsupported service: {}", effective_config.service)),
     }
 }
@@ -43,50 +56,33 @@ pub async fn chat_with_api(
 pub async fn chat_with_openai(
     client: &Client,
     api_key: &str,
+    model_name: &str,
     messages: Vec<ResponseMessage>,
-    debug_level: DebugLevel,
+    tools: Vec<ToolDefinition>,
+    temperature: f64,
 ) -> Result<ApiResponse> {
-    debug_log(debug_level, DebugLevel::Minimal, "\n=== SENDING MESSAGES TO OPENAI API ===");
+    info!("\n=== SENDING MESSAGES TO OPENAI API ===");
 
-    if debug_level >= DebugLevel::Minimal {
-        for (i, msg) in messages.iter().enumerate() {
-            debug_log(
-                debug_level,
-                DebugLevel::Minimal,
-                &format!(
-                    "[{}] role: {}, tool_call_id: {:?}, content length: {}",
-                    i,
-                    msg.role,
-                    msg.tool_call_id,
-                    msg.content.as_ref().map_or(0, |c| c.len())
-                )
-            );
-        }
+    for (i, msg) in messages.iter().enumerate() {
+        info!(
+            "[{}] role: {}, tool_call_id: {:?}, content length: {}",
+            i,
+            msg.role,
+            msg.tool_call_id,
+            msg.content.as_ref().map_or(0, |c| c.len())
+        );
     }
 
     let url = "https://api.openai.com/v1/chat/completions";
 
     let request_body = json!({
-        "model": "gpt-4o",
+        "model": model_name,
         "messages": messages,
-        "tools": [
-            Tools::shell_definition(),
-            Tools::read_file_definition(),
-            Tools::write_file_definition(),
-            Tools::search_code_definition(),
-            Tools::find_definition_definition(),
-            Tools::user_input_definition()
-        ],
-        "temperature": 0.2
+        "tools": tools, // Use provided tools
+        "temperature": temperature
     });
 
-    if debug_level >= DebugLevel::Verbose {
-        debug_log(
-            debug_level,
-            DebugLevel::Verbose,
-            &format!("Request JSON: {}", serde_json::to_string_pretty(&request_body)?)
-        );
-    }
+    debug!("Request JSON: {}", serde_json::to_string_pretty(&request_body)?);
 
     // Exponential backoff parameters
     let max_retries = 5;
@@ -126,13 +122,9 @@ pub async fn chat_with_openai(
             let wait_time = retry_after.unwrap_or(delay);
 
             retries += 1;
-            debug_log(
-                debug_level,
-                DebugLevel::Minimal,
-                &format!(
-                    "API request failed with status {}, retrying in {} seconds (attempt {}/{})",
-                    status, wait_time.as_secs(), retries, max_retries
-                )
+            info!(
+                "API request failed with status {}, retrying in {} seconds (attempt {}/{})",
+                status, wait_time.as_secs(), retries, max_retries
             );
 
             println!("{} Retrying in {} seconds (attempt {}/{})",
@@ -159,29 +151,15 @@ pub async fn chat_with_openai(
         // Success case
         let api_response: ApiResponse = response.json().await?;
 
-        if debug_level >= DebugLevel::Minimal {
-            debug_log(debug_level, DebugLevel::Minimal, "=== API RESPONSE ===");
+        info!("=== API RESPONSE ===");
 
-            if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
-                if debug_level >= DebugLevel::Verbose {
-                    debug_log(
-                        debug_level,
-                        DebugLevel::Verbose,
-                        &format!("Tool calls: {}", serde_json::to_string_pretty(tool_calls)?)
-                    );
-                } else {
-                    debug_log(
-                        debug_level,
-                        DebugLevel::Minimal,
-                        &format!("Tool calls: {} found", tool_calls.len())
-                    );
-                }
-            } else {
-                debug_log(debug_level, DebugLevel::Minimal, "No tool calls");
-            }
-
-            debug_log(debug_level, DebugLevel::Minimal, "=====================\n");
+        if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
+            debug!("Tool calls: {}", serde_json::to_string_pretty(tool_calls)?);
+        } else {
+            info!("No tool calls");
         }
+
+        info!("=====================\n");
 
         return Ok(api_response);
     }
@@ -191,9 +169,8 @@ pub async fn chat_with_ollama(
     client: &Client,
     _model_name: &str,
     messages: Vec<ResponseMessage>,
-    debug_level: DebugLevel,
 ) -> Result<ApiResponse> {
-    debug_log(debug_level, DebugLevel::Minimal, "\n=== SENDING MESSAGES TO OLLAMA MODEL ===");
+    info!("\n=== SENDING MESSAGES TO OLLAMA MODEL ===");
 
     let url = format!("http://localhost:11434/v1/chat/completions");
 
@@ -201,13 +178,7 @@ pub async fn chat_with_ollama(
         "messages": messages
     });
 
-    if debug_level >= DebugLevel::Verbose {
-        debug_log(
-            debug_level,
-            DebugLevel::Verbose,
-            &format!("Request JSON: {}", serde_json::to_string_pretty(&request_body)?)
-        );
-    }
+    debug!("Request JSON: {}", serde_json::to_string_pretty(&request_body)?);
 
     let response = client
         .post(&url)
@@ -225,29 +196,15 @@ pub async fn chat_with_ollama(
 
     let api_response: ApiResponse = response.json().await?;
 
-    if debug_level >= DebugLevel::Minimal {
-        debug_log(debug_level, DebugLevel::Minimal, "=== OLLAMA API RESPONSE ===");
+    info!("=== OLLAMA API RESPONSE ===");
 
-        if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
-            if debug_level >= DebugLevel::Verbose {
-                debug_log(
-                    debug_level,
-                    DebugLevel::Verbose,
-                    &format!("Tool calls: {}", serde_json::to_string_pretty(tool_calls)?)
-                );
-            } else {
-                debug_log(
-                    debug_level,
-                    DebugLevel::Minimal,
-                    &format!("Tool calls: {} found", tool_calls.len())
-                );
-            }
-        } else {
-            debug_log(debug_level, DebugLevel::Minimal, "No tool calls");
-        }
-
-        debug_log(debug_level, DebugLevel::Minimal, "=====================\n");
+    if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
+        debug!("Tool calls: {}", serde_json::to_string_pretty(tool_calls)?);
+    } else {
+        info!("No tool calls");
     }
+
+    info!("=====================\n");
 
     Ok(api_response)
 }

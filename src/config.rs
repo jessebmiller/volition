@@ -9,6 +9,7 @@ pub struct Config {
     pub openai_api_key: String,
     pub service: String, // "openai" or "ollama"
     pub model_name: String, // Model name for the chosen service
+    pub default_temperature: Option<f64>, // Default temperature for API calls
 }
 
 pub fn get_config_path() -> Result<PathBuf> {
@@ -70,6 +71,7 @@ pub fn configure() -> Result<()> {
         openai_api_key: api_key,
         service,
         model_name,
+        default_temperature: Some(0.2), // Set a default temperature
     };
 
     save_config(&config)?;

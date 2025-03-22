@@ -54,6 +54,12 @@ pub struct UserInputArgs {
     pub options: Option<Vec<String>>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SubmitQualityScoreArgs {
+    pub score: f64,
+    pub reason: String,
+}
+
 pub struct Tools;
 
 impl Tools {
@@ -207,6 +213,30 @@ impl Tools {
                         }
                     },
                     "required": ["prompt"]
+                }
+            }
+        })
+    }
+
+    pub fn submit_quality_score_definition() -> serde_json::Value {
+        json!({
+            "type": "function",
+            "function": {
+                "name": "submit_quality_score",
+                "description": "After evaluating the quality of the soution submit a final score",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "score": {
+                            "type": "number",
+                            "description": "Final quality score from 0.0 (worst) to 100.0 (best)"
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Explanation for the score"
+                        }
+                    },
+                    "required": ["score", "reason"]
                 }
             }
         })
