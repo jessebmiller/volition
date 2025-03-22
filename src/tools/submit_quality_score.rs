@@ -10,7 +10,8 @@ use anyhow::Result;
 /// # Returns
 /// * A result indicating success or failure.
 pub async fn submit_quality_score(args: SubmitQualityScoreArgs) -> Result<()> {
-    // For now, we'll just print it to the console as a placeholder.
+    // we just print it to the console to show the user the
+    // reason. There is no result needed to send back to the AI
     println!("Submitting quality score: {} with reason: {}", args.score, args.reason);
     Ok(())
 }

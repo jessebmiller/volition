@@ -16,6 +16,7 @@ use crate::models::chat::ResponseMessage;
 use crate::models::cli::{Commands, Cli};
 use crate::models::tools::Tools;
 use crate::strategies::linear::linear_strategy;
+use crate::strategies::simulated_annealing::simulated_annealing;
 
 use clap::Parser;
 use log::LevelFilter;
@@ -112,10 +113,32 @@ async fn main() -> Result<(), anyhow::Error> {
             let config = load_config()?;
             handle_conversation(&config, &query).await?;
         }
-        Some(Commands::SimulatedAnnealing { .. }) => {
-            // Handle Simulated Annealing command
-            println!("Simulated Annealing command received.");
-            // Add your handling code here
+        Some(Commands::SimulatedAnnealing { iterations, initial_temperature, cooling_rate }) => {
+            let query = cli.rest.join(" ");
+            if query.is_empty() {
+                return Err(anyhow!("Please provide a goal for simulated annealing"));
+            }
+
+            println!("\n{}", "Starting simulated annealing optimization...".cyan().bold());
+            println!("Iterations: {}, Initial Temperature: {}, Cooling Rate: {}",
+                     iterations, initial_temperature, cooling_rate);
+
+            let config = load_config()?;
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(60))
+                .build()?;
+
+            let best_solution = simulated_annealing(
+                &client,
+                &config,
+                &query,
+                (*iterations).try_into().unwrap(),
+                *initial_temperature,
+                *cooling_rate
+            ).await?;
+
+            println!("\n{}", "Simulated annealing completed!".green().bold());
+            println!("Best solution commit: {}", best_solution);
         }
         None => {
             if cli.rest.is_empty() {
@@ -127,6 +150,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 println!("  volition \"Help me understand how the routing system works in this codebase\"");
                 println!("  volition configure    - Set up your API key");
                 println!("  volition --help       - Show more information");
+                println!("  volition simulate \"Optimize the routing algorithm\" --iterations 20 --temperature 100.0 --cooling_rate 0.1");
                 return Ok(());
             }
 
