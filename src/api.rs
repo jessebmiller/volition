@@ -22,47 +22,17 @@ pub async fn chat_with_api(
     // Use provided temperature or default from config
     let effective_temperature = temperature.unwrap_or_else(|| config.default_temperature.unwrap_or(0.2));
 
-    match config.service.as_str() {
-        "openai" => chat_with_openai(
-            client,
-            &config.openai_api_key,
-            &config.model_name,
-            messages,
-            tools,
-            effective_temperature,
-        ).await,
-        "ollama" => chat_with_ollama(client, &config.model_name, messages).await,
-        _ => Err(anyhow!("Unsupported service: {}", config.service)),
-    }
-}
-
-pub async fn chat_with_openai(
-    client: &Client,
-    api_key: &str,
-    model_name: &str,
-    messages: Vec<ResponseMessage>,
-    tools: Vec<ToolDefinition>,
-    temperature: f64,
-) -> Result<ApiResponse> {
-    info!("\n=== SENDING MESSAGES TO OPENAI API ===");
-
-    for (i, msg) in messages.iter().enumerate() {
-        debug!(
-            "[{}] role: {}, tool_call_id: {:?}, content length: {}",
-            i,
-            msg.role,
-            msg.tool_call_id,
-            msg.content.as_ref().map_or(0, |c| c.len())
-        );
-    }
-
-    let url = "https://api.openai.com/v1/chat/completions";
+    let (url, api_key) = match config.service.as_str() {
+        "openai" => ("https://api.openai.com/v1/chat/completions", Some(&config.openai_api_key)),
+        "ollama" => ("http://localhost:11434/v1/chat/completions", None),
+        _ => return Err(anyhow!("Unsupported service: {}", config.service)),
+    };
 
     let request_body = json!({
-        "model": model_name,
+        "model": config.model_name,
         "messages": messages,
         "tools": tools, // Use provided tools
-        "temperature": temperature
+        "temperature": effective_temperature
     });
 
     debug!("Request JSON: {}", serde_json::to_string_pretty(&request_body)?);
@@ -78,13 +48,16 @@ pub async fn chat_with_openai(
     let mut delay = initial_delay;
 
     loop {
-        let response = client
+        let mut request = client
             .post(url)
             .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&request_body)
-            .send()
-            .await?;
+            .json(&request_body);
+
+        if let Some(key) = api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let response = request.send().await?;
 
         let status = response.status();
 
@@ -111,7 +84,7 @@ pub async fn chat_with_openai(
             );
 
             println!("{} Retrying in {} seconds (attempt {}/{})",
-                "Rate limited by OpenAI API.".yellow().bold(),
+                "Rate limited by API.".yellow().bold(),
                 wait_time.as_secs(), retries, max_retries);
 
             tokio::time::sleep(wait_time).await;
@@ -146,48 +119,4 @@ pub async fn chat_with_openai(
 
         return Ok(api_response);
     }
-}
-
-pub async fn chat_with_ollama(
-    client: &Client,
-    _model_name: &str,
-    messages: Vec<ResponseMessage>,
-) -> Result<ApiResponse> {
-    info!("\n=== SENDING MESSAGES TO OLLAMA MODEL ===");
-
-    let url = format!("http://localhost:11434/v1/chat/completions");
-
-    let request_body = json!({
-        "messages": messages
-    });
-
-    debug!("Request JSON: {}", serde_json::to_string_pretty(&request_body)?);
-
-    let response = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&request_body)
-        .send()
-        .await?;
-
-    let status = response.status();
-
-    if !status.is_success() {
-        let error_text = response.text().await?;
-        return Err(anyhow!("Ollama API error: {} - {}", status, error_text));
-    }
-
-    let api_response: ApiResponse = response.json().await?;
-
-    info!("=== OLLAMA API RESPONSE ===");
-
-    if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
-        debug!("Tool calls: {}", serde_json::to_string_pretty(tool_calls)?);
-    } else {
-        info!("No tool calls");
-    }
-
-    info!("=====================\n");
-
-    Ok(api_response)
 }
