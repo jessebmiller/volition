@@ -49,5 +49,9 @@ pub enum Commands {
         /// Cooling rate
         #[arg(short, long, default_value_t = 0.95)]
         cooling_rate: f64,
+
+        /// User prompt for the simulated annealing
+        #[arg(trailing_var_arg = true)]
+        prompt: Vec<String>,
     },
 }

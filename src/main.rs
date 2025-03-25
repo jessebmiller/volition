@@ -113,8 +113,8 @@ async fn main() -> Result<(), anyhow::Error> {
             let config = load_config()?;
             handle_conversation(&config, &query).await?;
         }
-        Some(Commands::SimulatedAnnealing { iterations, initial_temperature, cooling_rate }) => {
-            let query = cli.rest.join(" ");
+        Some(Commands::SimulatedAnnealing { iterations, initial_temperature, cooling_rate, prompt }) => {
+            let query = prompt.join(" "); // Join the prompt into a single string
             if query.is_empty() {
                 return Err(anyhow!("Please provide a goal for simulated annealing"));
             }
