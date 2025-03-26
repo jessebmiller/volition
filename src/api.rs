@@ -4,9 +4,8 @@ use serde_json::{json, to_value, Value};
 use std::collections::HashMap;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
-use crate::models::chat::{ApiResponse, ResponseMessage, parse_gemini_response};
+use crate::models::chat::{ApiResponse, ResponseMessage};
 use crate::models::tools::Tools;
 use crate::config::{Config, ModelConfig};
 
@@ -24,8 +23,10 @@ pub async fn chat_with_endpoint(
         endpoint.clone()
     } else {
         match model_config.service.as_str() {
+            // Default URL for OpenAI compatible services.
+            // For Gemini, ensure endpoint_override is set in config for the correct OpenAI-compatible endpoint.
             "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
-            "gemini" => "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro-exp-03-25:generateContent".to_string(),
+            "gemini" => "https://api.openai.com/v1/chat/completions".to_string(), // Default, override recommended
             "ollama" => "http://localhost:11434/v1/chat/completions".to_string(),
             other => return Err(anyhow!("Unsupported service: {}", other)),
         }
@@ -34,8 +35,8 @@ pub async fn chat_with_endpoint(
     // Build the request body based on the service type.
     let request_body = match model_config.service.as_str() {
         "openai" => build_openai_request(&model_config.model_name, messages, model_config)?,
-        "gemini" => build_gemini_request(messages, model_config)?,
-        _ => return Err(anyhow!("Unsupported service: {}", model_config.service)),
+        "gemini" => build_openai_request(&model_config.model_name, messages, model_config)?,
+        other => return Err(anyhow!("Unsupported service: {}", other)),
     };
 
     debug!("Request URL: {}\nRequest JSON: {}", url, serde_json::to_string_pretty(&request_body)?);
@@ -62,10 +63,9 @@ pub async fn chat_with_endpoint(
                 }
             },
             "gemini" => {
-                // For Gemini, use API key in URL query parameter
                 if let Some(key) = api_key {
-                    let url_with_key = format!("{}?key={}", url, key);
-                    request = client.post(&url_with_key).header("Content-Type", "application/json");
+                    // Use Bearer token auth for Gemini's OpenAI-compatible endpoint
+                    request = request.header("Authorization", format!("Bearer {}", key));
                 } else {
                     return Err(anyhow!("API key required for Gemini service"));
                 }
@@ -102,21 +102,10 @@ pub async fn chat_with_endpoint(
             return Err(anyhow!("API error: {} - {}", status, error_text));
         }
 
+        let response_json: Value = response.json().await?;
 
-
-        let mut response_json: Value = response.json().await?;
-
-        // For Gemini responses, add a missing ID field if needed
-        let processed_json =  if !response_json.get("id").is_some() {
-            // Create a modified copy with an ID
-            let mut modified = response_json.clone();
-            modified["id"] = Value::String(Uuid::new_v4().to_string());
-            modified
-        } else {
-            response_json
-        };
-
-        let api_response: ApiResponse = serde_json::from_value(processed_json)?;
+        // Assuming OpenAI-compatible endpoint provides standard response format
+        let api_response: ApiResponse = serde_json::from_value(response_json)?;
 
         debug!("=== API RESPONSE ===");
         if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
@@ -158,70 +147,6 @@ fn build_openai_request(
     }
 
     Ok(request)
-}
-
-fn build_gemini_request(
-    messages: Vec<ResponseMessage>,
-    model_config: &ModelConfig,
-) -> Result<Value> {
-    // Convert messages format to Gemini's expected format
-    let contents = convert_messages_to_gemini_contents(messages)?;
-
-    let mut request = json!({
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 0.7,
-            "topK": 64,
-            "topP": 0.95,
-            "maxOutputTokens": 65536,
-        }
-    });
-
-    // Add parameters
-    if let Some(parameters) = model_config.parameters.as_table() {
-        for (key, value) in parameters {
-            let json_value = to_value(value.clone())?;
-            request[key] = json_value;
-        }
-    }
-    Ok(request)
-}
-
-fn convert_messages_to_gemini_contents(messages: Vec<ResponseMessage>) -> Result<Value> {
-    let mut contents = Vec::new();
-
-    for message in messages {
-        let role = match message.role.as_str() {
-            "system" => "user", // Gemini uses user role for system prompts
-            "user" => "user",
-            "assistant" => "model",
-            "tool" => "function", // For tool responses
-            _ => "user",
-        };
-
-        let content = match (message.content.as_deref(), message.tool_call_id) {
-            (Some(text), None) => {
-                // Regular message
-                json!({
-                    "role": role,
-                    "parts": [{"text": text}]
-                })
-            },
-            (Some(text), Some(tool_id)) => {
-                // Function response
-                json!({
-                    "role": "function",
-                    "name": tool_id,
-                    "parts": [{"text": text}]
-                })
-            },
-            _ => continue, // Skip empty messages
-        };
-
-        contents.push(content);
-    }
-
-    Ok(json!(contents))
 }
 
 /// This function selects the appropriate service based on configuration and delegates the API call to the unified chat_with_endpoint function.
