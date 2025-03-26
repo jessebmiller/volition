@@ -24,7 +24,7 @@ pub async fn chat_with_endpoint(
     } else {
         match model_config.service.as_str() {
             "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
-            "gemini" => "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent".to_string(),
+            "gemini" => "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro-exp-03-25:generateContent".to_string(),
             "ollama" => "http://localhost:11434/v1/chat/completions".to_string(),
             other => return Err(anyhow!("Unsupported service: {}", other)),
         }
@@ -158,18 +158,13 @@ fn build_gemini_request(
     let contents = convert_messages_to_gemini_contents(messages)?;
 
     let mut request = json!({
-        "model": model_config.model_name,  // Use the selected model
         "contents": contents,
-        "tools": [{
-            "functionDeclarations": [
-                Tools::shell_definition("gemini"),
-                Tools::read_file_definition(),
-                Tools::write_file_definition(),
-                Tools::search_code_definition(),
-                Tools::find_definition_definition(),
-                Tools::user_input_definition()
-            ]
-        }]
+        "generationConfig": {
+            "temperature": 0.7,
+            "topK": 64,
+            "topP": 0.95,
+            "maxOutputTokens": 65536,
+        }
     });
 
     // Add parameters
@@ -179,7 +174,6 @@ fn build_gemini_request(
             request[key] = json_value;
         }
     }
-
     Ok(request)
 }
 
