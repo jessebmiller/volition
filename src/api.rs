@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde_json::{json, to_value, Value};
 use std::collections::HashMap;
 use tokio::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn}; // Removed unused import: info
 use uuid::Uuid; // Import Uuid
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
