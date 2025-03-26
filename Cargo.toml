@@ -2,16 +2,10 @@
 name = "volition"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
-description = "An AI-powered software engineering assistant"
 
 [dependencies]
-anyhow = "1.0"
-clap = { version = "4.3", features = ["derive"] }
-colored = "2.0"
-dirs = "5.0"
-reqwest = { version = "0.11", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.29", features = ["full"] }
-toml = "0.5"
+# Added tracing for logs
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Add any other existing dependencies below
