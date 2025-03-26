@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use reqwest::Client;
-use serde_json::{json, to_value, Value, Map};
+// Removed unused import: Map
+use serde_json::{json, to_value, Value};
 use std::collections::HashMap;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
@@ -25,18 +26,18 @@ pub async fn chat_with_endpoint(
     } else {
         match model_config.service.as_str() {
             // Default URL for OpenAI compatible services.
-            // For Gemini, ensure endpoint_override is set in config for the correct OpenAI-compatible endpoint.
             "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
-            "gemini" => "https://api.openai.com/v1/chat/completions".to_string(), // Default, override recommended
+            // Removed "gemini" default URL case
             "ollama" => "http://localhost:11434/v1/chat/completions".to_string(),
             other => return Err(anyhow!("Unsupported service: {}", other)),
         }
     };
 
     // Build the request body based on the service type.
+    // Since we're using the OpenAI-compatible endpoint, we always use build_openai_request.
     let request_body = match model_config.service.as_str() {
-        "openai" => build_openai_request(&model_config.model_name, messages, model_config)?,
-        "gemini" => build_openai_request(&model_config.model_name, messages, model_config)?,
+        "openai" | "ollama" => build_openai_request(&model_config.model_name, messages, model_config)?,
+        // Removed "gemini" request building case
         other => return Err(anyhow!("Unsupported service: {}", other)),
     };
 
@@ -57,20 +58,22 @@ pub async fn chat_with_endpoint(
         // Add service-specific headers and authentication
         match model_config.service.as_str() {
             "openai" => {
+                // All OpenAI-compatible services (including the one previously identified as "gemini")
+                // use Bearer token authentication.
                 if let Some(key) = api_key {
                     request = request.header("Authorization", format!("Bearer {}", key));
                 } else {
-                    return Err(anyhow!("API key required for OpenAI service"));
+                    // Only error if it's strictly OpenAI service and key is missing
+                    // For other compatible services using this path, key might be optional or handled differently (e.g., Ollama)
+                    if model_config.service == "openai" {
+                         return Err(anyhow!("API key required for OpenAI service"));
+                    }
                 }
             },
-            "gemini" => {
-                if let Some(key) = api_key {
-                    // Use Bearer token auth for Gemini's OpenAI-compatible endpoint
-                    request = request.header("Authorization", format!("Bearer {}", key));
-                } else {
-                    return Err(anyhow!("API key required for Gemini service"));
-                }
-            },
+            // Removed "gemini" authentication case
+            "ollama" => {
+                // Ollama doesn't typically require auth by default
+            }
             _ => {}
         }
 
@@ -142,7 +145,7 @@ fn build_openai_request(
         "model": model_name,
         "messages": messages,
         "tools": [
-            Tools::shell_definition("openai"),
+            Tools::shell_definition(), // Updated call
             Tools::read_file_definition(),
             Tools::write_file_definition(),
             Tools::search_code_definition(),
@@ -181,11 +184,11 @@ pub async fn chat_with_api(
         for (key, value) in overrides {
             match key.as_str() {
                 "openai_api_key" => effective_config.openai.api_key = value,
-                "gemini_api_key" => effective_config.gemini.api_key = value,
+                // Removed "gemini_api_key" override
                 "selected_model" => {
-                    // Update both selected models if needed
-                    effective_config.openai.selected_model = value.clone();
-                    effective_config.gemini.selected_model = value;
+                    // Update the selected model for the relevant service (currently only OpenAI)
+                    effective_config.openai.selected_model = value;
+                    // Removed update for gemini.selected_model
                 },
                 "active_service" => {
                     // Assuming config has an active_service field
@@ -203,15 +206,31 @@ pub async fn chat_with_api(
             effective_config.openai.selected_model.clone(),
             Some(effective_config.openai.api_key.as_str()),
         ),
-        "gemini" => (
-            effective_config.gemini.selected_model.clone(),
-            Some(effective_config.gemini.api_key.as_str()),
-        ),
+        // Removed "gemini" service selection case
+        // Assuming "ollama" or other services might be added here later, potentially without API keys
+        "ollama" => {
+            // Find the first model configured for the "ollama" service
+             let model_name = effective_config.models.iter()
+                .find(|(_, model_cfg)| model_cfg.service == "ollama")
+                .map(|(name, _)| name.clone())
+                .ok_or_else(|| anyhow!("No model configured for the 'ollama' service in config.toml"))?;
+            (model_name, None) // Ollama typically doesn't require an API key
+        }
         _ => return Err(anyhow!("Unsupported active service: {:?}", active_service)),
     };
 
     let model_config = effective_config.models.get(&selected_model)
-        .ok_or_else(|| anyhow!("Unsupported model: {}", selected_model))?;
+        .ok_or_else(|| anyhow!("Configuration for model '{}' not found", selected_model))?;
+
+    // Check if the service of the selected model matches the active service
+    if model_config.service.to_lowercase() != active_service {
+        return Err(anyhow!(
+            "Mismatch between active service '{}' and selected model '{}' service '{}'",
+            active_service,
+            selected_model,
+            model_config.service
+        ));
+    }
 
     chat_with_endpoint(client, api_key_option, model_config, messages).await
 }

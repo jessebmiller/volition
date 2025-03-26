@@ -57,8 +57,8 @@ pub struct UserInputArgs {
 pub struct Tools;
 
 impl Tools {
-    // Current OpenAI format definitions remain
-    pub fn shell_definition_openai() -> serde_json::Value {
+    // Returns the standard OpenAI format definition for the shell tool.
+    pub fn shell_definition() -> serde_json::Value {
         json!({
             "type": "function",
             "function": {
@@ -78,28 +78,8 @@ impl Tools {
         })
     }
 
-    // New Gemini format definitions
-    pub fn shell_definition_gemini() -> serde_json::Value {
-        json!({
-            "name": "shell",
-            "description": "Run a shell command and get the output",
-            "parameters": {
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to run"
-                }
-            }
-        })
-    }
-
-    // Service-agnostic wrapper that returns the appropriate definition
-    pub fn shell_definition(service: &str) -> serde_json::Value {
-        match service {
-            "openai" => Self::shell_definition_openai(),
-            "gemini" => Self::shell_definition_gemini(),
-            _ => Self::shell_definition_openai(), // Default
-        }
-    }
+    // Removed shell_definition_gemini
+    // Removed service-specific wrapper shell_definition(service: &str)
 
     pub fn read_file_definition() -> serde_json::Value {
         json!({

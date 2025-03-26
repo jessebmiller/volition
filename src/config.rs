@@ -14,7 +14,7 @@ pub struct ActiveService {
 pub struct Config {
     pub active_service: ActiveService,
     pub openai: OpenAIConfig,
-    pub gemini: GeminiConfig,
+    // Removed gemini field
     pub models: HashMap<String, ModelConfig>,
 }
 
@@ -24,11 +24,7 @@ pub struct OpenAIConfig {
     pub selected_model: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct GeminiConfig {
-    pub api_key: String,
-    pub selected_model: String,
-}
+// Removed GeminiConfig struct
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
