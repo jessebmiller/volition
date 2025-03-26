@@ -4,6 +4,7 @@ use serde_json::{json, to_value, Value};
 use std::collections::HashMap;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
+use uuid::Uuid;
 
 use crate::models::chat::{ApiResponse, ResponseMessage, parse_gemini_response};
 use crate::models::tools::Tools;
@@ -38,7 +39,6 @@ pub async fn chat_with_endpoint(
     };
 
     debug!("Request URL: {}\nRequest JSON: {}", url, serde_json::to_string_pretty(&request_body)?);
-    warn!("Request URL: {}\nRequest JSON: {}", url, serde_json::to_string_pretty(&request_body)?);
 
     // Exponential backoff parameters
     let max_retries = 5;
@@ -76,8 +76,6 @@ pub async fn chat_with_endpoint(
         let response = request.json(&request_body).send().await?;
         let status = response.status();
 
-        warn!("response {:#?}", response);
-
         // Handle rate limiting and server errors with retry mechanism
         if (status == 429 || status.as_u16() >= 500) && retries < max_retries {
             let retry_after = if let Some(retry_header) = response.headers().get("retry-after") {
@@ -104,13 +102,21 @@ pub async fn chat_with_endpoint(
             return Err(anyhow!("API error: {} - {}", status, error_text));
         }
 
-        let response_json: Value = response.json().await?;
 
-        warn!("response_json {:#?}", response_json);
 
-        let api_response: ApiResponse = serde_json::from_value(response_json)?;
+        let mut response_json: Value = response.json().await?;
 
-        warn!("response_json {:#?}", api_response);
+        // For Gemini responses, add a missing ID field if needed
+        let processed_json =  if !response_json.get("id").is_some() {
+            // Create a modified copy with an ID
+            let mut modified = response_json.clone();
+            modified["id"] = Value::String(Uuid::new_v4().to_string());
+            modified
+        } else {
+            response_json
+        };
+
+        let api_response: ApiResponse = serde_json::from_value(processed_json)?;
 
         debug!("=== API RESPONSE ===");
         if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
@@ -265,7 +271,5 @@ pub async fn chat_with_api(
     let model_config = effective_config.models.get(&selected_model)
         .ok_or_else(|| anyhow!("Unsupported model: {}", selected_model))?;
 
-    let response = chat_with_endpoint(client, api_key_option, model_config, messages).await;
-    warn!("Response: {:#?}", response);
-    response
+    chat_with_endpoint(client, api_key_option, model_config, messages).await
 }
