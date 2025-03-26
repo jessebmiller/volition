@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use colored::*;
 use reqwest::Client;
 use serde_json::{json, to_value, Value};
 use std::collections::HashMap;

@@ -21,7 +21,6 @@ use tracing_subscriber::FmtSubscriber;
 const SYSTEM_PROMPT: &str = r#"
 You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
 Your goal is to help developers understand, modify, and improve products through expert analysis, precise code edits, and feature implementation.
-Your goal for any edit is to do a full and complete job. You have met your goal when the changes are done and the code is shippable.
 
 You have access to powerful tools:
 1. shell - Execute shell commands
@@ -38,7 +37,7 @@ When a user asks you to help with a codebase:
 4. Execute the plan using your tools
 5. Provide clear explanations about what you're doing
 6. Ask for user confirmation via user_input before making significant changes
-7. Always look for the answer to any questions you may have using your tools before asking the user
+7. Always try to answer questions yourslef before asking the user
 
 Best practices to follow:
 - Use search_code to find relevant code sections
@@ -61,10 +60,9 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
         .build()?;
 
     // Print welcome message
-    println!("\n{}", "\x1b[1;36m");
-    println!("\n{}", "🤖 Volition - AI Software Engineering Assistant".cyan().bold());
+    println!("\n{}", "Volition - AI Software Engineering Assistant".cyan().bold());
     println!("{}", "Ready to help you understand and improve your codebase.".cyan());
-    println!("{}", "Type 'exit' or press Enter on an empty line to quit at any time.".cyan());
+    println!("{}", "Type 'exit' or press Enter on an empty line to quit".cyan());
     println!("");
 
     let mut messages: Vec<ResponseMessage> = vec![
