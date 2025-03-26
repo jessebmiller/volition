@@ -20,8 +20,10 @@ pub struct OpenAIConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
     pub model_name: String,
-    pub service: String, // New field added
+    pub service: String, // e.g., "openai", "ollama", etc.
     pub parameters: toml::Value,
+    #[serde(default)]
+    pub endpoint_override: Option<String>,
 }
 
 pub fn get_config_path() -> Result<PathBuf> {
