@@ -2,7 +2,6 @@ mod api;
 mod config;
 mod models;
 mod tools;
-mod utils;
 
 use anyhow::{anyhow, Result};
 use colored::*;
@@ -14,10 +13,10 @@ use crate::config::load_config;
 use crate::models::chat::ResponseMessage;
 use crate::models::cli::{Commands, Cli};
 use crate::tools::handle_tool_calls;
-use crate::utils::DebugLevel;
-use crate::utils::debug_log;
 
 use clap::Parser;
+use tracing::{Level};
+use tracing_subscriber::FmtSubscriber;
 
 const SYSTEM_PROMPT: &str = r#"
 You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
@@ -56,7 +55,7 @@ Best practices to follow:
 Provide concise explanations of your reasoning and detailed comments for any code you modify or create.
 "#;
 
-async fn handle_conversation(config: &config::Config, query: &str, debug_level: DebugLevel) -> Result<()> {
+async fn handle_conversation(config: &config::Config, query: &str) -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()?;
@@ -86,33 +85,9 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
     let mut conversation_active = true;
 
     while conversation_active {
-        if debug_level >= DebugLevel::Verbose {
-            debug_log(debug_level, DebugLevel::Verbose, "\n=== CURRENT MESSAGE HISTORY ===");
+        tracing::debug!("Current message history: {:?}", messages);
 
-            for (i, msg) in messages.iter().enumerate() {
-                let content_preview = match &msg.content {
-                    Some(content) => {
-                        if content.len() > 50 {
-                            format!("{}...", &content[..50])
-                        } else {
-                            content.clone()
-                        }
-                    },
-                    None => "[None]".to_string()
-                };
-
-                debug_log(
-                    debug_level,
-                    DebugLevel::Verbose,
-                    &format!(
-                        "[{}] role: {}, tool_call_id: {:?}, content: {}",
-                        i, msg.role, msg.tool_call_id, content_preview
-                    )
-                );
-            }
-        }
-
-        let response = chat_with_api(&client, config, messages.clone(), debug_level, None).await?;
+        let response = chat_with_api(&client, config, messages.clone(), None).await?;
 
         let message = &response.choices[0].message;
 
@@ -123,7 +98,7 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
             }
         }
 
-        // Store the original response message exactly as received
+        // Store the original response message as received
         messages.push(ResponseMessage {
             role: "assistant".to_string(),
             content: message.content.clone(),
@@ -133,21 +108,9 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
 
         // Process tool calls if any
         if let Some(tool_calls) = &message.tool_calls {
-            if debug_level >= DebugLevel::Minimal {
-                debug_log(
-                    debug_level,
-                    DebugLevel::Minimal,
-                    &format!("Processing {} tool calls", tool_calls.len())
-                );
-            }
+            tracing::info!("Processing {} tool calls", tool_calls.len());
 
-            handle_tool_calls(
-                &client,
-                &config.openai.api_key,
-                tool_calls.to_vec(),
-                &mut messages,
-                debug_level
-            ).await?;
+            handle_tool_calls(&client, &config.openai.api_key, tool_calls.to_vec(), &mut messages).await?;
         } else {
             // No tool calls - get follow-up input from user
             println!("\n{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
@@ -181,34 +144,28 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Determine debug level from command line flags
-    let debug_level = if cli.verbose {
-        DebugLevel::Verbose
+    let level = if cli.verbose {
+        Level::DEBUG
     } else if cli.debug {
-        DebugLevel::Minimal
+        Level::INFO
     } else {
-        DebugLevel::None
+        Level::WARN
     };
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(level)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("setting default subscriber failed");
 
     match &cli.command {
         Some(Commands::Configure) => println!("Configure command is not implemented."),
-        Some(Commands::Run { args, verbose, debug }) => {
-            // Override debug level from subcommand flags if specified
-            let debug_level = if *verbose {
-                DebugLevel::Verbose
-            } else if *debug {
-                DebugLevel::Minimal
-            } else {
-                debug_level
-            };
-
+        Some(Commands::Run { args, verbose: _, debug: _ }) => {
             let query = args.join(" ");
             if query.is_empty() {
                 return Err(anyhow!("Please provide a command to run"));
             }
-
             let config = load_config()?;
-            handle_conversation(&config, &query, debug_level).await?;
+            handle_conversation(&config, &query).await?;
         }
         None => {
             if cli.rest.is_empty() {
@@ -222,10 +179,9 @@ async fn main() -> Result<()> {
                 println!("  volition --help       - Show more information");
                 return Ok(());
             }
-
             let query = cli.rest.join(" ");
             let config = load_config()?;
-            handle_conversation(&config, &query, debug_level).await?;
+            handle_conversation(&config, &query).await?;
         }
     }
 

@@ -4,11 +4,10 @@ use reqwest::Client;
 use serde_json::{json, to_value, Value};
 use std::collections::HashMap;
 use tokio::time::Duration;
+use tracing::{debug, info, warn};
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
 use crate::models::tools::Tools;
-use crate::utils::DebugLevel;
-use crate::utils::debug_log;
 use crate::config::{Config, ModelConfig};
 
 
@@ -19,7 +18,6 @@ pub async fn chat_with_endpoint(
     api_key: Option<&str>,
     model_config: &ModelConfig,
     messages: Vec<ResponseMessage>,
-    debug_level: DebugLevel,
 ) -> Result<ApiResponse> {
     // Determine the URL: use endpoint_override if set, otherwise use defaults per service.
     let url = if let Some(endpoint) = &model_config.endpoint_override {
@@ -36,7 +34,7 @@ pub async fn chat_with_endpoint(
     // For OpenAI, include the model, messages, tools, and any additional parameters.
     // For other services (e.g., Ollama), a simpler request body might suffice.
     let mut request_body: Value = if model_config.service == "openai" {
-        let base = json!({
+        json!({
             "model": model_config.model_name,
             "messages": messages,
             "tools": [
@@ -47,8 +45,7 @@ pub async fn chat_with_endpoint(
                 Tools::find_definition_definition(),
                 Tools::user_input_definition()
             ]
-        });
-        base
+        })
     } else {
         // For other services, we currently just forward the messages. Additional customization can be added here.
         json!({
@@ -66,13 +63,7 @@ pub async fn chat_with_endpoint(
         }
     }
 
-    if debug_level >= DebugLevel::Verbose {
-        debug_log(
-            debug_level,
-            DebugLevel::Verbose,
-            &format!("Request URL: {}\nRequest JSON: {}", url, serde_json::to_string_pretty(&request_body)?),
-        );
-    }
+    debug!("Request URL: {}\nRequest JSON: {}", url, serde_json::to_string_pretty(&request_body)?);
 
     // Exponential backoff parameters
     let max_retries = 5;
@@ -112,16 +103,8 @@ pub async fn chat_with_endpoint(
 
             let wait_time = retry_after.unwrap_or(delay);
             retries += 1;
-            debug_log(
-                debug_level,
-                DebugLevel::Minimal,
-                &format!(
-                    "API request failed with status {}. Retrying in {} seconds (attempt {}/{})",
-                    status, wait_time.as_secs(), retries, max_retries
-                ),
-            );
-            println!("{} Retrying in {} seconds (attempt {}/{})",
-                     "Rate limited by API.".yellow().bold(), wait_time.as_secs(), retries, max_retries);
+            info!("API request failed with status {}. Retrying in {} seconds (attempt {}/{})", status, wait_time.as_secs(), retries, max_retries);
+            warn!("Rate limited by API. Retrying in {} seconds (attempt {}/{})", wait_time.as_secs(), retries, max_retries);
             tokio::time::sleep(wait_time).await;
             delay = std::cmp::min(Duration::from_secs((delay.as_secs() as f64 * backoff_factor) as u64), max_delay);
             continue;
@@ -134,27 +117,14 @@ pub async fn chat_with_endpoint(
 
         let api_response: ApiResponse = response.json().await?;
 
-        if debug_level >= DebugLevel::Minimal {
-            debug_log(debug_level, DebugLevel::Minimal, "=== API RESPONSE ===");
-            if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
-                if debug_level >= DebugLevel::Verbose {
-                    debug_log(
-                        debug_level,
-                        DebugLevel::Verbose,
-                        &format!("Tool calls: {}", serde_json::to_string_pretty(tool_calls)?),
-                    );
-                } else {
-                    debug_log(
-                        debug_level,
-                        DebugLevel::Minimal,
-                        &format!("Tool calls: {} found", tool_calls.len()),
-                    );
-                }
-            } else {
-                debug_log(debug_level, DebugLevel::Minimal, "No tool calls");
-            }
-            debug_log(debug_level, DebugLevel::Minimal, "=====================");
+        debug!("=== API RESPONSE ===");
+        if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
+            // Log tool calls at debug level with detailed information
+            debug!("Tool calls: {:#?}", tool_calls);
+        } else {
+            debug!("No tool calls");
         }
+        debug!("=====================");
 
         return Ok(api_response);
     }
@@ -165,7 +135,6 @@ pub async fn chat_with_api(
     client: &Client,
     config: &Config,
     messages: Vec<ResponseMessage>,
-    debug_level: DebugLevel,
     overrides: Option<HashMap<String, String>>,
 ) -> Result<ApiResponse> {
     // Create a clone of the config to modify
@@ -177,7 +146,7 @@ pub async fn chat_with_api(
             match key.as_str() {
                 "openai_api_key" => effective_config.openai.api_key = value,
                 "selected_model" => effective_config.openai.selected_model = value,
-                _ => debug_log(debug_level, DebugLevel::Minimal, &format!("Unknown config override: {}", key)),
+                _ => debug!("Unknown config override: {}", key),
             }
         }
     }
@@ -193,5 +162,5 @@ pub async fn chat_with_api(
         None
     };
 
-    chat_with_endpoint(client, api_key_option, model_config, messages, debug_level).await
+    chat_with_endpoint(client, api_key_option, model_config, messages).await
 }
