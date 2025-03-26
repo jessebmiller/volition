@@ -36,10 +36,10 @@ pub async fn chat_with_api(
     let model_config = effective_config.models.get(&effective_config.openai.selected_model)
         .ok_or_else(|| anyhow!("Unsupported model: {}", effective_config.openai.selected_model))?;
 
-    match model_config.service.as_str() {
+    match model_config.model_name.as_str() {
         "openai" => chat_with_openai(client, &effective_config.openai.api_key, model_config, messages, debug_level).await,
-        "ollama" => chat_with_ollama(client, &model_config.service, messages, debug_level).await,
-        _ => Err(anyhow!("Unsupported service: {}", model_config.service)),
+        "ollama" => chat_with_ollama(client, &model_config.model_name, messages, debug_level).await,
+        _ => Err(anyhow!("Unsupported service: {}", model_config.model_name)),
     }
 }
 
@@ -71,7 +71,7 @@ pub async fn chat_with_openai(
     let url = "https://api.openai.com/v1/chat/completions";
 
     let mut request_body = json!({
-        "model": model_config.service,
+        "model": model_config.model_name,
         "messages": messages,
         "tools": [
             Tools::shell_definition(),
