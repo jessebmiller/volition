@@ -20,10 +20,11 @@ use tracing_subscriber::FmtSubscriber;
 
 const SYSTEM_PROMPT: &str = r#"
 You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
+
 Your goal is to help developers understand, modify, and improve products through expert analysis, precise code edits, and feature implementation.
 
 You have access to powerful tools:
-1. shell - Execute shell commands
+1. shell - Execute shell commands (be careful to avoid too much output)
 2. read_file - Read file contents
 3. write_file - Write/edit files
 4. search_code - Search for patterns in code
@@ -40,6 +41,7 @@ When a user asks you to help with a codebase:
 7. Always try to answer questions yourslef before asking the user
 
 Best practices to follow:
+- Becareful with shell to limit the amount of output so it's not overwhelming
 - Use search_code to find relevant code sections
 - Use find_definition to locate where symbols are defined
 - Always read files before suggesting edits
@@ -156,7 +158,6 @@ async fn main() -> Result<()> {
         .expect("setting default subscriber failed");
 
     match &cli.command {
-        Some(Commands::Configure) => println!("Configure command is not implemented."),
         Some(Commands::Run { args, verbose: _, debug: _ }) => {
             let query = args.join(" ");
             if query.is_empty() {
@@ -173,7 +174,6 @@ async fn main() -> Result<()> {
                 println!("  volition \"Analyze the src directory and list the main components\"");
                 println!("  volition \"Find all usages of the login function and refactor it to use async/await\"");
                 println!("  volition \"Help me understand how the routing system works in this codebase\"");
-                println!("  volition configure    - Set up your API key");
                 println!("  volition --help       - Show more information");
                 return Ok(());
             }

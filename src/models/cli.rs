@@ -21,8 +21,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Configure the API key
-    Configure,
     /// Run a command without using an interactive session
     Run {
         /// Enable verbose debug logging

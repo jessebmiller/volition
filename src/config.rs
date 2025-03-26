@@ -8,11 +8,18 @@ use toml;
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub openai: OpenAIConfig,
+    pub gemini: GeminiConfig,
     pub models: HashMap<String, ModelConfig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct OpenAIConfig {
+    pub api_key: String,
+    pub selected_model: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct GeminiConfig {
     pub api_key: String,
     pub selected_model: String,
 }
@@ -35,7 +42,7 @@ pub fn load_config() -> Result<Config> {
     let config_path = get_config_path()?;
 
     if !config_path.exists() {
-        return Err(anyhow!("Configuration not found. Run 'volition configure' first."));
+        return Err(anyhow!("Configuration not found. Please set up your configuration."));
     }
 
     let config_str = fs::read_to_string(&config_path)

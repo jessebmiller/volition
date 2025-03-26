@@ -2,7 +2,7 @@
 name = "volition"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Jesse B. Miller <jesse@jessebmiller.com>"]
 description = "An AI-powered software engineering assistant"
 
 [dependencies]
@@ -17,3 +17,4 @@ tokio = { version = "1.29", features = ["full"] }
 toml = "0.5"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+uuid = { version = "1.0", features = ["v4"] }

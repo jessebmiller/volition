@@ -2,7 +2,7 @@ use std::process::{Command, Stdio};
 use anyhow::{Result, Context};
 use colored::*;
 use crate::models::tools::ShellArgs;
-use tracing::{info, debug};
+use tracing::{debug};
 
 pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
     let command = &args.command;

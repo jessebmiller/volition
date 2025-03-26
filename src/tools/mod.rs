@@ -8,7 +8,7 @@ use reqwest::Client;
 use crate::models::chat::ResponseMessage;
 use crate::models::tools::ToolCall;
 use serde_json::from_str;
-use tracing::{info, debug};
+use tracing::{info};
 
 pub async fn handle_tool_calls(
     _client: &Client,

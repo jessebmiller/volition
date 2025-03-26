@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
 
-use crate::models::chat::{ApiResponse, ResponseMessage};
+use crate::models::chat::{ApiResponse, ResponseMessage, parse_gemini_response};
 use crate::models::tools::Tools;
 use crate::config::{Config, ModelConfig};
 
@@ -24,43 +24,18 @@ pub async fn chat_with_endpoint(
     } else {
         match model_config.service.as_str() {
             "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
+            "gemini" => "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent".to_string(),
             "ollama" => "http://localhost:11434/v1/chat/completions".to_string(),
             other => return Err(anyhow!("Unsupported service: {}", other)),
         }
     };
 
     // Build the request body based on the service type.
-    // For OpenAI, include the model, messages, tools, and any additional parameters.
-    // For other services (e.g., Ollama), a simpler request body might suffice.
-    let mut request_body: Value = if model_config.service == "openai" {
-        json!({
-            "model": model_config.model_name,
-            "messages": messages,
-            "tools": [
-                Tools::shell_definition(),
-                Tools::read_file_definition(),
-                Tools::write_file_definition(),
-                Tools::search_code_definition(),
-                Tools::find_definition_definition(),
-                Tools::user_input_definition()
-            ]
-        })
-    } else {
-        // For other services, we currently just forward the messages. Additional customization can be added here.
-        json!({
-            "messages": messages
-        })
+    let request_body = match model_config.service.as_str() {
+        "openai" => build_openai_request(&model_config.model_name, messages, model_config)?,
+        "gemini" => build_gemini_request(messages, model_config)?,
+        _ => return Err(anyhow!("Unsupported service: {}", model_config.service)),
     };
-
-    // Merge additional parameters if present (only applicable for OpenAI-like endpoints where extra parameters are allowed)
-    if model_config.service == "openai" {
-        if let Some(parameters) = model_config.parameters.as_table() {
-            for (key, value) in parameters {
-                let json_value = to_value(value.clone())?;
-                request_body[key] = json_value;
-            }
-        }
-    }
 
     debug!("Request URL: {}\nRequest JSON: {}", url, serde_json::to_string_pretty(&request_body)?);
 
@@ -76,13 +51,25 @@ pub async fn chat_with_endpoint(
     loop {
         let mut request = client.post(&url).header("Content-Type", "application/json");
 
-        // Add Authorization header if service is OpenAI and an API key is provided
-        if model_config.service == "openai" {
-            if let Some(key) = api_key {
-                request = request.header("Authorization", format!("Bearer {}", key));
-            } else {
-                return Err(anyhow!("API key required for OpenAI service"));
-            }
+        // Add service-specific headers and authentication
+        match model_config.service.as_str() {
+            "openai" => {
+                if let Some(key) = api_key {
+                    request = request.header("Authorization", format!("Bearer {}", key));
+                } else {
+                    return Err(anyhow!("API key required for OpenAI service"));
+                }
+            },
+            "gemini" => {
+                // For Gemini, use API key in URL query parameter
+                if let Some(key) = api_key {
+                    let url_with_key = format!("{}?key={}", url, key);
+                    request = client.post(&url_with_key).header("Content-Type", "application/json");
+                } else {
+                    return Err(anyhow!("API key required for Gemini service"));
+                }
+            },
+            _ => {}
         }
 
         let response = request.json(&request_body).send().await?;
@@ -114,7 +101,12 @@ pub async fn chat_with_endpoint(
             return Err(anyhow!("API error: {} - {}", status, error_text));
         }
 
-        let api_response: ApiResponse = response.json().await?;
+        let response_json: Value = response.json().await?;
+
+        let api_response = match model_config.service.as_str() {
+            "gemini" => parse_gemini_response(response_json)?,
+            _ => serde_json::from_value(response_json)?,
+        };
 
         debug!("=== API RESPONSE ===");
         if let Some(tool_calls) = &api_response.choices[0].message.tool_calls {
@@ -127,6 +119,105 @@ pub async fn chat_with_endpoint(
 
         return Ok(api_response);
     }
+}
+
+fn build_openai_request(
+    model_name: &str,
+    messages: Vec<ResponseMessage>,
+    model_config: &ModelConfig,
+) -> Result<Value> {
+    let mut request = json!({
+        "model": model_name,
+        "messages": messages,
+        "tools": [
+            Tools::shell_definition("openai"),
+            Tools::read_file_definition(),
+            Tools::write_file_definition(),
+            Tools::search_code_definition(),
+            Tools::find_definition_definition(),
+            Tools::user_input_definition()
+        ]
+    });
+
+    // Add parameters
+    if let Some(parameters) = model_config.parameters.as_table() {
+        for (key, value) in parameters {
+            let json_value = to_value(value.clone())?;
+            request[key] = json_value;
+        }
+    }
+
+    Ok(request)
+}
+
+fn build_gemini_request(
+    messages: Vec<ResponseMessage>,
+    model_config: &ModelConfig,
+) -> Result<Value> {
+    // Convert messages format to Gemini's expected format
+    let contents = convert_messages_to_gemini_contents(messages)?;
+
+    let mut request = json!({
+        "model": model_config.model_name,  // Use the selected model
+        "contents": contents,
+        "tools": [{
+            "functionDeclarations": [
+                Tools::shell_definition("gemini"),
+                Tools::read_file_definition(),
+                Tools::write_file_definition(),
+                Tools::search_code_definition(),
+                Tools::find_definition_definition(),
+                Tools::user_input_definition()
+            ]
+        }]
+    });
+
+    // Add parameters
+    if let Some(parameters) = model_config.parameters.as_table() {
+        for (key, value) in parameters {
+            let json_value = to_value(value.clone())?;
+            request[key] = json_value;
+        }
+    }
+
+    Ok(request)
+}
+
+fn convert_messages_to_gemini_contents(messages: Vec<ResponseMessage>) -> Result<Value> {
+    let mut contents = Vec::new();
+
+    for message in messages {
+        let role = match message.role.as_str() {
+            "system" => "user", // Gemini uses user role for system prompts
+            "user" => "user",
+            "assistant" => "model",
+            "tool" => "function", // For tool responses
+            _ => "user",
+        };
+
+        let content = match (message.content.as_deref(), message.tool_call_id) {
+            (Some(text), None) => {
+                // Regular message
+                json!({
+                    "role": role,
+                    "parts": [{"text": text}]
+                })
+            },
+            (Some(text), Some(tool_id)) => {
+                // Function response
+                json!({
+                    "role": "function",
+                    "name": tool_id,
+                    "parts": [{"text": text}]
+                })
+            },
+            _ => continue, // Skip empty messages
+        };
+
+        contents.push(content);
+    }
+
+    Ok(json!(contents))
 }
 
 /// This function selects the appropriate service based on configuration and delegates the API call to the unified chat_with_endpoint function.
@@ -150,15 +241,22 @@ pub async fn chat_with_api(
         }
     }
 
-    // Select the model configuration based on the selected model
-    let model_config = effective_config.models.get(&effective_config.openai.selected_model)
-        .ok_or_else(|| anyhow!("Unsupported model: {}", effective_config.openai.selected_model))?;
+    // Determine the active service and select the model configuration
+    let active_service = &config.models[&config.openai.selected_model].service;
+    let selected_model = match active_service.as_str() {
+        "openai" => &effective_config.openai.selected_model,
+        "gemini" => &effective_config.gemini.selected_model,
+        _ => return Err(anyhow!("Unsupported active service: {:?}", active_service)),
+    };
+
+    let model_config = effective_config.models.get(selected_model)
+        .ok_or_else(|| anyhow!("Unsupported model: {}", selected_model))?;
 
     // Determine the API key to use if required
-    let api_key_option = if model_config.service == "openai" {
-        Some(effective_config.openai.api_key.as_str())
-    } else {
-        None
+    let api_key_option = match model_config.service.as_str() {
+        "openai" => Some(effective_config.openai.api_key.as_str()),
+        "gemini" => Some(effective_config.gemini.api_key.as_str()),
+        _ => None,
     };
 
     chat_with_endpoint(client, api_key_option, model_config, messages).await
