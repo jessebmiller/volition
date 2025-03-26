@@ -19,43 +19,7 @@ use clap::Parser;
 use tracing::{Level};
 use tracing_subscriber::FmtSubscriber;
 
-const SYSTEM_PROMPT: &str = r#"
-You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
-
-Your goal is to help developers understand, modify, and improve products through expert analysis, precise code edits, and feature implementation.
-
-You have access to powerful tools:
-1. shell - Execute shell commands (be careful to avoid too much output)
-2. read_file - Read file contents
-3. write_file - Write/edit files
-4. search_code - Search for patterns in code
-5. find_definition - Locate symbol definitions
-6. user_input - Ask users for decisions
-
-When a user asks you to help with a codebase:
-1. Gather information about the codebase structure and key files
-2. Analyze code for patterns, architecture, and potential issues
-3. Make a plan for implementing requested changes
-4. Execute the plan using your tools
-5. Provide clear explanations about what you're doing
-6. Ask for user confirmation via user_input before making significant changes
-7. Always try to answer questions yourslef before asking the user
-
-Best practices to follow:
-- Becareful with shell to limit the amount of output so it's not overwhelming
-- Use search_code to find relevant code sections
-- Use find_definition to locate where symbols are defined
-- Always read files before suggesting edits
-- Create git commits we can roll back to before modifying important files
-- Verify changes with targeted tests when possible
-- Explain complex code sections in simple accurate terms
-- Specifically ask for user confirmation before:
-  * Making structural changes to the codebase
-  * Modifying core functionality
-  * Introducing new dependencies
-
-Provide concise explanations of your reasoning and detailed comments for any code you modify or create.
-"#;
+// Removed SYSTEM_PROMPT constant, assuming it's loaded differently or not needed here
 
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
 
@@ -134,7 +98,17 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
 
         let response = chat_with_api(&client, config, messages.clone(), None).await?;
 
-        let message = &response.choices[0].message;
+        // Check if response has choices before accessing
+        let message = match response.choices.get(0) {
+            Some(choice) => &choice.message,
+            None => {
+                 tracing::error!("API response did not contain any choices.");
+                 println!("{}", "Error: Received an empty response from the AI service.".red());
+                 // Decide how to handle this - maybe retry or exit?
+                 // For now, let's break the loop
+                 break;
+            }
+        };
 
         // Print content if there is any
         if let Some(content) = &message.content {
@@ -156,7 +130,8 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
         if let Some(tool_calls) = &message.tool_calls {
             tracing::info!("Processing {} tool calls", tool_calls.len());
 
-            handle_tool_calls(&client, &config.openai.api_key, tool_calls.to_vec(), &mut messages).await?;
+            // Updated to use config.api_key from the environment variable
+            handle_tool_calls(&client, &config.api_key, tool_calls.to_vec(), &mut messages).await?;
         } else {
             // No tool calls - get follow-up input from user
             println!("
@@ -216,6 +191,45 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
 }
 
 // Helper function to create the initial messages vector
+// TODO: Consider loading the system prompt from a file or configuration
+const SYSTEM_PROMPT: &str = r#"
+You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
+
+Your goal is to help developers understand, modify, and improve products through expert analysis, precise code edits, and feature implementation.
+
+You have access to powerful tools:
+1. shell - Execute shell commands (be careful to avoid too much output)
+2. read_file - Read file contents
+3. write_file - Write/edit files
+4. search_code - Search for patterns in code
+5. find_definition - Locate symbol definitions
+6. user_input - Ask users for decisions
+
+When a user asks you to help with a codebase:
+1. Gather information about the codebase structure and key files
+2. Analyze code for patterns, architecture, and potential issues
+3. Make a plan for implementing requested changes
+4. Execute the plan using your tools
+5. Provide clear explanations about what you're doing
+6. Ask for user confirmation via user_input before making significant changes
+7. Always try to answer questions yourslef before asking the user
+
+Best practices to follow:
+- Becareful with shell to limit the amount of output so it's not overwhelming
+- Use search_code to find relevant code sections
+- Use find_definition to locate where symbols are defined
+- Always read files before suggesting edits
+- Create git commits we can roll back to before modifying important files
+- Verify changes with targeted tests when possible
+- Explain complex code sections in simple accurate terms
+- Specifically ask for user confirmation before:
+  * Making structural changes to the codebase
+  * Modifying core functionality
+  * Introducing new dependencies
+
+Provide concise explanations of your reasoning and detailed comments for any code you modify or create.
+"#;
+
 fn default_messages(query: &str) -> Vec<ResponseMessage> {
     vec![
         ResponseMessage {
@@ -235,8 +249,13 @@ fn default_messages(query: &str) -> Vec<ResponseMessage> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env file if present (ignores error if not found)
+    // This should be one of the first things to run.
+    dotenvy::dotenv().ok(); 
+
     let cli = Cli::parse();
 
+    // Setup tracing subscriber based on verbosity flags
     let level = if cli.verbose {
         Level::DEBUG
     } else if cli.debug {
@@ -250,17 +269,21 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
 
+    // Main command matching and execution logic
     match &cli.command {
         Some(Commands::Run { args, verbose: _, debug: _ }) => {
             let query = args.join(" ");
             if query.is_empty() {
                 return Err(anyhow!("Please provide a command to run"));
             }
+            // Load configuration - this will now benefit from .env variables
             let config = load_config()?;
             handle_conversation(&config, &query).await?;
         }
         None => {
+            // Handle cases where no command is provided or implicit command
             if cli.rest.is_empty() {
+                // Print usage instructions if no arguments are given
                 println!("Welcome to Volition - AI Software Engineering Assistant");
                 println!("Usage: volition <command> [arguments]");
                 println!("Examples:");
@@ -270,6 +293,7 @@ async fn main() -> Result<()> {
                 println!("  volition --help       - Show more information");
                 return Ok(());
             }
+            // Treat positional arguments after the executable name as the query
             let query = cli.rest.join(" ");
             let config = load_config()?;
             handle_conversation(&config, &query).await?;
