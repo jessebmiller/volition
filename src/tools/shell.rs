@@ -33,6 +33,7 @@ pub async fn run_shell_command(args: ShellArgs, debug_level: DebugLevel) -> Resu
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let status = output.status.code().unwrap_or(-1);
 
     if debug_level >= DebugLevel::Minimal {
         // Get first few lines of output for preview
@@ -47,8 +48,10 @@ pub async fn run_shell_command(args: ShellArgs, debug_level: DebugLevel) -> Resu
             debug_level,
             DebugLevel::Minimal,
             &format!(
-                "Command exit status: {}\nOutput preview:\n{}{}",
-                output.status,
+                "Command exit status: {}
+Output preview:
+{}{}",
+                status,
                 if stdout_preview.is_empty() { "<no output>" } else { &stdout_preview },
                 stderr_preview
             )
@@ -69,16 +72,13 @@ pub async fn run_shell_command(args: ShellArgs, debug_level: DebugLevel) -> Resu
         }
     }
 
-    let result = if output.status.success() {
-        if stdout.is_empty() {
-            // If stdout is empty but command succeeded, return a message
-            "Command executed successfully with no output.".to_string()
-        } else {
-            stdout
-        }
-    } else {
-        format!("Error: {}\nOutput: {}", stderr, stdout)
-    };
+    // Format the result as a single string
+    let result = format!(
+        "Command executed with status: {}\nStdout:\n{}\nStderr:\n{}",
+        status,
+        if stdout.is_empty() { "<no output>" } else { &stdout },
+        if stderr.is_empty() { "<no output>" } else { &stderr }
+    );
 
     Ok(result)
 }

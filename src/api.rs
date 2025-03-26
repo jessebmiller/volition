@@ -4,7 +4,6 @@ use reqwest::Client;
 use serde_json::{json, to_value};
 use std::collections::HashMap;
 use tokio::time::Duration;
-use toml::Value as TomlValue;
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
 use crate::models::tools::Tools;
