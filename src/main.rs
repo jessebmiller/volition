@@ -37,7 +37,7 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
 
     let mut messages: Vec<ResponseMessage>;
 
-    // --- Load State Logic --- 
+    // --- Load State Logic ---
     let recovery_path = Path::new(RECOVERY_FILE_PATH);
     if recovery_path.exists() {
         tracing::info!("Found existing conversation state file: {}", RECOVERY_FILE_PATH);
@@ -138,11 +138,11 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
 {}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
             print!("{} ", ">".green().bold());
             io::stdout().flush()?;
-            
+
             let mut input = String::new();
             io::stdin().read_line(&mut input)?;
             let input = input.trim().to_string();
-            
+
             // Exit if user enters empty string or "exit"
             if input.is_empty() || input.to_lowercase() == "exit" {
                 println!("
@@ -159,7 +159,7 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
             }
         }
 
-        // --- Save State Logic --- 
+        // --- Save State Logic ---
         if conversation_active {
             match serde_json::to_string_pretty(&messages) {
                 Ok(state_json) => {
@@ -177,7 +177,7 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
         // --- End Save State Logic ---
     }
 
-    // --- Cleanup Logic --- 
+    // --- Cleanup Logic ---
     if Path::new(RECOVERY_FILE_PATH).exists() {
         if let Err(e) = fs::remove_file(RECOVERY_FILE_PATH) {
             tracing::warn!("Failed to remove recovery state file on exit: {}", e);
@@ -251,7 +251,7 @@ fn default_messages(query: &str) -> Vec<ResponseMessage> {
 async fn main() -> Result<()> {
     // Load .env file if present (ignores error if not found)
     // This should be one of the first things to run.
-    dotenvy::dotenv().ok(); 
+    dotenvy::dotenv().ok();
 
     let cli = Cli::parse();
 
