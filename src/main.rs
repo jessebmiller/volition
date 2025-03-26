@@ -192,6 +192,7 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
 
 // Helper function to create the initial messages vector
 // TODO: Consider loading the system prompt from a file or configuration
+// Updated SYSTEM_PROMPT to describe search_text instead of search_code
 const SYSTEM_PROMPT: &str = r#"
 You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
 
@@ -201,8 +202,8 @@ You have access to powerful tools:
 1. shell - Execute shell commands (be careful to avoid too much output)
 2. read_file - Read file contents
 3. write_file - Write/edit files
-4. search_code - Search for patterns in code
-5. find_definition - Locate symbol definitions
+4. search_text - Search for text patterns in files, returning matching lines with context. Requires 'ripgrep' (rg) to be installed.
+5. find_definition - Locate symbol definitions in code
 6. user_input - Ask users for decisions
 
 When a user asks you to help with a codebase:
@@ -215,8 +216,8 @@ When a user asks you to help with a codebase:
 7. Always try to answer questions yourslef before asking the user
 
 Best practices to follow:
-- Becareful with shell to limit the amount of output so it's not overwhelming
-- Use search_code to find relevant code sections
+- Be careful with shell to limit the amount of output so it's not overwhelming
+- Use search_text to find relevant code sections or text in files, providing context.
 - Use find_definition to locate where symbols are defined
 - Always read files before suggesting edits
 - Create git commits we can roll back to before modifying important files

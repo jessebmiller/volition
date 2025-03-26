@@ -31,12 +31,14 @@ pub struct WriteFileArgs {
     pub content: String,
 }
 
+// Renamed from SearchCodeArgs to SearchTextArgs and updated fields
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SearchCodeArgs {
+pub struct SearchTextArgs {
     pub pattern: String,
     pub path: Option<String>,
-    pub file_pattern: Option<String>,
+    pub file_glob: Option<String>, // Changed from file_pattern to file_glob
     pub case_sensitive: Option<bool>,
+    pub context_lines: Option<u32>, // Added context_lines
     pub max_results: Option<usize>,
 }
 
@@ -77,9 +79,6 @@ impl Tools {
             }
         })
     }
-
-    // Removed shell_definition_gemini
-    // Removed service-specific wrapper shell_definition(service: &str)
 
     pub fn read_file_definition() -> serde_json::Value {
         json!({
@@ -125,34 +124,39 @@ impl Tools {
         })
     }
 
-    pub fn search_code_definition() -> serde_json::Value {
+    // Updated definition for search_text
+    pub fn search_text_definition() -> serde_json::Value {
         json!({
             "type": "function",
             "function": {
-                "name": "search_code",
-                "description": "Search for patterns in code files",
+                "name": "search_text", // Renamed from search_code
+                "description": "Search for text patterns in files, returning matching lines with context. Requires 'ripgrep' (rg) to be installed.", // Updated description
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "pattern": {
                             "type": "string",
-                            "description": "Pattern to search for (regex supported)"
+                            "description": "Text or regex pattern to search for"
                         },
                         "path": {
                             "type": "string",
-                            "description": "Directory path to search in (defaults to current directory)"
+                            "description": "Directory or file path to search in (defaults to current directory)"
                         },
-                        "file_pattern": {
+                        "file_glob": { // Renamed from file_pattern
                             "type": "string",
-                            "description": "File pattern to include (e.g., '*.rs', '*.{js,ts}')"
+                            "description": "Glob pattern to filter files (e.g., '*.rs', '*.md', defaults to '*') - Use forward slashes ('/') as path separators in globs, even on Windows."
                         },
                         "case_sensitive": {
                             "type": "boolean",
-                            "description": "Whether to perform case-sensitive search (defaults to false)"
+                            "description": "Perform case-sensitive search (defaults to false)"
                         },
-                        "max_results": {
+                        "context_lines": { // Added
                             "type": "integer",
-                            "description": "Maximum number of results to return (defaults to 100)"
+                            "description": "Number of context lines before and after each match (defaults to 1)"
+                        },
+                        "max_results": { // Note: This now applies to lines, not files
+                            "type": "integer",
+                            "description": "Maximum number of matching lines to return (defaults to 50)"
                         }
                     },
                     "required": ["pattern"]
