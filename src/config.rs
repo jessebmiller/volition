@@ -20,6 +20,7 @@ pub struct OpenAIConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
     pub model_name: String,
+    pub service: String, // New field added
     pub parameters: toml::Value,
 }
 
