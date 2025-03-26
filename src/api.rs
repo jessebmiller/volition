@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
 use reqwest::Client;
-use serde_json::{json, to_value, Value};
+use serde_json::{json, to_value, Value, Map};
 use std::collections::HashMap;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
+use uuid::Uuid; // Import Uuid
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
 use crate::models::tools::Tools;
@@ -102,9 +103,21 @@ pub async fn chat_with_endpoint(
             return Err(anyhow!("API error: {} - {}", status, error_text));
         }
 
-        let response_json: Value = response.json().await?;
+        // Deserialize the response into a generic JSON Value first
+        let mut response_json: Value = response.json().await?;
 
-        // Assuming OpenAI-compatible endpoint provides standard response format
+        // Check if the response is an object and if the 'id' field is missing
+        if let Value::Object(map) = &mut response_json {
+            if !map.contains_key("id") {
+                // Generate a new UUID v4 and format it like OpenAI's IDs
+                let new_id = format!("chatcmpl-{}", Uuid::new_v4());
+                // Insert the new ID into the JSON map
+                map.insert("id".to_string(), json!(new_id));
+                debug!("Added missing 'id' field to API response with value: {}", new_id);
+            }
+        }
+
+        // Now deserialize the potentially modified JSON Value into the ApiResponse struct
         let api_response: ApiResponse = serde_json::from_value(response_json)?;
 
         debug!("=== API RESPONSE ===");
@@ -142,9 +155,13 @@ fn build_openai_request(
     if let Some(parameters) = model_config.parameters.as_table() {
         for (key, value) in parameters {
             let json_value = to_value(value.clone())?;
-            request[key] = json_value;
+            // Add the parameter to the root of the request JSON
+            if let Some(obj) = request.as_object_mut() {
+                 obj.insert(key.clone(), json_value);
+            }
         }
     }
+
 
     Ok(request)
 }
