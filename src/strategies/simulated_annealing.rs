@@ -1,7 +1,6 @@
 use rand::Rng;
 use reqwest::Client;
-use crate::api::chat_with_api;
-use log::{debug, info};
+use log::info;
 use crate::config::Config;
 use crate::utils::git;
 use crate::strategies::linear::linear_strategy;
@@ -10,7 +9,6 @@ use crate::models::chat::ResponseMessage;
 use crate::constants::SYSTEM_PROMPT;
 use crate::models::tools::SubmitQualityScoreArgs;
 use crate::models::tools::Tools;
-use serde_json::Value;
 
 /// Simulated Annealing Algorithm
 /// This function performs simulated annealing to find an optimal solution.
@@ -32,20 +30,28 @@ pub async fn simulated_annealing(
     max_iterations: usize,
     initial_temperature: f64,
     cooling_rate: f64,
+    cleanup: bool, // Added parameter to control cleanup
 ) -> Result<String> {
+    let repo_path = "."; // Assuming current directory is the repo path
+
     // Create initial solution commit
     let mut current_solution = git::commit_current_state(
+        repo_path,
         &format!("Initial solution for goal: {}", user_goal),
     ).await?;
 
     let mut best_solution = current_solution.clone();
-    git::tag_solution(&best_solution, "best_solution").await?;
+    git::tag_solution(repo_path, &best_solution, "best_solution").await?;
 
     let mut temperature = initial_temperature;
 
     for iteration in 0..max_iterations {
+        // Create a new branch for this iteration with a meaningful name
+        let branch_name = format!("solution-iteration-{}-{}", iteration, git::create_unique_branch_name());
+        git::create_and_checkout_branch(repo_path, &branch_name).await?;
+
         // Generate and commit a neighboring solution
-        git::checkout_solution(&current_solution).await?;
+        git::checkout_solution(repo_path, &current_solution).await?;
         let neighbor_solution = generate_neighbor(client, config, user_goal, iteration).await?;
 
         // Evaluate both solutions
@@ -64,7 +70,7 @@ pub async fn simulated_annealing(
         // Update the best solution found
         if neighbor_energy < evaluate_solution(client, config, &best_solution, user_goal).await? {
             best_solution = neighbor_solution.clone();
-            git::tag_solution(&best_solution, "best_solution").await?;
+            git::tag_solution(repo_path, &best_solution, "best_solution").await?;
         }
 
         // Decrease the temperature
@@ -72,16 +78,20 @@ pub async fn simulated_annealing(
     }
 
     // Return to the best solution before finishing
-    git::checkout_solution(&best_solution).await?;
+    git::checkout_solution(repo_path, &best_solution).await?;
 
-    // Cleanup temporary branches and tags
-    git::cleanup().await?;
+    // Optional cleanup of temporary branches and tags
+    if cleanup {
+        git::cleanup(repo_path).await?;
+    }
 
     Ok(best_solution)
 }
 
 /// Generate a neighboring solution using the linear strategy
 async fn generate_neighbor(client: &Client, config: &Config, user_goal: &str, iteration: usize) -> Result<String> {
+    let repo_path = "."; // Assuming current directory is the repo path
+
     // Use the linear strategy for generating neighbors
     let system_prompt = SYSTEM_PROMPT;
     let messages = vec![
@@ -99,7 +109,7 @@ async fn generate_neighbor(client: &Client, config: &Config, user_goal: &str, it
         }
     ];
 
-    let response_messages = linear_strategy(
+    let _response_messages = linear_strategy( // Suppressed unused variable warning
         client,
         config,
         vec![
@@ -115,7 +125,7 @@ async fn generate_neighbor(client: &Client, config: &Config, user_goal: &str, it
     ).await?;
 
     let commit_message = format!("Neighbor solution for goal: {}, iteration: {}", user_goal, iteration);
-    let commit_hash = git::commit_current_state(&commit_message).await?;
+    let commit_hash = git::commit_current_state(repo_path, &commit_message).await?;
     Ok(commit_hash)
 }
 
@@ -126,8 +136,10 @@ async fn evaluate_solution(
     solution: &str,
     user_goal: &str,
 ) -> Result<f64> {
+    let repo_path = "."; // Assuming current directory is the repo path
+
     // Checkout the solution to evaluate
-    git::checkout_solution(solution).await?;
+    git::checkout_solution(repo_path, solution).await?;
 
     // System prompt for evaluation
     let system_prompt = "You are an AI model integrated into a simulated annealing algorithm, tasked with evaluating software solutions. Your responsibilities include:

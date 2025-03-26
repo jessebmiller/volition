@@ -17,15 +17,15 @@ pub async fn handle_tool_calls(
     tool_calls: Vec<ToolCall>,
     messages: &mut Vec<ResponseMessage>,
 ) -> Result<()> {
-    for (i, tool_call) in tool_calls.iter().enumerate() {
+    for (_i, tool_call) in tool_calls.iter().enumerate() {
         match tool_call.function.name.as_str() {
             "shell" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = shell::run_shell_command(args).await?;
+                let _output = shell::run_shell_command(args).await?;
 
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
-                    content: Some(output),
+                    content: Some(_output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
@@ -34,11 +34,11 @@ pub async fn handle_tool_calls(
             },
             "read_file" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = file::read_file(args).await?;
+                let _output = file::read_file(args).await?;
 
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
-                    content: Some(output),
+                    content: Some(_output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
@@ -47,11 +47,11 @@ pub async fn handle_tool_calls(
             },
             "write_file" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = file::write_file(args).await?;
+                let _output = file::write_file(args).await?;
 
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
-                    content: Some(output),
+                    content: Some(_output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
@@ -60,11 +60,11 @@ pub async fn handle_tool_calls(
             },
             "search_code" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = code_search::search_code(args).await?;
+                let _output = code_search::search_code(args).await?;
 
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
-                    content: Some(output),
+                    content: Some(_output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
@@ -73,11 +73,11 @@ pub async fn handle_tool_calls(
             },
             "find_definition" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = code_search::find_definition(args).await?;
+                let _output = code_search::find_definition(args).await?;
 
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
-                    content: Some(output),
+                    content: Some(_output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
@@ -86,11 +86,11 @@ pub async fn handle_tool_calls(
             },
             "user_input" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = user_input::get_user_input(args)?;
+                let _output = user_input::get_user_input(args)?;
 
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),
-                    content: Some(output),
+                    content: Some(_output),
                     tool_calls: None,
                     tool_call_id: Some(tool_call.id.clone()),
                 };
@@ -99,7 +99,7 @@ pub async fn handle_tool_calls(
             },
             "submit_quality_score" => {
                 let args = from_str(&tool_call.function.arguments)?;
-                let output = submit_quality_score::submit_quality_score(args).await?;
+                let _output = submit_quality_score::submit_quality_score(args).await?;
 
                 let tool_message = ResponseMessage {
                     role: "tool".to_string(),

@@ -53,5 +53,9 @@ pub enum Commands {
         /// User prompt for the simulated annealing
         #[arg(trailing_var_arg = true)]
         prompt: Vec<String>,
+
+        /// Cleanup temporary branches and tags after optimization
+        #[arg(long)]
+        cleanup: bool,
     },
 }

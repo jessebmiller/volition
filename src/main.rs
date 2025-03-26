@@ -104,7 +104,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     match &cli.command {
         Some(Commands::Configure) => configure()?,
-        Some(Commands::Run { args, verbose, debug }) => {
+        Some(Commands::Run { args, .. }) => {
             let query = args.join(" ");
             if query.is_empty() {
                 return Err(anyhow!("Please provide a command to run"));
@@ -113,7 +113,7 @@ async fn main() -> Result<(), anyhow::Error> {
             let config = load_config()?;
             handle_conversation(&config, &query).await?;
         }
-        Some(Commands::SimulatedAnnealing { iterations, initial_temperature, cooling_rate, prompt }) => {
+        Some(Commands::SimulatedAnnealing { iterations, initial_temperature, cooling_rate, prompt, cleanup }) => {
             let query = prompt.join(" "); // Join the prompt into a single string
             if query.is_empty() {
                 return Err(anyhow!("Please provide a goal for simulated annealing"));
@@ -134,7 +134,8 @@ async fn main() -> Result<(), anyhow::Error> {
                 &query,
                 (*iterations).try_into().unwrap(),
                 *initial_temperature,
-                *cooling_rate
+                *cooling_rate,
+                *cleanup // Use the cleanup flag
             ).await?;
 
             println!("\n{}", "Simulated annealing completed!".green().bold());
