@@ -2,9 +2,9 @@ use anyhow::{anyhow, Result};
 use colored::*;
 use reqwest::Client;
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use tokio::time::Duration;
 
+// Removed unused import: std::collections::HashMap
 use crate::models::chat::{ApiResponse, ResponseMessage};
 use log::{debug, info};
 use crate::config::Config;
