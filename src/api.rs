@@ -235,29 +235,32 @@ pub async fn chat_with_api(
         for (key, value) in overrides {
             match key.as_str() {
                 "openai_api_key" => effective_config.openai.api_key = value,
-                "selected_model" => effective_config.openai.selected_model = value,
+                "gemini_api_key" => effective_config.gemini.api_key = value,
+                "selected_model" => {
+                    // If needed, update both selected models or decide which one to update.
+                    effective_config.openai.selected_model = value.clone();
+                    effective_config.gemini.selected_model = value;
+                },
                 _ => debug!("Unknown config override: {}", key),
             }
         }
     }
 
-    // Determine the active service and select the model configuration
-    let active_service = &config.models[&config.openai.selected_model].service;
-    let selected_model = match active_service.as_str() {
-        "openai" => &effective_config.openai.selected_model,
-        "gemini" => &effective_config.gemini.selected_model,
+    let active_service = effective_config.active_service.service.to_lowercase();
+    let (selected_model, api_key_option) = match active_service.as_str() {
+        "openai" => (
+            effective_config.openai.selected_model.clone(),
+            Some(effective_config.openai.api_key.as_str())
+        ),
+        "gemini" => (
+            effective_config.gemini.selected_model.clone(),
+            Some(effective_config.gemini.api_key.as_str())
+        ),
         _ => return Err(anyhow!("Unsupported active service: {:?}", active_service)),
     };
 
-    let model_config = effective_config.models.get(selected_model)
+    let model_config = effective_config.models.get(&selected_model)
         .ok_or_else(|| anyhow!("Unsupported model: {}", selected_model))?;
-
-    // Determine the API key to use if required
-    let api_key_option = match model_config.service.as_str() {
-        "openai" => Some(effective_config.openai.api_key.as_str()),
-        "gemini" => Some(effective_config.gemini.api_key.as_str()),
-        _ => None,
-    };
 
     chat_with_endpoint(client, api_key_option, model_config, messages).await
 }
