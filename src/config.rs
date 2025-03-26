@@ -6,7 +6,13 @@ use serde::Deserialize;
 use toml;
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct ActiveService {
+    pub service: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Config {
+    pub active_service: ActiveService,
     pub openai: OpenAIConfig,
     pub gemini: GeminiConfig,
     pub models: HashMap<String, ModelConfig>,

@@ -237,24 +237,29 @@ pub async fn chat_with_api(
                 "openai_api_key" => effective_config.openai.api_key = value,
                 "gemini_api_key" => effective_config.gemini.api_key = value,
                 "selected_model" => {
-                    // If needed, update both selected models or decide which one to update.
+                    // Update both selected models if needed
                     effective_config.openai.selected_model = value.clone();
                     effective_config.gemini.selected_model = value;
+                },
+                "active_service" => {
+                    // Assuming config has an active_service field
+                    effective_config.active_service.service = value;
                 },
                 _ => debug!("Unknown config override: {}", key),
             }
         }
     }
 
+    // Use the active service from configuration
     let active_service = effective_config.active_service.service.to_lowercase();
     let (selected_model, api_key_option) = match active_service.as_str() {
         "openai" => (
             effective_config.openai.selected_model.clone(),
-            Some(effective_config.openai.api_key.as_str())
+            Some(effective_config.openai.api_key.as_str()),
         ),
         "gemini" => (
             effective_config.gemini.selected_model.clone(),
-            Some(effective_config.gemini.api_key.as_str())
+            Some(effective_config.gemini.api_key.as_str()),
         ),
         _ => return Err(anyhow!("Unsupported active service: {:?}", active_service)),
     };
