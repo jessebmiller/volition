@@ -53,15 +53,18 @@ pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
         stdout.lines().count() + stderr.lines().count()
     );
 
+    // Concatenate stdout and stderr
+    let combined_output = format!("stdout: {}\n\nstderr: {}", stdout, stderr);
+
     let result = if output.status.success() {
-        if stdout.is_empty() {
-            // If stdout is empty but command succeeded, return a message
+        if combined_output.is_empty() {
+            // If combined output is empty but command succeeded, return a message
             "Command executed successfully with no output.".to_string()
         } else {
-            stdout
+            combined_output
         }
     } else {
-        format!("Error: {}\nOutput: {}", stderr, stdout)
+        format!("Error: Command failed with status {}\nOutput: {}", output.status, combined_output)
     };
 
     Ok(result)

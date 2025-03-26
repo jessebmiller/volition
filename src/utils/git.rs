@@ -1,5 +1,6 @@
 use uuid::Uuid;
 use git2::Repository;
+use anyhow::Context;
 
 pub fn create_unique_branch_name() -> String {
     let unique_branch_name = format!("branch-{}", Uuid::new_v4());
@@ -40,14 +41,14 @@ pub async fn checkout_solution(repo_path: &str, solution: &str) -> Result<(), an
 
 pub async fn cleanup(repo_path: &str) -> Result<(), anyhow::Error> {
     let repo = Repository::open(repo_path)?;
-    repo.cleanup_state();
+    repo.cleanup_state().context("Failed to cleanup repository state")?;
     Ok(())
 }
 
 pub async fn create_and_checkout_branch(repo_path: &str, branch_name: &str) -> Result<(), anyhow::Error> {
     let repo = Repository::open(repo_path)?;
     let head_commit = repo.head()?.peel_to_commit()?;
-    let mut branch = repo.branch(branch_name, &head_commit, false)?;
+    let branch = repo.branch(branch_name, &head_commit, false)?;
     let branch_ref = branch.get().name().unwrap().to_string();
     repo.set_head(&branch_ref)?;
     repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))?;

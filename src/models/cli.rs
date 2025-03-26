@@ -43,7 +43,7 @@ pub enum Commands {
         iterations: u32,
 
         /// Initial temperature
-        #[arg(short, long, default_value_t = 100.0)]
+        #[arg(short = 't', long, default_value_t = 100.0)]
         initial_temperature: f64,
 
         /// Cooling rate
