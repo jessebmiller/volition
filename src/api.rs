@@ -1,15 +1,16 @@
 use anyhow::{anyhow, Result};
 use colored::*;
 use reqwest::Client;
-use serde_json::json;
+use serde_json::{json, to_value};
 use std::collections::HashMap;
 use tokio::time::Duration;
+use toml::Value as TomlValue;
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
 use crate::models::tools::Tools;
 use crate::utils::DebugLevel;
 use crate::utils::debug_log;
-use crate::config::Config;
+use crate::config::{Config, ModelConfig};
 
 pub async fn chat_with_api(
     client: &Client,
@@ -25,24 +26,28 @@ pub async fn chat_with_api(
     if let Some(overrides) = overrides {
         for (key, value) in overrides {
             match key.as_str() {
-                "openai_api_key" => effective_config.openai_api_key = value,
-                "service" => effective_config.service = value,
-                "model_name" => effective_config.model_name = value,
+                "openai_api_key" => effective_config.openai.api_key = value,
+                "selected_model" => effective_config.openai.selected_model = value,
                 _ => debug_log(debug_level, DebugLevel::Minimal, &format!("Unknown config override: {}", key)),
             }
         }
     }
 
-    match effective_config.service.as_str() {
-        "openai" => chat_with_openai(client, &effective_config.openai_api_key, messages, debug_level).await,
-        "ollama" => chat_with_ollama(client, &effective_config.model_name, messages, debug_level).await,
-        _ => Err(anyhow!("Unsupported service: {}", effective_config.service)),
+    // Select the model configuration based on the selected model
+    let model_config = effective_config.models.get(&effective_config.openai.selected_model)
+        .ok_or_else(|| anyhow!("Unsupported model: {}", effective_config.openai.selected_model))?;
+
+    match model_config.service.as_str() {
+        "openai" => chat_with_openai(client, &effective_config.openai.api_key, model_config, messages, debug_level).await,
+        "ollama" => chat_with_ollama(client, &model_config.service, messages, debug_level).await,
+        _ => Err(anyhow!("Unsupported service: {}", model_config.service)),
     }
 }
 
 pub async fn chat_with_openai(
     client: &Client,
     api_key: &str,
+    model_config: &ModelConfig,
     messages: Vec<ResponseMessage>,
     debug_level: DebugLevel,
 ) -> Result<ApiResponse> {
@@ -66,8 +71,8 @@ pub async fn chat_with_openai(
 
     let url = "https://api.openai.com/v1/chat/completions";
 
-    let request_body = json!({
-        "model": "gpt-4o",
+    let mut request_body = json!({
+        "model": model_config.service,
         "messages": messages,
         "tools": [
             Tools::shell_definition(),
@@ -76,9 +81,17 @@ pub async fn chat_with_openai(
             Tools::search_code_definition(),
             Tools::find_definition_definition(),
             Tools::user_input_definition()
-        ],
-        "temperature": 0.2
+        ]
     });
+
+    // Add model-specific parameters
+    if let Some(parameters) = model_config.parameters.as_table() {
+        for (key, value) in parameters {
+            // Convert toml::Value to serde_json::Value at the point of assignment
+            let json_value = to_value(value.clone())?;
+            request_body[key] = json_value;
+        }
+    }
 
     if debug_level >= DebugLevel::Verbose {
         debug_log(

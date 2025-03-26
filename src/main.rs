@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use tokio::time::Duration;
 
 use crate::api::chat_with_api;
-use crate::config::{load_config, configure};
+use crate::config::load_config;
 use crate::models::chat::ResponseMessage;
 use crate::models::cli::{Commands, Cli};
 use crate::tools::handle_tool_calls;
@@ -62,7 +62,7 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
         .build()?;
 
     // Print welcome message
-    println!("\n{}", "[1;36m");
+    println!("\n{}", "\x1b[1;36m");
     println!("\n{}", "🤖 Volition - AI Software Engineering Assistant".cyan().bold());
     println!("{}", "Ready to help you understand and improve your codebase.".cyan());
     println!("{}", "Type 'exit' or press Enter on an empty line to quit at any time.".cyan());
@@ -143,7 +143,7 @@ async fn handle_conversation(config: &config::Config, query: &str, debug_level: 
 
             handle_tool_calls(
                 &client,
-                &config.openai_api_key,
+                &config.openai.api_key,
                 tool_calls.to_vec(),
                 &mut messages,
                 debug_level
@@ -191,7 +191,7 @@ async fn main() -> Result<()> {
     };
 
     match &cli.command {
-        Some(Commands::Configure) => configure()?,
+        Some(Commands::Configure) => println!("Configure command is not implemented."),
         Some(Commands::Run { args, verbose, debug }) => {
             // Override debug level from subcommand flags if specified
             let debug_level = if *verbose {

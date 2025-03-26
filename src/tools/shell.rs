@@ -7,7 +7,7 @@ use crate::models::tools::ShellArgs;
 
 pub async fn run_shell_command(args: ShellArgs, debug_level: DebugLevel) -> Result<String> {
     let command = &args.command;
-    
+
     println!("{} {}", "Running:".blue().bold(), command);
 
     if debug_level >= DebugLevel::Verbose {
