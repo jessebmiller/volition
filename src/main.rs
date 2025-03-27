@@ -1,7 +1,9 @@
+// src/main.rs
 mod api;
 mod config;
 mod models;
 mod tools;
+mod rendering; // Added
 
 // Removed unused anyhow import
 use anyhow::{Context, Result};
@@ -17,9 +19,10 @@ use crate::models::chat::ResponseMessage;
 use crate::models::cli::Cli;
 // Pass config into handle_tool_calls
 use crate::tools::handle_tool_calls;
+use crate::rendering::print_formatted; // Import the new function
 
 use clap::Parser;
-use tracing::{Level};
+use tracing::{Level, error}; // Import error level
 use tracing_subscriber::FmtSubscriber;
 
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
@@ -134,11 +137,21 @@ async fn start_interactive_session(
 
             // Process the message if we received one
             if let Some(message) = message_option {
+                 // Add a newline before printing AI response for better spacing
+                 println!();
+
                 if let Some(content) = &message.content {
                     if !content.is_empty() {
-                        println!("\n{}", content);
+                        // Use the new formatted print function and handle potential error
+                        if let Err(e) = print_formatted(content) {
+                            // Log the rendering error and fall back to plain print
+                            error!("Failed to render markdown: {}. Printing raw content.", e);
+                            println!("{}", content); // Fallback
+                        }
                     }
                 }
+                 // Add a newline after printing AI response for better spacing
+                 println!();
 
                 // Add assistant message to history BEFORE processing tool calls
                 let assistant_message = ResponseMessage {
