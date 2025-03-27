@@ -1,12 +1,19 @@
 // This file now contains the implementation for the search_text tool
 // and the find_rust_definition tool.
 
-use crate::models::tools::{FindRustDefinitionArgs, SearchTextArgs}; // Updated import
-use crate::tools::shell::execute_shell_command_internal; // Use internal executor
-use anyhow::{anyhow, Result};
-use std::process::Command;
+use crate::models::tools::{FindRustDefinitionArgs, SearchTextArgs};
+use crate::tools::shell::execute_shell_command_internal;
+use anyhow::Result; // Only Result needed by both
 
-// Check if ripgrep (rg) is installed and available in PATH
+// Imports only needed for the non-test version
+#[cfg(not(test))]
+use {
+    anyhow::anyhow, // anyhow macro only used in non-test version
+    std::process::Command,
+};
+
+// Real check using std::process::Command
+#[cfg(not(test))]
 fn check_ripgrep_installed() -> Result<()> {
     let command_name = "rg";
     let check_command = if cfg!(target_os = "windows") {
@@ -31,13 +38,19 @@ fn check_ripgrep_installed() -> Result<()> {
     if output.status.success() {
         Ok(())
     } else {
-        Err(anyhow!(
+        Err(anyhow!( // Use anyhow macro here
             "'ripgrep' (rg) command not found. Please install it and ensure it's in your PATH. It's required for search/definition tools.\nInstallation instructions: https://github.com/BurntSushi/ripgrep#installation"
         ))
     }
 }
 
-// search_text implementation (unchanged)
+// Test mock version - assume rg is always installed
+#[cfg(test)]
+fn check_ripgrep_installed() -> Result<()> {
+     println!("[TEST] Mock check_ripgrep_installed called - assuming OK");
+     Ok(())
+}
+
 pub async fn search_text(args: SearchTextArgs) -> Result<String> {
     check_ripgrep_installed()?;
 
@@ -68,70 +81,91 @@ pub async fn search_text(args: SearchTextArgs) -> Result<String> {
     rg_cmd_parts.push(format!("'{}'", pattern));
     rg_cmd_parts.push(path.to_string());
 
+    // Construct command that pipes rg output to head for limiting results
     let rg_cmd = format!("{} | head -n {}", rg_cmd_parts.join(" "), max_results);
 
     tracing::debug!("Executing search command: {}", rg_cmd);
 
+    // This call will use the appropriate (real or mock) version of execute_shell_command_internal
     let result = execute_shell_command_internal(&rg_cmd).await?;
 
-    if result.is_empty()
-        || result.contains("Command executed successfully with no output")
-        || result.contains("Shell command execution denied")
+    // Check if the result indicates no matches found (based on mock output or real rg behavior)
+    if result.is_empty() // Check for genuinely empty output
+       || result.starts_with("Command executed") && result.contains("Stdout:\n<no output>") // Check mock/real output indicating no stdout
+       // Add other checks if needed, e.g., specific exit codes if execute_shell_command_internal provides them clearly
     {
         Ok(format!(
             "No matches found for pattern: '{}' in path: '{}' matching glob: '{}'",
             pattern, path, file_glob
         ))
     } else {
+        // Assume the result string already contains the formatted output from execute_shell_command_internal
         Ok(format!(
-            "Search results (format: path:line_number:content):\n{}",
+            "Search results (details included below):\n{}",
             result
         ))
     }
 }
 
-// Renamed and simplified find_definition to find_rust_definition
 pub async fn find_rust_definition(args: FindRustDefinitionArgs) -> Result<String> {
-    // Updated args type
-    // Check if rg is installed before proceeding (required for this tool now)
     check_ripgrep_installed()?;
 
     let symbol = &args.symbol;
     let directory = args.path.as_deref().unwrap_or(".");
 
     tracing::info!(
-        "Finding Rust definition for symbol: {} in directory: {}", // Updated log message
+        "Finding Rust definition for symbol: {} in directory: {}",
         symbol,
         directory
     );
 
-    // Hardcoded Rust file pattern and regex
     let file_pattern = "*.rs";
+    // Updated regex to be slightly more robust for different definition styles
     let pattern = format!(
-        r"(fn|struct|enum|trait|const|static|type|mod|impl|macro_rules!\s+){}[\s<(:{{]", // Escaped { -> {{
-        symbol
+        r"^(?:pub\s+)?(?:unsafe\s+)?(?:async\s+)?(fn|struct|enum|trait|const|static|type|mod|impl|macro_rules!)\s+{}\\b",
+        regex::escape(symbol) // Escape symbol for regex safety
     );
 
-    // Build the ripgrep command
     let rg_cmd = format!(
-        // Use --type rust for more specific filtering if desired, but glob works
-        "rg --pretty --trim --glob='{}' --ignore-case --max-count=10 \"{}\" {}",
+        "rg --pretty --trim --glob='{}' --ignore-case --max-count=10 -e \"{}\" {}",
         file_pattern,
-        pattern,   // Regex pattern
-        directory  // Directory to search
+        pattern,   // Use -e for pattern to treat it as regex explicitly
+        directory
     );
 
     tracing::debug!("Executing find rust definition command: {}", rg_cmd);
 
-    // Execute the search command
     let result = execute_shell_command_internal(&rg_cmd).await?;
 
-    if result.is_empty()
-        || result.contains("Command executed successfully with no output")
-        || result.contains("Shell command execution denied")
+     if result.is_empty() // Check for genuinely empty output
+       || result.starts_with("Command executed") && result.contains("Stdout:\n<no output>") // Check mock/real output indicating no stdout
     {
         Ok(format!("No Rust definition found for symbol: {}", symbol))
     } else {
-        Ok(result)
+        // Assume the result string already contains the formatted output from execute_shell_command_internal
+        Ok(format!(
+            "Potential definition(s) found (details included below):\n{}",
+            result
+        ))
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio;
+
+    #[tokio::test]
+    async fn test_check_ripgrep_installed_mock() {
+        // This test just ensures the mock function compiles and returns Ok
+        let result = check_ripgrep_installed();
+        assert!(result.is_ok());
+    }
+
+    // NOTE: Deferring detailed tests for search_text and find_rust_definition command construction
+    // and output formatting, as they require better mocking of the shared
+    // execute_shell_command_internal function (e.g., using mockall) to verify inputs
+    // and control outputs effectively across modules.
+    // Current tests rely on the simple #[cfg(test)] mock in shell.rs.
 }
