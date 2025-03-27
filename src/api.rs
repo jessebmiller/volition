@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result}; // Added Context
 use reqwest::Client;
-use serde_json::{json, to_value, Value};
+use serde_json::{error::Category as SerdeJsonCategory, json, to_value, Value};
 // Removed HashMap import as overrides are gone
 use tokio::time::Duration;
 use tracing::{debug, warn};
@@ -112,23 +112,66 @@ pub async fn chat_with_endpoint(
         }
 
         if !status.is_success() {
-            let error_text = response.text().await?;
+            let error_text = response
+                .text()
+                .await
+                .context("Failed to read API error response body")?;
             return Err(anyhow!("API error: {} - {}", status, error_text));
         }
 
-        // Deserialize response and add missing 'id' if necessary (unchanged)
-        let mut response_json: Value = response.json().await?;
-        if let Value::Object(map) = &mut response_json {
-            if !map.contains_key("id") {
-                let new_id = format!("chatcmpl-{}", Uuid::new_v4());
-                map.insert("id".to_string(), json!(new_id));
-                debug!(
-                    "Added missing 'id' field to API response with value: {}",
-                    new_id
-                );
-            }
+        // Deserialize response, handling potential missing 'choices'
+        let response_value: Value = response
+            .json()
+            .await
+            .context("Failed to read API response body as JSON")?; // Added context
+
+        // Inject 'id' if missing
+        let mut response_json_obj = if let Value::Object(map) = response_value {
+            map
+        } else {
+            // If the top level isn't an object, we can't deserialize into ApiResponse anyway.
+            return Err(anyhow!(
+                "API response was not a JSON object: {:?}",
+                response_value // Use the original value here for the error
+            ));
+        };
+
+        if !response_json_obj.contains_key("id") {
+            let new_id = format!("chatcmpl-{}", Uuid::new_v4());
+            debug!(
+                "Added missing 'id' field to API response with value: {}",
+                new_id
+            );
+            response_json_obj.insert("id".to_string(), json!(new_id));
         }
-        let api_response: ApiResponse = serde_json::from_value(response_json)?;
+
+        // Now attempt deserialization from the potentially modified JSON object
+        let api_response_result: Result<ApiResponse, serde_json::Error> =
+            serde_json::from_value(Value::Object(response_json_obj.clone())); // Clone needed if we log below
+
+        let api_response = match api_response_result {
+            Ok(resp) => resp,
+            Err(e) => {
+                // Check if the error is data-related (like missing fields) and matches our specific case
+                if e.classify() == SerdeJsonCategory::Data
+                    && e.to_string().contains("missing field `choices`")
+                {
+                    // Log the problematic JSON for debugging
+                    warn!(
+                        "API response successfully received but missing 'choices' field. Response body: {}",
+                        serde_json::to_string_pretty(&response_json_obj).unwrap_or_else(|_| format!("{:?}", response_json_obj))
+                    );
+                    // Return a specific error
+                    return Err(anyhow!(
+                        "API call succeeded but response was missing the expected 'choices' field."
+                    )
+                    .context(e)); // Add original serde error as context
+                } else {
+                    // For any other deserialization error, wrap and return
+                    return Err(anyhow!("Failed to deserialize API response").context(e));
+                }
+            }
+        };
 
         // Debug logging for response (unchanged)
         debug!("=== API RESPONSE ===");
@@ -139,7 +182,9 @@ pub async fn chat_with_endpoint(
                 debug!("No tool calls");
             }
         } else {
-            debug!("No choices in response");
+            // This case should be less likely now unless choices is empty,
+            // as a missing choices field is handled above.
+            debug!("Response has empty 'choices' array or first choice has no message/tool_calls");
         }
         debug!("=====================");
 
