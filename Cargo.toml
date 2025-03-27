@@ -13,6 +13,8 @@ dirs = "5.0"
 dotenvy = "0.15"
 ignore = "0.4" # Added for directory walking respecting .gitignore
 lazy_static = "1.4" # For efficient loading of syntect themes/syntaxes
+pulldown-cmark = "0.11" # Added for Markdown parsing
+regex = "1" # Added for parsing markdown code blocks
 reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -23,7 +25,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 uuid = { version = "1.0", features = ["v4"] }
 url = "2.5"
-termimad = { version = "0.31.2", features = ["special-renders"] }
+termimad = "0.31.2" # Removed 'special-renders' feature
 
 # Add dev-dependencies section for test-only crates
 [dev-dependencies]
