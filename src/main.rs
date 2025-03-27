@@ -3,15 +3,15 @@ mod config; // Keep this for service config
 mod models;
 mod tools;
 
-use anyhow::{anyhow, Context, Result}; // Added Context
+use anyhow::{anyhow, Context, Result};
 use colored::*;
 use serde_json;
 use std::{fs, io::{self, Write}, path::Path};
 use tokio::time::Duration;
 
 use crate::api::chat_with_api;
-// Import both config loading functions and the new config struct
-use crate::config::{load_config, load_volition_file_config, VolitionFileConfig};
+// Use renamed config struct and loading function
+use crate::config::{load_config, load_volition_project_config, VolitionProjectConfig};
 use crate::models::chat::ResponseMessage;
 use crate::models::cli::{Commands, Cli};
 use crate::tools::handle_tool_calls;
@@ -22,10 +22,10 @@ use tracing_subscriber::FmtSubscriber;
 
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
 
-// Modified handle_conversation to accept volition_config
+// Modified handle_conversation to accept VolitionProjectConfig
 async fn handle_conversation(
     service_config: &config::Config,
-    volition_config: &VolitionFileConfig, // Add volition config
+    project_config: &VolitionProjectConfig, // Updated type
     query: &str,
 ) -> Result<()> {
     let client = reqwest::Client::builder()
@@ -41,7 +41,7 @@ async fn handle_conversation(
     let mut messages: Vec<ResponseMessage>;
     let recovery_path = Path::new(RECOVERY_FILE_PATH);
 
-    // --- Load State Logic (modified to pass volition_config.system_prompt) ---
+    // --- Load State Logic (modified to pass project_config.system_prompt) ---
     if recovery_path.exists() {
          tracing::info!("Found existing conversation state file: {}", RECOVERY_FILE_PATH);
         print!(
@@ -68,34 +68,33 @@ async fn handle_conversation(
                         tracing::error!("Failed to deserialize state file: {}. Starting fresh.", e);
                         println!("{}", "Error reading state file. Starting a fresh session.".red());
                         let _ = fs::remove_file(recovery_path);
-                        messages = default_messages(query, &volition_config.system_prompt); // Pass prompt
+                        messages = default_messages(query, &project_config.system_prompt); // Pass prompt
                     }
                 },
                 Err(e) => {
                     tracing::error!("Failed to read state file: {}. Starting fresh.", e);
                     println!("{}", "Error reading state file. Starting a fresh session.".red());
                     let _ = fs::remove_file(recovery_path);
-                    messages = default_messages(query, &volition_config.system_prompt); // Pass prompt
+                    messages = default_messages(query, &project_config.system_prompt); // Pass prompt
                 }
             }
         } else {
             tracing::info!("User chose not to resume. Starting fresh.");
             println!("{}", "Starting a fresh session.".cyan());
             let _ = fs::remove_file(recovery_path);
-            messages = default_messages(query, &volition_config.system_prompt); // Pass prompt
+            messages = default_messages(query, &project_config.system_prompt); // Pass prompt
         }
     } else {
-        messages = default_messages(query, &volition_config.system_prompt); // Pass prompt
+        messages = default_messages(query, &project_config.system_prompt); // Pass prompt
     }
     // --- End Load State Logic ---
 
     let mut conversation_active = true;
 
-    // --- Main Conversation Loop (unchanged content, just ensure service_config is used correctly) ---
+    // --- Main Conversation Loop ---
     while conversation_active {
         tracing::debug!("Current message history: {:?}", messages);
 
-        // Pass service_config here
         let response = chat_with_api(&client, service_config, messages.clone(), None).await?;
 
          let message = match response.choices.get(0) {
@@ -122,7 +121,6 @@ async fn handle_conversation(
 
         if let Some(tool_calls) = &message.tool_calls {
             tracing::info!("Processing {} tool calls", tool_calls.len());
-            // Use service_config.api_key
             handle_tool_calls(&client, &service_config.api_key, tool_calls.to_vec(), &mut messages).await?;
         } else {
             println!("\n{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
@@ -164,7 +162,6 @@ async fn handle_conversation(
     }
     // --- End Main Conversation Loop ---
 
-
     // --- Cleanup Logic (unchanged) ---
     if Path::new(RECOVERY_FILE_PATH).exists() {
         if let Err(e) = fs::remove_file(RECOVERY_FILE_PATH) {
@@ -176,8 +173,6 @@ async fn handle_conversation(
 
     Ok(())
 }
-
-// Removed the SYSTEM_PROMPT constant
 
 // Modified default_messages to accept system_prompt as an argument
 fn default_messages(query: &str, system_prompt: &str) -> Vec<ResponseMessage> {
@@ -221,10 +216,10 @@ async fn main() -> Result<()> {
     // --- Load Configurations ---
     // Load service config first (API keys, models, etc.)
     let service_config = load_config().context("Failed to load service configuration")?;
-    // Load Volitionfile config (system prompt, etc.)
-    let volition_config = load_volition_file_config().context("Failed to load Volitionfile.toml configuration")?;
+    // Load project config (system prompt, etc.) using the renamed function
+    let project_config = load_volition_project_config()
+        .context("Failed to load project configuration from Volition.toml")?; // Updated context message
     // --- End Load Configurations ---
-
 
     // Main command matching and execution logic (modified to pass both configs)
     match &cli.command {
@@ -234,7 +229,7 @@ async fn main() -> Result<()> {
                 return Err(anyhow!("Please provide a command to run"));
             }
             // Pass both configs to handle_conversation
-            handle_conversation(&service_config, &volition_config, &query).await?;
+            handle_conversation(&service_config, &project_config, &query).await?;
         }
         None => {
             if cli.rest.is_empty() {
@@ -250,7 +245,7 @@ async fn main() -> Result<()> {
             }
             let query = cli.rest.join(" ");
             // Pass both configs to handle_conversation
-            handle_conversation(&service_config, &volition_config, &query).await?;
+            handle_conversation(&service_config, &project_config, &query).await?;
         }
     }
 

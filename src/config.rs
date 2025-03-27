@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf}; // Added Path
+use std::path::{Path, PathBuf};
 use std::env;
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
@@ -93,35 +93,35 @@ pub fn load_config() -> Result<Config> {
     Ok(config)
 }
 
-// --- New Struct and Loading Logic for Volitionfile.toml ---
+// --- Struct and Loading Logic for Volition.toml ---
 
-/// Represents the configuration loaded from Volitionfile.toml
+/// Represents the configuration loaded from Volition.toml
 #[derive(Deserialize, Debug, Clone)]
-pub struct VolitionFileConfig {
+pub struct VolitionProjectConfig { // Renamed struct for clarity
     pub system_prompt: String,
     // Add other project-specific configurations here later if needed
 }
 
-/// Loads configuration from Volitionfile.toml in the current directory.
-pub fn load_volition_file_config() -> Result<VolitionFileConfig> {
-    let config_path = Path::new("./Volitionfile.toml");
+/// Loads configuration from Volition.toml in the current directory.
+pub fn load_volition_project_config() -> Result<VolitionProjectConfig> { // Renamed function
+    let config_path = Path::new("./Volition.toml"); // Updated filename
     if !config_path.exists() {
         return Err(anyhow!(
-            "Configuration file not found at {:?}. Please create it with a 'system_prompt' key.",
+            "Project configuration file not found at {:?}. Please create it with a 'system_prompt' key.", // Updated filename in error
             config_path
         ));
     }
 
     let config_str = fs::read_to_string(&config_path)
-        .with_context(|| format!("Failed to read config file: {:?}", config_path))?;
+        .with_context(|| format!("Failed to read project config file: {:?}", config_path))?;
 
-    let config: VolitionFileConfig = toml::from_str(&config_str)
-        .with_context(|| format!("Failed to parse config file: {:?}", config_path))?;
+    let config: VolitionProjectConfig = toml::from_str(&config_str)
+        .with_context(|| format!("Failed to parse project config file: {:?}", config_path))?;
 
     if config.system_prompt.trim().is_empty() {
          return Err(anyhow!("'system_prompt' key found in {:?} but it is empty.", config_path));
     }
 
-    tracing::info!("Successfully loaded Volitionfile configuration from {:?}", config_path);
+    tracing::info!("Successfully loaded project configuration from {:?}", config_path); // Updated log message
     Ok(config)
 }
