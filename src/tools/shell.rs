@@ -1,15 +1,14 @@
 use std::process::{Command, Stdio};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use colored::*;
+use std::io::{self, Write};
 use crate::models::tools::ShellArgs;
-use tracing::{debug};
+use tracing::{debug, warn};
 
-pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
-    let command = &args.command;
 
-    println!("{} {}", "Running:".blue().bold(), command);
-    
-    debug!("Executing command: {}", command);
+// Internal function to execute a shell command without confirmation
+pub(crate) async fn execute_shell_command_internal(command: &str) -> Result<String> {
+    debug!("Executing internal command: {}", command);
 
     // Regular command execution logic
     let output = if cfg!(target_os = "windows") {
@@ -32,14 +31,20 @@ pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let status = output.status.code().unwrap_or(-1);
 
-    let stdout_preview = stdout.lines().take(3).collect::<Vec<&str>>().join("\n");
+    // --- Logging moved inside ---
+    let stdout_preview = stdout.lines().take(3).collect::<Vec<&str>>().join("
+");
     let stderr_preview = if !stderr.is_empty() {
-        format!("\nStderr preview: {}", stderr.lines().take(3).collect::<Vec<&str>>().join("\n"))
+        format!("
+Stderr preview: {}", stderr.lines().take(3).collect::<Vec<&str>>().join("
+"))
     } else {
         String::new()
     };
 
-    debug!("Command exit status: {}\nOutput preview:\n{}{}", 
+    debug!("Internal command exit status: {}
+Output preview:
+{}{}",
            status,
            if stdout_preview.is_empty() { "<no output>" } else { &stdout_preview },
            stderr_preview);
@@ -51,13 +56,56 @@ pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
         stdout.lines().count() + stderr.lines().count()
     );
     debug!("{}", detailed_info);
+    // --- End Logging ---
 
     let result = format!(
-        "Command executed with status: {}\nStdout:\n{}\nStderr:\n{}",
+        "Command executed with status: {}
+Stdout:
+{}
+Stderr:
+{}",
         status,
         if stdout.is_empty() { "<no output>" } else { &stdout },
         if stderr.is_empty() { "<no output>" } else { &stderr }
     );
 
     Ok(result)
+}
+
+
+
+// Public function exposed as the 'shell' tool, includes confirmation
+pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
+    let command = &args.command;
+
+    // --- Mandatory Confirmation (y/N style, default No) ---
+    print!(
+        "{}
+{}
+{}{} ", 
+        "WARNING: This tool can execute arbitrary code!".red().bold(),
+        format!("Request to run shell command: {}", command).yellow(),
+        "Allow execution? ".yellow(),
+        "(y/N):".yellow().bold() // Default to No
+    );
+    // Ensure the prompt is displayed before reading input
+    io::stdout().flush().context("Failed to flush stdout")?;
+
+    let mut user_choice = String::new();
+    io::stdin()
+        .read_line(&mut user_choice)
+        .context("Failed to read user input")?;
+
+    // Only proceed if the user explicitly types 'y' (case-insensitive)
+    if user_choice.trim().to_lowercase() != "y" {
+        warn!("User denied execution of shell command: {}", command);
+        println!("{}", "Shell command execution denied.".red());
+        // Return a message indicating the command was skipped
+        return Ok(format!("Shell command execution denied by user: {}", command));
+    }
+    // --- End Confirmation ---
+
+    // If approved, call the internal execution function
+    println!("{} {}", "Running:".blue().bold(), command);
+    execute_shell_command_internal(command).await
 }
