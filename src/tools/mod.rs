@@ -34,19 +34,34 @@ pub async fn handle_tool_calls(
         let tool_name = tool_call.function.name.as_str();
         let tool_args_json = &tool_call.function.arguments;
 
+        // Truncate arguments for display
+        const MAX_ARG_DISPLAY_LEN: usize = 80;
+        let args_display = if tool_args_json.chars().count() > MAX_ARG_DISPLAY_LEN {
+            // Find the byte index corresponding to the 80th character boundary
+            let truncate_at = tool_args_json.char_indices()
+                                .nth(MAX_ARG_DISPLAY_LEN)
+                                .map(|(idx, _)| idx)
+                                .unwrap_or(tool_args_json.len()); // Should always find if count > MAX
+
+            // Format directly into a new String with "..."
+            format!("{}...", &tool_args_json[..truncate_at])
+        } else {
+            // If not longer, just clone the original string for consistent ownership
+            tool_args_json.clone()
+        };
+
         // Print execution info to stdout for the user
-        // NOTE: This println! makes testing output difficult. Consider refactoring later.
         println!(
             "\n{} {} ({})",
             "Running:".bold().cyan(),
             tool_name.bold(),
-            tool_args_json.dimmed() // Display args dimmed
+            args_display.dimmed() // Use the (potentially truncated) owned String
         );
 
         // Internal log (keeping this for debugging)
         info!(
             tool_name = tool_name,
-            tool_args = tool_args_json,
+            tool_args = tool_args_json, // Log the full args internally
             "Executing tool internally"
         );
 
