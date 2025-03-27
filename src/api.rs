@@ -4,7 +4,7 @@ use serde_json::{json, to_value, Value};
 // Removed HashMap import as overrides are gone
 use tokio::time::Duration;
 use tracing::{debug, warn};
-use url::Url; // Added for URL joining
+// Removed unused url::Url import
 use uuid::Uuid;
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
@@ -20,19 +20,14 @@ pub async fn chat_with_endpoint(
     model_config: &ModelConfig, // Use the specific model config
     messages: Vec<ResponseMessage>,
 ) -> Result<ApiResponse> {
-    // Construct the URL by joining the base endpoint from ModelConfig with the standard path.
-    // Assumes model_config.endpoint is the base URL (e.g., "https://api.openai.com/")
-    // and ends with a slash. If not, Url::join might behave unexpectedly.
-    // Consider adding validation or normalization in config loading if needed.
-    let base_url = Url::parse(&model_config.endpoint)
-        .with_context(|| format!("Invalid base endpoint URL in model config: {}", model_config.endpoint))?;
-    let url = base_url.join("v1/chat/completions") // Standard path for OpenAI chat completions
-        .with_context(|| format!("Failed to join path 'v1/chat/completions' to base URL '{}'", base_url))?;
+    // Use the endpoint directly from ModelConfig as it now contains the full path.
+    // The URL validation is done during config loading.
+    let url_str = &model_config.endpoint;
 
     // Build the request body using the OpenAI format.
     let request_body = build_openai_request(&model_config.model_name, messages, model_config)?;
 
-    debug!("Request URL: {}\nRequest JSON: {}", url.as_str(), serde_json::to_string_pretty(&request_body)?);
+    debug!("Request URL: {}\nRequest JSON: {}", url_str, serde_json::to_string_pretty(&request_body)?);
 
     // Exponential backoff parameters (remain unchanged)
     let max_retries = 5;
@@ -45,7 +40,7 @@ pub async fn chat_with_endpoint(
 
     loop {
         // Always add Content-Type and Authorization headers.
-        let request = client.post(url.as_str()) // Use the Url object's string representation
+        let request = client.post(url_str) // Use the endpoint string directly
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", config.api_key)); // Use API key from RuntimeConfig
 

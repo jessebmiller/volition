@@ -94,8 +94,8 @@ async fn handle_conversation(
     while conversation_active {
         tracing::debug!("Current message history: {:?}", messages);
 
-        // Pass the combined config to chat_with_api
-        let response = chat_with_api(&client, config, messages.clone(), None).await?;
+        // Pass the combined config to chat_with_api (Removed the 4th argument)
+        let response = chat_with_api(&client, config, messages.clone()).await?;
 
          let message = match response.choices.get(0) {
             Some(choice) => &choice.message,

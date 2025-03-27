@@ -3,7 +3,7 @@ name = "volition"
 version = "0.1.0"
 edition = "2021"
 authors = ["Jesse B. Miller <jesse@jessebmiller.com>"]
-description = "An AI-powered software engineering assistant"
+description = "An AI-powered Linux CLI assistant"
 
 [dependencies]
 anyhow = "1.0"
@@ -19,3 +19,4 @@ toml = "0.5"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 uuid = { version = "1.0", features = ["v4"] }
+url = "2.5" # Added url dependency
