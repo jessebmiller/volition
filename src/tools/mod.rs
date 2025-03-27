@@ -13,6 +13,7 @@ use crate::models::tools::{
     CargoCommandArgs, FindRustDefinitionArgs, GitCommandArgs, ListDirectoryArgs, ReadFileArgs,
     SearchTextArgs, ShellArgs, ToolCall, UserInputArgs, WriteFileArgs,
 };
+// Removed unused `anyhow` macro import
 use anyhow::{Context, Result};
 use colored::*; // Import colored crate traits
 use reqwest::Client;
@@ -34,6 +35,7 @@ pub async fn handle_tool_calls(
         let tool_args_json = &tool_call.function.arguments;
 
         // Print execution info to stdout for the user
+        // NOTE: This println! makes testing output difficult. Consider refactoring later.
         println!(
             "\n{} {} ({})",
             "Running:".bold().cyan(),
@@ -96,6 +98,7 @@ pub async fn handle_tool_calls(
             }
             unknown_tool => {
                 warn!(tool_name = unknown_tool, "Attempted to call unknown tool");
+                // Use anyhow::anyhow! fully qualified since we removed the direct import
                 Err(anyhow::anyhow!("Unknown tool: {}", unknown_tool))
             }
         };
@@ -149,8 +152,9 @@ pub async fn handle_tool_calls(
                     "Tool execution failed internally"
                 );
                 // Propagate the error up (unchanged)
+                // Add context about which tool failed during execution
                 return Err(e.context(format!(
-                    "Failed to execute tool: {}",
+                    "Failed during execution of tool: {}",
                     tool_call.function.name
                 )));
             }
@@ -158,4 +162,116 @@ pub async fn handle_tool_calls(
     } // End loop through tool_calls
 
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::RuntimeConfig;
+    // Allow unused import warning for ResponseMessage as it's needed for handle_tool_calls signature
+    #[allow(unused_imports)]
+    use crate::models::chat::ResponseMessage;
+    use crate::models::tools::{ToolCall, ToolFunction};
+    use reqwest::Client;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use tokio;
+    // Removed unused anyhow import from test scope
+
+    // Helper to create a dummy RuntimeConfig for tests
+    fn create_dummy_config() -> RuntimeConfig {
+        RuntimeConfig {
+            system_prompt: "".to_string(),
+            selected_model: "".to_string(),
+            models: HashMap::new(),
+            api_key: "".to_string(),
+            project_root: PathBuf::from("."),
+        }
+    }
+
+    // Helper to create a dummy ToolCall for testing
+    fn create_tool_call(id: &str, name: &str, args: &str) -> ToolCall {
+        ToolCall {
+            id: id.to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunction {
+                name: name.to_string(),
+                arguments: args.to_string(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_calls_shell_invalid_json() {
+        let client = Client::new();
+        let config = create_dummy_config();
+        let mut messages = vec![];
+        // Invalid JSON syntax in args
+        let tool_calls = vec![create_tool_call("id1", "shell", r#"{"command: "echo"}"#)]; // Missing quote
+
+        let result = handle_tool_calls(&client, &config, tool_calls, &mut messages).await;
+
+        assert!(result.is_err());
+        let error_string = format!("{:?}", result.err().unwrap());
+        // Check the context message which is more stable
+        assert!(error_string.contains("Failed to parse shell arguments"));
+        assert_eq!(messages.len(), 0);
+    }
+
+     #[tokio::test]
+    async fn test_handle_tool_calls_read_file_invalid_json() {
+        let client = Client::new();
+        let config = create_dummy_config();
+        let mut messages = vec![];
+        // Invalid JSON type
+        let tool_calls = vec![create_tool_call("id2", "read_file", r#"{"path": 123}"#)]; // Path should be string
+
+        let result = handle_tool_calls(&client, &config, tool_calls, &mut messages).await;
+
+        assert!(result.is_err());
+        let error_string = format!("{:?}", result.err().unwrap());
+        // Check the context message
+        assert!(error_string.contains("Failed to parse read_file arguments"));
+        assert_eq!(messages.len(), 0);
+    }
+
+
+     #[tokio::test]
+    async fn test_handle_tool_calls_shell_missing_required_arg() { // Renamed test
+        let client = Client::new();
+        let config = create_dummy_config();
+        let mut messages = vec![];
+         // Missing 'command' field
+        let tool_calls = vec![create_tool_call("id1", "shell", r#"{"working_dir": "/tmp"}"#)];
+
+        let result = handle_tool_calls(&client, &config, tool_calls, &mut messages).await;
+
+        assert!(result.is_err());
+        let error_string = format!("{:?}", result.err().unwrap());
+        assert!(error_string.contains("Failed to parse shell arguments"));
+        // Check for serde's missing field error text, which is reasonably stable
+        assert!(error_string.contains("missing field `command`"));
+        assert_eq!(messages.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_calls_unknown_tool() {
+        let client = Client::new();
+        let config = create_dummy_config();
+        let mut messages = vec![];
+        let tool_calls = vec![
+            create_tool_call("id1", "nonexistent_tool", r#"{}"#),
+        ];
+
+        let result = handle_tool_calls(&client, &config, tool_calls, &mut messages).await;
+
+        assert!(result.is_err(), "Expected error due to unknown tool, but got Ok");
+        let error_string = format!("{:?}", result.err().unwrap());
+         // The error comes from the `handle_tool_calls` match statement directly
+        assert!(error_string.contains("Unknown tool: nonexistent_tool"));
+        assert_eq!(messages.len(), 0);
+    }
+
+    // TODO: Add tests for successful dispatch and output handling (requires mocking sub-functions)
 }
