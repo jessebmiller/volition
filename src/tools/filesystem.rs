@@ -33,10 +33,9 @@ pub fn list_directory_contents(
         .parents(true);       // Respect ignore files in parent directories
 
     // Explicitly add the .gitignore file in the root path if it exists
+    // This helps ensure it's respected even if not in a git repo (like in tests)
     let gitignore_path = start_path.join(".gitignore");
     if gitignore_path.is_file() {
-        // This might return an error if the file is invalid, handle it?
-        // For now, just log or ignore the error in the test context
         let _ = walker_builder.add_ignore(&gitignore_path);
     }
 
@@ -45,9 +44,7 @@ pub fn list_directory_contents(
         // Note: WalkBuilder depth is relative to the *start* path.
         // Depth 0 = only the start path itself (if it matches filters).
         // Depth 1 = contents of the start path.
-        // So, we add 1 because we usually think of depth 1 as the immediate contents.
-        // If the user requests depth 0 (just the dir itself), we set WalkBuilder depth to 0.
-        // If the user requests depth 1 (contents), we set WalkBuilder depth to 1.
+        // We adjust the user's expectation (depth 1 = contents) to WalkBuilder's (depth 1 = contents).
         walker_builder.max_depth(Some(depth));
     }
 
@@ -57,12 +54,12 @@ pub fn list_directory_contents(
         match result {
             Ok(entry) => {
                 // Skip the root path itself if depth > 0 or depth is None
+                // WalkBuilder depth 0 is the starting point.
                 if entry.depth() == 0 && max_depth.map_or(true, |d| d > 0) {
                     continue;
                 }
 
-                // Get the path relative to the *current working directory*
-                // or use the absolute path if preferred. Using relative path from start_path is often cleaner.
+                // Get the path relative to the start_path
                 match entry.path().strip_prefix(start_path) {
                     Ok(relative_path) => {
                         // Skip empty paths (can happen for the root dir itself sometimes)
@@ -70,9 +67,8 @@ pub fn list_directory_contents(
                             continue;
                         }
                         // Append the relative path to the output string
-                        // Use display() for cross-platform compatibility
                         output.push_str(&relative_path.display().to_string());
-                        // Add trailing slash for directories for clarity (like ls -F or tree -F)
+                        // Add trailing slash for directories
                         if entry.file_type().map_or(false, |ft| ft.is_dir()) {
                            output.push('/');
                         }
@@ -89,8 +85,7 @@ pub fn list_directory_contents(
                 }
             }
             Err(err) => {
-                // Log the error or decide how to handle it.
-                // For now, let's just append an error message to the output.
+                // Append warnings for inaccessible entries
                 output.push_str(&format!("WARN: Failed to access entry: {}\n", err));
             }
         }
@@ -99,13 +94,19 @@ pub fn list_directory_contents(
     Ok(output.trim_end().to_string()) // Trim trailing newline if any
 }
 
-// Optional: Add some tests here
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs::{self, File};
     use std::io::Write;
     use tempfile::tempdir; // Import tempdir here
+
+    // Helper function to sort lines for comparison
+    fn sort_lines(text: &str) -> Vec<&str> {
+        let mut lines: Vec<&str> = text.lines().collect();
+        lines.sort();
+        lines
+    }
 
     #[test]
     fn test_list_basic() -> Result<()> {
@@ -117,13 +118,8 @@ mod tests {
 
         let output = list_directory_contents(path.to_str().unwrap(), Some(1), false)?;
         let expected = "file1.txt\nsubdir/";
-        // Order might vary, so check contents
-        let mut lines: Vec<&str> = output.lines().collect();
-        lines.sort();
-        let mut expected_lines: Vec<&str> = expected.lines().collect();
-        expected_lines.sort();
 
-        assert_eq!(lines, expected_lines);
+        assert_eq!(sort_lines(&output), sort_lines(expected));
         Ok(())
     }
 
@@ -136,28 +132,14 @@ mod tests {
         File::create(path.join("subdir/file2.txt"))?;
 
         let output = list_directory_contents(path.to_str().unwrap(), Some(2), false)?;
-        let mut lines: Vec<&str> = output.lines().collect();
-        lines.sort();
 
-        // Change to Vec<String> to own the formatted string
-        let expected_lines: Vec<String> = vec![
-            "file1.txt".to_string(),
-            "subdir/".to_string(),
-            format!("subdir{}file2.txt", std::path::MAIN_SEPARATOR), // format! creates owned String
-        ];
-        // Now map to &str for sorting and comparison
-        let mut expected_lines_sorted = expected_lines.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-        expected_lines_sorted.sort();
+        // Use format! to handle path separators correctly
+        let expected = format!(
+            "file1.txt\nsubdir/\nsubdir{}file2.txt",
+            std::path::MAIN_SEPARATOR
+        );
 
-        // Normalize paths in output for comparison
-        let normalized_lines: Vec<String> = lines.iter().map(|s| s.replace('/', &std::path::MAIN_SEPARATOR.to_string())).collect();
-        let mut normalized_lines_sorted: Vec<&str> = normalized_lines.iter().map(|s| s.as_str()).collect();
-        normalized_lines_sorted.sort();
-
-
-        assert_eq!(normalized_lines_sorted, expected_lines_sorted);
-
-
+        assert_eq!(sort_lines(&output), sort_lines(&expected));
         Ok(())
     }
 
@@ -170,19 +152,22 @@ mod tests {
         File::create(path.join(".hidden_dir/file3.txt"))?;
         File::create(path.join("visible_file.txt"))?;
 
-
-        // Test without showing hidden
+        // Test without showing hidden (depth 1)
         let output_no_hidden = list_directory_contents(path.to_str().unwrap(), Some(1), false)?;
         assert_eq!(output_no_hidden.trim(), "visible_file.txt");
 
-        // Test with showing hidden
+        // Test with showing hidden (depth 1)
         let output_hidden = list_directory_contents(path.to_str().unwrap(), Some(1), true)?;
-        let mut lines: Vec<&str> = output_hidden.lines().collect();
-        lines.sort();
-        let expected = [".hidden_dir/", ".hidden_file", "visible_file.txt"];
-        let mut expected_lines: Vec<&str> = expected.to_vec();
-        expected_lines.sort();
-        assert_eq!(lines, expected_lines);
+        let expected_hidden = ".hidden_dir/\n.hidden_file\nvisible_file.txt";
+        assert_eq!(sort_lines(&output_hidden), sort_lines(expected_hidden));
+
+        // Test with showing hidden (depth 2)
+        let output_hidden_depth2 = list_directory_contents(path.to_str().unwrap(), Some(2), true)?;
+        let expected_hidden_depth2 = format!(
+            ".hidden_dir/\n.hidden_dir{}file3.txt\n.hidden_file\nvisible_file.txt",
+             std::path::MAIN_SEPARATOR
+        );
+         assert_eq!(sort_lines(&output_hidden_depth2), sort_lines(&expected_hidden_depth2));
 
         Ok(())
     }
@@ -193,11 +178,11 @@ mod tests {
         let path = dir.path();
 
         // Create .gitignore
-        let mut gitignore = File::create(path.join(".gitignore"))?;
+        let gitignore_path = path.join(".gitignore");
+        let mut gitignore = File::create(&gitignore_path)?;
         writeln!(gitignore, "ignored_file.txt")?;
         writeln!(gitignore, "ignored_dir/")?;
-        // Ensure the file is flushed before WalkBuilder runs
-        gitignore.flush()?;
+        gitignore.flush()?; // Ensure flushed before use
         drop(gitignore);
 
         // Create files and dirs
@@ -208,50 +193,57 @@ mod tests {
         fs::create_dir(path.join("ignored_dir"))?;
         File::create(path.join("ignored_dir/sub_ignored.txt"))?;
 
-
         // Test without hidden, depth 1
         let output = list_directory_contents(path.to_str().unwrap(), Some(1), false)?;
-        let mut lines: Vec<&str> = output.lines().collect();
-        lines.sort();
-        let expected = ["visible_dir/", "visible_file.txt"]; // .gitignore itself is hidden by default
-        let mut expected_lines: Vec<&str> = expected.to_vec();
-        expected_lines.sort();
-        assert_eq!(lines, expected_lines);
+        let expected = "visible_dir/\nvisible_file.txt"; // .gitignore is hidden
+        assert_eq!(sort_lines(&output), sort_lines(expected));
 
         // Test showing hidden, depth 1
         let output_hidden = list_directory_contents(path.to_str().unwrap(), Some(1), true)?;
-        let mut lines_hidden: Vec<&str> = output_hidden.lines().collect();
-        lines_hidden.sort();
-        // .gitignore should now be visible
-        let expected_hidden = [".gitignore", "visible_dir/", "visible_file.txt"];
-        let mut expected_lines_hidden: Vec<&str> = expected_hidden.to_vec();
-        expected_lines_hidden.sort();
-        assert_eq!(lines_hidden, expected_lines_hidden);
-
+        let expected_hidden = ".gitignore\nvisible_dir/\nvisible_file.txt"; // .gitignore now visible
+        assert_eq!(sort_lines(&output_hidden), sort_lines(expected_hidden));
 
         // Test depth 2 (should not include contents of ignored_dir)
         let output_depth2 = list_directory_contents(path.to_str().unwrap(), Some(2), false)?;
-        let mut lines_depth2: Vec<&str> = output_depth2.lines().collect();
-        lines_depth2.sort();
+        let expected_depth2 = format!(
+            "visible_dir/\nvisible_dir{}sub_file.txt\nvisible_file.txt",
+            std::path::MAIN_SEPARATOR
+        );
+        assert_eq!(sort_lines(&output_depth2), sort_lines(&expected_depth2));
 
-        // Change to Vec<String> to own the formatted string
-        let expected_depth2_paths: Vec<String> = vec![
-             "visible_dir/".to_string(),
-             format!("visible_dir{}sub_file.txt", std::path::MAIN_SEPARATOR), // format! creates owned String
-             "visible_file.txt".to_string(),
-        ];
-        // Now map to &str for sorting and comparison
-        let mut expected_lines_depth2 : Vec<&str> = expected_depth2_paths.iter().map(|s| s.as_str()).collect();
-        expected_lines_depth2.sort();
+        Ok(())
+    }
 
-        // Normalize paths in output for comparison
-        let normalized_lines_depth2: Vec<String> = lines_depth2.iter().map(|s| s.replace('/', &std::path::MAIN_SEPARATOR.to_string())).collect();
-        let mut normalized_lines_sorted_depth2: Vec<&str> = normalized_lines_depth2.iter().map(|s| s.as_str()).collect();
-        normalized_lines_sorted_depth2.sort();
+    #[test]
+    fn test_list_depth_zero() -> Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path();
+        File::create(path.join("file1.txt"))?;
 
+        // Depth 0 should list nothing (only the dir itself, which we skip)
+        let output = list_directory_contents(path.to_str().unwrap(), Some(0), false)?;
+        assert_eq!(output, "");
 
-        assert_eq!(normalized_lines_sorted_depth2, expected_lines_depth2);
+        Ok(())
+    }
 
+     #[test]
+    fn test_list_non_existent_path() {
+        let result = list_directory_contents("/path/that/does/not/exist", Some(1), false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Path is not a directory"));
+    }
+
+     #[test]
+    fn test_list_file_path() -> Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path();
+        let file_path = path.join("file1.txt");
+        File::create(&file_path)?;
+
+        let result = list_directory_contents(file_path.to_str().unwrap(), Some(1), false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Path is not a directory"));
         Ok(())
     }
 }

@@ -1,3 +1,4 @@
+// src/models/tools.rs
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -82,9 +83,11 @@ pub struct GitCommandArgs {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ListDirectoryArgs {
     pub path: String,
-    #[serde(default = "default_depth")] // Provide default depth = 1
+    // Default depth = 1, using Option<usize> and serde default
+    #[serde(default = "default_depth")]
     pub depth: Option<usize>,
-    #[serde(default)] // Default show_hidden = false
+    // Default show_hidden = false
+    #[serde(default)]
     pub show_hidden: bool,
 }
 
@@ -92,7 +95,6 @@ pub struct ListDirectoryArgs {
 fn default_depth() -> Option<usize> {
     Some(1)
 }
-
 
 pub struct Tools;
 
