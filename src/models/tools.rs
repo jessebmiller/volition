@@ -32,21 +32,21 @@ pub struct WriteFileArgs {
     pub content: String,
 }
 
-// Renamed from SearchCodeArgs to SearchTextArgs and updated fields
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SearchTextArgs {
     pub pattern: String,
     pub path: Option<String>,
-    pub file_glob: Option<String>, // Changed from file_pattern to file_glob
+    pub file_glob: Option<String>,
     pub case_sensitive: Option<bool>,
-    pub context_lines: Option<u32>, // Added context_lines
+    pub context_lines: Option<u32>,
     pub max_results: Option<usize>,
 }
 
+// Renamed from FindDefinitionArgs, removed language field
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FindDefinitionArgs {
+pub struct FindRustDefinitionArgs {
     pub symbol: String,
-    pub language: Option<String>,
+    // Removed language field
     pub path: Option<String>,
 }
 
@@ -57,41 +57,29 @@ pub struct UserInputArgs {
     pub options: Option<Vec<String>>,
 }
 
-// --- Unified Cargo Tool Struct ---
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CargoCommandArgs {
-    // The cargo subcommand (e.g., "build", "test", "check", "fmt")
     pub command: String,
-    // Arguments for the subcommand (e.g., ["--release"], ["--", "--nocapture"])
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
 }
-
-// --- Unified Git Tool Struct ---
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GitCommandArgs {
-    // The git subcommand (e.g., "status", "diff", "add", "commit")
     pub command: String,
-    // Arguments for the subcommand (e.g., ["--porcelain"], ["--staged"], ["src/main.rs"], ["-m", "My message"])
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
 }
 
-// --- List Directory Tool Struct --- Added
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ListDirectoryArgs {
     pub path: String,
-    // Default depth = 1, using Option<usize> and serde default
     #[serde(default = "default_depth")]
     pub depth: Option<usize>,
-    // Default show_hidden = false
     #[serde(default)]
     pub show_hidden: bool,
 }
 
-// Function to provide the default value for depth
 fn default_depth() -> Option<usize> {
     Some(1)
 }
@@ -99,7 +87,6 @@ fn default_depth() -> Option<usize> {
 pub struct Tools;
 
 impl Tools {
-    // Returns the standard OpenAI format definition for the shell tool.
     pub fn shell_definition() -> serde_json::Value {
         json!({
             "type": "function",
@@ -164,13 +151,12 @@ impl Tools {
         })
     }
 
-    // Updated definition for search_text
     pub fn search_text_definition() -> serde_json::Value {
         json!({
             "type": "function",
             "function": {
-                "name": "search_text", // Renamed from search_code
-                "description": "Search for text patterns in files, returning matching lines with context. Requires 'ripgrep' (rg) to be installed.", // Updated description
+                "name": "search_text",
+                "description": "Search for text patterns in files, returning matching lines with context. Requires 'ripgrep' (rg) to be installed.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -182,7 +168,7 @@ impl Tools {
                             "type": "string",
                             "description": "Directory or file path to search in (defaults to current directory)"
                         },
-                        "file_glob": { // Renamed from file_pattern
+                        "file_glob": {
                             "type": "string",
                             "description": "Glob pattern to filter files (e.g., '*.rs', '*.md', defaults to '*') - Use forward slashes ('/') as path separators in globs, even on Windows."
                         },
@@ -190,11 +176,11 @@ impl Tools {
                             "type": "boolean",
                             "description": "Perform case-sensitive search (defaults to false)"
                         },
-                        "context_lines": { // Added
+                        "context_lines": {
                             "type": "integer",
                             "description": "Number of context lines before and after each match (defaults to 1)"
                         },
-                        "max_results": { // Note: This now applies to lines, not files
+                        "max_results": {
                             "type": "integer",
                             "description": "Maximum number of matching lines to return (defaults to 50)"
                         }
@@ -205,23 +191,21 @@ impl Tools {
         })
     }
 
-    pub fn find_definition_definition() -> serde_json::Value {
+    // Renamed function, updated schema for find_rust_definition
+    pub fn find_rust_definition_definition() -> serde_json::Value {
         json!({
             "type": "function",
             "function": {
-                "name": "find_definition",
-                "description": "Find where a symbol is defined in the codebase",
+                "name": "find_rust_definition", // Renamed tool
+                "description": "Find where a Rust symbol (function, struct, enum, trait, etc.) is defined in the codebase. Searches *.rs files.", // Updated description
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "symbol": {
                             "type": "string",
-                            "description": "Symbol name to search for (function, class, variable, etc.)"
+                            "description": "Rust symbol name to search for (function, struct, enum, trait, macro, etc.)" // Updated description
                         },
-                        "language": {
-                            "type": "string",
-                            "description": "Programming language to consider (affects search patterns)"
-                        },
+                        // Removed language parameter
                         "path": {
                             "type": "string",
                             "description": "Directory path to search in (defaults to current directory)"
@@ -260,13 +244,11 @@ impl Tools {
         })
     }
 
-    // --- Unified Cargo Tool Definition ---
-    // Removed #[allow(dead_code)]
     pub fn cargo_command_definition() -> serde_json::Value {
         json!({
             "type": "function",
             "function": {
-                "name": "cargo_command", // Use a generic name
+                "name": "cargo_command",
                 "description": "Run a safe cargo command. Denied commands: publish, install, login, owner, etc.",
                 "parameters": {
                     "type": "object",
@@ -287,13 +269,11 @@ impl Tools {
         })
     }
 
-    // --- Unified Git Tool Definition ---
-    // Removed #[allow(dead_code)]
     pub fn git_command_definition() -> serde_json::Value {
         json!({
             "type": "function",
             "function": {
-                "name": "git_command", // Use a generic name
+                "name": "git_command",
                 "description": "Run a safe git command. Denied commands: push, reset, rebase, checkout, branch -D, etc.",
                 "parameters": {
                     "type": "object",
@@ -314,8 +294,6 @@ impl Tools {
         })
     }
 
-    // --- List Directory Tool Definition --- Added
-    // Removed #[allow(dead_code)]
     pub fn list_directory_definition() -> serde_json::Value {
         json!({
             "type": "function",

@@ -165,12 +165,11 @@ fn build_openai_request(
             Tools::read_file_definition(),
             Tools::write_file_definition(),
             Tools::search_text_definition(),
-            Tools::find_definition_definition(),
+            Tools::find_rust_definition_definition(), // Updated function call
             Tools::user_input_definition(),
-            // Added the new tool definitions
             Tools::git_command_definition(),
             Tools::cargo_command_definition(),
-            Tools::list_directory_definition() // Added list_directory
+            Tools::list_directory_definition()
         ]),
     );
 

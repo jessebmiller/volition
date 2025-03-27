@@ -5,29 +5,27 @@ pub mod filesystem;
 pub mod git;
 pub mod search;
 pub mod shell;
-pub mod user_input; // Added
+pub mod user_input;
 
 use crate::models::chat::ResponseMessage;
-use anyhow::{Context, Result}; // Added Context
+use anyhow::{Context, Result};
 use reqwest::Client;
-// Updated imports
 use crate::config::RuntimeConfig;
 use crate::models::tools::{
     CargoCommandArgs,
-    FindDefinitionArgs,
+    FindRustDefinitionArgs, // Updated import
     GitCommandArgs,
     ListDirectoryArgs,
     ReadFileArgs,
     SearchTextArgs,
-    ShellArgs, // Added ListDirectoryArgs
-    ToolCall,  // Added FindDefinitionArgs
+    ShellArgs,
+    ToolCall,
     UserInputArgs,
     WriteFileArgs,
 };
 use serde_json::from_str;
-use tracing::{info, warn}; // Make sure warn is imported
+use tracing::{info, warn};
 
-// Define the number of preview lines
 const MAX_PREVIEW_LINES: usize = 6;
 
 pub async fn handle_tool_calls(
@@ -39,18 +37,12 @@ pub async fn handle_tool_calls(
     info!("Processing {} tool calls", tool_calls.len());
 
     for tool_call in tool_calls.iter() {
-        // No need for index `i` here anymore
-
-        // TODO this tool call logging should be a standard part of the UX not info logging
-        // Log the tool call details *before* execution
         info!(
             tool_name = tool_call.function.name.as_str(),
             tool_args = tool_call.function.arguments.as_str(),
             "Executing tool"
         );
 
-        // Execute the tool call
-        // Use `.context()` here for better error messages if argument parsing fails
         let output_result = match tool_call.function.name.as_str() {
             "shell" => {
                 let args: ShellArgs = from_str(&tool_call.function.arguments)
@@ -72,15 +64,15 @@ pub async fn handle_tool_calls(
                     .context("Failed to parse search_text arguments")?;
                 search::search_text(args).await
             }
-            "find_definition" => {
-                let args: FindDefinitionArgs = from_str(&tool_call.function.arguments)
-                    .context("Failed to parse find_definition arguments")?;
-                search::find_definition(args).await
+            // Renamed tool handler
+            "find_rust_definition" => {
+                let args: FindRustDefinitionArgs = from_str(&tool_call.function.arguments) // Updated args type
+                    .context("Failed to parse find_rust_definition arguments")?;
+                search::find_rust_definition(args).await // Updated function call
             }
             "user_input" => {
                 let args: UserInputArgs = from_str(&tool_call.function.arguments)
                     .context("Failed to parse user_input arguments")?;
-                // user_input::get_user_input is sync and returns Result<String>
                 user_input::get_user_input(args)
             }
             "cargo_command" => {
@@ -96,21 +88,16 @@ pub async fn handle_tool_calls(
             "list_directory" => {
                 let args: ListDirectoryArgs = from_str(&tool_call.function.arguments)
                     .context("Failed to parse list_directory arguments")?;
-                // list_directory_contents is sync and returns Result<String>
                 filesystem::list_directory_contents(&args.path, args.depth, args.show_hidden)
             }
             unknown_tool => {
-                // Log and return error for unknown tool
                 warn!(tool_name = unknown_tool, "Attempted to call unknown tool");
-                // Use anyhow! macro for direct error creation
                 Err(anyhow::anyhow!("Unknown tool: {}", unknown_tool))
             }
         };
 
-        // Handle the result (Ok or Err)
         match output_result {
             Ok(output) => {
-                // Log preview of the output
                 let preview: String = output
                     .lines()
                     .take(MAX_PREVIEW_LINES)
@@ -123,12 +110,9 @@ pub async fn handle_tool_calls(
                 info!(
                     tool_name = tool_call.function.name.as_str(),
                     output_preview = format!("{}{}", preview, preview_suffix).as_str(),
-                    // Optionally log full output length for context
-                    // output_len = output.len(),
                     "Tool executed successfully"
                 );
 
-                // Push the full result message
                 messages.push(ResponseMessage {
                     role: "tool".to_string(),
                     content: Some(output),
@@ -137,13 +121,11 @@ pub async fn handle_tool_calls(
                 });
             }
             Err(e) => {
-                // Log the error
                 warn!(
                     tool_name = tool_call.function.name.as_str(),
                     error = e.to_string().as_str(),
                     "Tool execution failed"
                 );
-                // Propagate the error up, adding context about which tool failed.
                 return Err(e.context(format!(
                     "Failed to execute tool: {}",
                     tool_call.function.name
