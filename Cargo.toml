@@ -31,3 +31,5 @@ pulldown-cmark-to-cmark = "21.0.0"
 # Add dev-dependencies section for test-only crates
 [dev-dependencies]
 tempfile = "3.6" # Added for filesystem tests
+# reqwest_mock = "0.2" # Removed due to incompatibility
+httpmock = "0.7" # Added for mocking HTTP requests
