@@ -3,17 +3,18 @@ mod config;
 mod models;
 mod tools;
 
-use anyhow::{anyhow, Context, Result};
+// Removed unused anyhow import
+use anyhow::{Context, Result};
 use colored::*;
 use serde_json;
 use std::{fs, io::{self, Write}, path::Path};
 use tokio::time::Duration;
 
 use crate::api::chat_with_api;
-// Use the single combined config struct and loading function
 use crate::config::{load_runtime_config, RuntimeConfig};
 use crate::models::chat::ResponseMessage;
-use crate::models::cli::{Commands, Cli};
+// Updated import: Remove Commands
+use crate::models::cli::Cli;
 use crate::tools::handle_tool_calls;
 
 use clap::Parser;
@@ -22,27 +23,27 @@ use tracing_subscriber::FmtSubscriber;
 
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
 
-// Modified handle_conversation to accept the single RuntimeConfig
-async fn handle_conversation(
+// Renamed and modified handle_conversation to start_interactive_session
+async fn start_interactive_session(
     config: &RuntimeConfig, // Use the combined config
-    query: &str,
+    // Removed query parameter
 ) -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()?;
 
-    // Print welcome message (unchanged)
-    println!("\n{}", "Volition - AI Software Engineering Assistant".cyan().bold());
-    println!("{}", "Ready to help you understand and improve your codebase.".cyan());
-    println!("{}", "Type 'exit' or press Enter on an empty line to quit".cyan());
+    // Updated, more general welcome message
+    println!("\n{}", "Volition - AI Assistant".cyan().bold());
+    println!("{}", "Type 'exit' or press Enter on an empty line to quit.".cyan());
     println!("");
 
-    let mut messages: Vec<ResponseMessage>;
+    // Declare messages Option, initialize later
+    let mut messages_option: Option<Vec<ResponseMessage>> = None;
     let recovery_path = Path::new(RECOVERY_FILE_PATH);
 
-    // --- Load State Logic (modified to pass config.system_prompt) ---
+    // --- Load State Logic ---
     if recovery_path.exists() {
-         tracing::info!("Found existing conversation state file: {}", RECOVERY_FILE_PATH);
+        tracing::info!("Found existing conversation state file: {}", RECOVERY_FILE_PATH);
         print!(
             "{}",
             "An incomplete session state was found. Resume? (Y/n): "
@@ -58,7 +59,7 @@ async fn handle_conversation(
             match fs::read_to_string(recovery_path) {
                 Ok(state_json) => match serde_json::from_str(&state_json) {
                     Ok(loaded_messages) => {
-                        messages = loaded_messages;
+                        messages_option = Some(loaded_messages); // Assign loaded messages
                         tracing::info!("Successfully resumed session from state file.");
                         println!("{}", "Resuming previous session...".cyan());
                         let _ = fs::remove_file(recovery_path);
@@ -67,64 +68,107 @@ async fn handle_conversation(
                         tracing::error!("Failed to deserialize state file: {}. Starting fresh.", e);
                         println!("{}", "Error reading state file. Starting a fresh session.".red());
                         let _ = fs::remove_file(recovery_path);
-                        messages = default_messages(query, &config.system_prompt); // Pass prompt from combined config
                     }
                 },
                 Err(e) => {
                     tracing::error!("Failed to read state file: {}. Starting fresh.", e);
                     println!("{}", "Error reading state file. Starting a fresh session.".red());
                     let _ = fs::remove_file(recovery_path);
-                    messages = default_messages(query, &config.system_prompt); // Pass prompt from combined config
                 }
             }
         } else {
             tracing::info!("User chose not to resume. Starting fresh.");
             println!("{}", "Starting a fresh session.".cyan());
             let _ = fs::remove_file(recovery_path);
-            messages = default_messages(query, &config.system_prompt); // Pass prompt from combined config
         }
-    } else {
-        messages = default_messages(query, &config.system_prompt); // Pass prompt from combined config
     }
     // --- End Load State Logic ---
 
-    let mut conversation_active = true;
+    // --- Get Initial Query if messages_option is still None ---
+    if messages_option.is_none() {
+        println!("{}", "How can I help you?".cyan());
+        print!("{} ", ">".green().bold());
+        io::stdout().flush()?;
+
+        let mut initial_input = String::new();
+        io::stdin().read_line(&mut initial_input)?;
+        let initial_input = initial_input.trim();
+
+        if initial_input.is_empty() || initial_input.to_lowercase() == "exit" {
+            println!("\n{}", "Goodbye!".cyan());
+            return Ok(()); // Exit immediately if first input is empty or exit
+        }
+        // Initialize messages only if we got valid initial input
+        messages_option = Some(initialize_messages(initial_input, &config.system_prompt));
+    }
+    // --- End Initial Query ---
 
     // --- Main Conversation Loop ---
-    while conversation_active {
-        tracing::debug!("Current message history: {:?}", messages);
+    // Ensure messages_option is Some before starting the loop
+    if let Some(mut messages) = messages_option { // Shadow messages_option with the actual Vec
+        let mut conversation_active = true;
+        while conversation_active {
+            tracing::debug!("Current message history: {:?}", messages);
 
-        // Pass the combined config to chat_with_api (Removed the 4th argument)
-        let response = chat_with_api(&client, config, messages.clone()).await?;
+            // Call the API
+            let response_result = chat_with_api(&client, config, messages.clone()).await;
 
-         let message = match response.choices.get(0) {
-            Some(choice) => &choice.message,
-            None => {
-                 tracing::error!("API response did not contain any choices.");
-                 println!("{}", "Error: Received an empty response from the AI service.".red());
-                 break;
+            // Check for API errors or empty choices
+            let message_option = match response_result {
+                Ok(response) => {
+                    if let Some(choice) = response.choices.into_iter().next() { // Take the first choice
+                        Some(choice.message)
+                    } else {
+                        tracing::error!("API response did not contain any choices.");
+                        println!("{}", "Error: Received an empty response from the AI service.".red());
+                        None // Indicate no valid message received
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("API call failed: {}", e);
+                    println!("{}\n{}", "Error calling AI service:".red(), e);
+                    None // Indicate no valid message received
+                }
+            };
+
+            // Process the message if we received one
+            if let Some(message) = message_option {
+                if let Some(content) = &message.content {
+                    if !content.is_empty() {
+                        println!("\n{}", content);
+                    }
+                }
+
+                // Add assistant message to history BEFORE processing tool calls
+                let assistant_message = ResponseMessage {
+                    role: "assistant".to_string(),
+                    content: message.content.clone(),
+                    tool_calls: message.tool_calls.clone(),
+                    tool_call_id: None,
+                };
+                messages.push(assistant_message);
+
+
+                // Process tool calls if present
+                if let Some(tool_calls) = message.tool_calls { // Use the tool_calls from the original message
+                    tracing::info!("Processing {} tool calls", tool_calls.len());
+                    // Handle tool calls (which will add tool responses to messages)
+                    if let Err(e) = handle_tool_calls(&client, &config.api_key, tool_calls.to_vec(), &mut messages).await {
+                         tracing::error!("Error handling tool calls: {}", e);
+                         println!("{}\n{}", "Error during tool execution:".red(), e);
+                         // Decide whether to continue or break here. Let's continue for now.
+                    }
+                    // After handling tool calls, loop back to call API again
+                    continue; // Skip the user input prompt for this iteration
+                }
+                // If no tool calls, fall through to prompt user
+            } else {
+                // If message_option was None (due to API error or empty choices),
+                // we skip processing and directly prompt the user again.
+                println!("\n{}", "Please try again or enter a different query:".yellow());
             }
-        };
 
-        if let Some(content) = &message.content {
-            if !content.is_empty() {
-                println!("\n{}", content);
-            }
-        }
-
-        messages.push(ResponseMessage {
-            role: "assistant".to_string(),
-            content: message.content.clone(),
-            tool_calls: message.tool_calls.clone(),
-            tool_call_id: None,
-        });
-
-        if let Some(tool_calls) = &message.tool_calls {
-            tracing::info!("Processing {} tool calls", tool_calls.len());
-            // Pass the api_key from the combined config
-            handle_tool_calls(&client, &config.api_key, tool_calls.to_vec(), &mut messages).await?;
-        } else {
-            println!("\n{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
+            // Prompt for next user input (only if no tool calls were processed in this iteration)
             print!("{} ", ">".green().bold());
             io::stdout().flush()?;
 
@@ -133,7 +177,7 @@ async fn handle_conversation(
             let input = input.trim().to_string();
 
             if input.is_empty() || input.to_lowercase() == "exit" {
-                println!("\n{}", "Goodbye! Thank you for using Volition.".cyan());
+                println!("\n{}", "Goodbye!".cyan());
                 conversation_active = false;
             } else {
                 messages.push(ResponseMessage {
@@ -143,24 +187,24 @@ async fn handle_conversation(
                     tool_call_id: None,
                 });
             }
-        }
 
-        // --- Save State Logic (unchanged) ---
-         if conversation_active {
-            match serde_json::to_string_pretty(&messages) {
-                Ok(state_json) => {
-                    if let Err(e) = fs::write(RECOVERY_FILE_PATH, state_json) {
-                        tracing::error!("Failed to write recovery state file: {}", e);
-                    } else {
-                        tracing::debug!("Successfully saved conversation state.");
+            // --- Save State Logic ---
+             if conversation_active {
+                match serde_json::to_string_pretty(&messages) {
+                    Ok(state_json) => {
+                        if let Err(e) = fs::write(RECOVERY_FILE_PATH, state_json) {
+                            tracing::error!("Failed to write recovery state file: {}", e);
+                        } else {
+                            tracing::debug!("Successfully saved conversation state.");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to serialize conversation state: {}", e);
                     }
                 }
-                Err(e) => {
-                    tracing::error!("Failed to serialize conversation state: {}", e);
-                }
             }
-        }
-    }
+        } // End while conversation_active
+    } // End if let Some(mut messages)
     // --- End Main Conversation Loop ---
 
     // --- Cleanup Logic (unchanged) ---
@@ -175,8 +219,8 @@ async fn handle_conversation(
     Ok(())
 }
 
-// Modified default_messages to accept system_prompt as an argument
-fn default_messages(query: &str, system_prompt: &str) -> Vec<ResponseMessage> {
+// Renamed default_messages to initialize_messages
+fn initialize_messages(initial_query: &str, system_prompt: &str) -> Vec<ResponseMessage> {
     vec![
         ResponseMessage {
             role: "system".to_string(),
@@ -186,7 +230,7 @@ fn default_messages(query: &str, system_prompt: &str) -> Vec<ResponseMessage> {
         },
         ResponseMessage {
             role: "user".to_string(),
-            content: Some(query.to_string()),
+            content: Some(initial_query.to_string()),
             tool_calls: None,
             tool_call_id: None,
         },
@@ -202,11 +246,11 @@ async fn main() -> Result<()> {
 
     // Setup tracing subscriber (unchanged)
     let level = if cli.verbose {
-        Level::DEBUG
+        Level::DEBUG // Changed to DEBUG for verbose
     } else if cli.debug {
-        Level::INFO
+        Level::INFO // Changed to INFO for debug
     } else {
-        Level::WARN
+        Level::WARN // Default level
     };
     let subscriber = FmtSubscriber::builder()
         .with_max_level(level)
@@ -215,38 +259,14 @@ async fn main() -> Result<()> {
         .expect("setting default subscriber failed");
 
     // --- Load Configuration ---
-    // Load the single combined configuration
     let config = load_runtime_config()
         .context("Failed to load configuration from Volition.toml and environment")?;
     // --- End Load Configuration ---
 
-    // Main command matching and execution logic (modified to pass single config)
-    match &cli.command {
-        Some(Commands::Run { args, verbose: _, debug: _ }) => {
-            let query = args.join(" ");
-            if query.is_empty() {
-                return Err(anyhow!("Please provide a command to run"));
-            }
-            // Pass the single config to handle_conversation
-            handle_conversation(&config, &query).await?;
-        }
-        None => {
-            if cli.rest.is_empty() {
-                // Print usage instructions (unchanged)
-                println!("Welcome to Volition - AI Software Engineering Assistant");
-                println!("Usage: volition <command> [arguments]");
-                 println!("Examples:");
-                println!("  volition \"Analyze the src directory and list the main components\"");
-                println!("  volition \"Find all usages of the login function and refactor it to use async/await\"");
-                println!("  volition \"Help me understand how the routing system works in this codebase\"");
-                println!("  volition --help       - Show more information");
-                return Ok(());
-            }
-            let query = cli.rest.join(" ");
-            // Pass the single config to handle_conversation
-            handle_conversation(&config, &query).await?;
-        }
-    }
+    // --- Start Interactive Session Directly ---
+    // Remove the match statement and directly call the session handler
+    start_interactive_session(&config).await?;
+    // --- End Interactive Session ---
 
     Ok(())
 }
