@@ -1,10 +1,10 @@
 // src/tools/cargo.rs
 use std::process::{Command, Stdio};
 // Removed bail from import
-use anyhow::{Context, Result};
-use tracing::{debug, warn, info};
 use crate::models::tools::CargoCommandArgs;
+use anyhow::{Context, Result};
 use std::collections::HashSet;
+use tracing::{debug, info, warn};
 
 // Define denied cargo commands
 fn get_denied_cargo_commands() -> HashSet<String> {
@@ -16,7 +16,7 @@ fn get_denied_cargo_commands() -> HashSet<String> {
     denied.insert("owner".to_string());
     denied.insert("yank".to_string());
     denied.insert("install".to_string()); // Can install globally
-    // Add any other commands deemed too risky
+                                          // Add any other commands deemed too risky
     denied
 }
 
@@ -28,9 +28,15 @@ pub async fn run_cargo_command(args: CargoCommandArgs) -> Result<String> {
 
     // Check against deny list
     if denied_commands.contains(command_name) {
-        warn!("Denied execution of cargo command: cargo {} {:?}", command_name, command_args);
+        warn!(
+            "Denied execution of cargo command: cargo {} {:?}",
+            command_name, command_args
+        );
         // Return a clear error message to the AI/user
-        return Ok(format!("Error: The cargo command '{}' is not allowed for security reasons.", command_name));
+        return Ok(format!(
+            "Error: The cargo command '{}' is not allowed for security reasons.",
+            command_name
+        ));
     }
 
     // Construct the full command string for logging
@@ -50,7 +56,12 @@ pub async fn run_cargo_command(args: CargoCommandArgs) -> Result<String> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let status = output.status.code().unwrap_or(-1);
 
-    debug!("cargo {} {} exit status: {}", command_name, command_args.join(" "), status);
+    debug!(
+        "cargo {} {} exit status: {}",
+        command_name,
+        command_args.join(" "),
+        status
+    );
 
     // Format the result like the shell tool's internal executor
     let result = format!(
@@ -58,8 +69,16 @@ pub async fn run_cargo_command(args: CargoCommandArgs) -> Result<String> {
         command_name,
         command_args.join(" "),
         status,
-        if stdout.is_empty() { "<no output>" } else { &stdout },
-        if stderr.is_empty() { "<no output>" } else { &stderr }
+        if stdout.is_empty() {
+            "<no output>"
+        } else {
+            &stdout
+        },
+        if stderr.is_empty() {
+            "<no output>"
+        } else {
+            &stderr
+        }
     );
 
     Ok(result)

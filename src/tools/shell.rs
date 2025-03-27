@@ -1,10 +1,9 @@
-use std::process::{Command, Stdio};
+use crate::models::tools::ShellArgs;
 use anyhow::{Context, Result};
 use colored::*;
 use std::io::{self, Write};
-use crate::models::tools::ShellArgs;
+use std::process::{Command, Stdio};
 use tracing::{debug, warn};
-
 
 // Internal function to execute a shell command without confirmation
 pub(crate) async fn execute_shell_command_internal(command: &str) -> Result<String> {
@@ -32,22 +31,35 @@ pub(crate) async fn execute_shell_command_internal(command: &str) -> Result<Stri
     let status = output.status.code().unwrap_or(-1);
 
     // --- Logging moved inside ---
-    let stdout_preview = stdout.lines().take(3).collect::<Vec<&str>>().join("
-");
+    let stdout_preview = stdout.lines().take(3).collect::<Vec<&str>>().join(
+        "
+",
+    );
     let stderr_preview = if !stderr.is_empty() {
-        format!("
-Stderr preview: {}", stderr.lines().take(3).collect::<Vec<&str>>().join("
-"))
+        format!(
+            "
+Stderr preview: {}",
+            stderr.lines().take(3).collect::<Vec<&str>>().join(
+                "
+"
+            )
+        )
     } else {
         String::new()
     };
 
-    debug!("Internal command exit status: {}
+    debug!(
+        "Internal command exit status: {}
 Output preview:
 {}{}",
-           status,
-           if stdout_preview.is_empty() { "<no output>" } else { &stdout_preview },
-           stderr_preview);
+        status,
+        if stdout_preview.is_empty() {
+            "<no output>"
+        } else {
+            &stdout_preview
+        },
+        stderr_preview
+    );
 
     let detailed_info = format!(
         "Stdout length: {} bytes, Stderr length: {} bytes, Total lines: {}",
@@ -65,14 +77,20 @@ Stdout:
 Stderr:
 {}",
         status,
-        if stdout.is_empty() { "<no output>" } else { &stdout },
-        if stderr.is_empty() { "<no output>" } else { &stderr }
+        if stdout.is_empty() {
+            "<no output>"
+        } else {
+            &stdout
+        },
+        if stderr.is_empty() {
+            "<no output>"
+        } else {
+            &stderr
+        }
     );
 
     Ok(result)
 }
-
-
 
 // Public function exposed as the 'shell' tool, includes confirmation
 pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
@@ -82,8 +100,10 @@ pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
     print!(
         "{}
 {}
-{}{} ", 
-        "WARNING: This tool can execute arbitrary code!".red().bold(),
+{}{} ",
+        "WARNING: This tool can execute arbitrary code!"
+            .red()
+            .bold(),
         format!("Request to run shell command: {}", command).yellow(),
         "Allow execution? ".yellow(),
         "(y/N):".yellow().bold() // Default to No
@@ -101,7 +121,10 @@ pub async fn run_shell_command(args: ShellArgs) -> Result<String> {
         warn!("User denied execution of shell command: {}", command);
         println!("{}", "Shell command execution denied.".red());
         // Return a message indicating the command was skipped
-        return Ok(format!("Shell command execution denied by user: {}", command));
+        return Ok(format!(
+            "Shell command execution denied by user: {}",
+            command
+        ));
     }
     // --- End Confirmation ---
 

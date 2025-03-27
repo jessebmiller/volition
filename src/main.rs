@@ -2,14 +2,17 @@
 mod api;
 mod config;
 mod models;
-mod tools;
-mod rendering; // Added
+mod rendering;
+mod tools; // Added
 
 // Removed unused anyhow import
 use anyhow::{Context, Result};
 use colored::*;
-use serde_json;
-use std::{fs, io::{self, Write}, path::Path};
+use std::{
+    fs,
+    io::{self, Write},
+    path::Path,
+};
 use tokio::time::Duration;
 
 use crate::api::chat_with_api;
@@ -18,11 +21,11 @@ use crate::models::chat::ResponseMessage;
 // Updated import: Remove Commands
 use crate::models::cli::Cli;
 // Pass config into handle_tool_calls
-use crate::tools::handle_tool_calls;
-use crate::rendering::print_formatted; // Import the new function
+use crate::rendering::print_formatted;
+use crate::tools::handle_tool_calls; // Import the new function
 
 use clap::Parser;
-use tracing::{Level, error}; // Import error level
+use tracing::{error, Level}; // Import error level
 use tracing_subscriber::FmtSubscriber;
 
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
@@ -30,7 +33,7 @@ const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
 // Renamed and modified handle_conversation to start_interactive_session
 async fn start_interactive_session(
     config: &RuntimeConfig, // Use the combined config
-    // Removed query parameter
+                            // Removed query parameter
 ) -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
@@ -38,8 +41,11 @@ async fn start_interactive_session(
 
     // Updated, more general welcome message
     println!("\n{}", "Volition - AI Assistant".cyan().bold());
-    println!("{}", "Type 'exit' or press Enter on an empty line to quit.".cyan());
-    println!("");
+    println!(
+        "{}",
+        "Type 'exit' or press Enter on an empty line to quit.".cyan()
+    );
+    println!();
 
     // Declare messages Option, initialize later
     let mut messages_option: Option<Vec<ResponseMessage>> = None;
@@ -47,7 +53,10 @@ async fn start_interactive_session(
 
     // --- Load State Logic ---
     if recovery_path.exists() {
-        tracing::info!("Found existing conversation state file: {}", RECOVERY_FILE_PATH);
+        tracing::info!(
+            "Found existing conversation state file: {}",
+            RECOVERY_FILE_PATH
+        );
         print!(
             "{}",
             "An incomplete session state was found. Resume? (Y/n): "
@@ -70,13 +79,19 @@ async fn start_interactive_session(
                     }
                     Err(e) => {
                         tracing::error!("Failed to deserialize state file: {}. Starting fresh.", e);
-                        println!("{}", "Error reading state file. Starting a fresh session.".red());
+                        println!(
+                            "{}",
+                            "Error reading state file. Starting a fresh session.".red()
+                        );
                         let _ = fs::remove_file(recovery_path);
                     }
                 },
                 Err(e) => {
                     tracing::error!("Failed to read state file: {}. Starting fresh.", e);
-                    println!("{}", "Error reading state file. Starting a fresh session.".red());
+                    println!(
+                        "{}",
+                        "Error reading state file. Starting a fresh session.".red()
+                    );
                     let _ = fs::remove_file(recovery_path);
                 }
             }
@@ -109,7 +124,8 @@ async fn start_interactive_session(
 
     // --- Main Conversation Loop ---
     // Ensure messages_option is Some before starting the loop
-    if let Some(mut messages) = messages_option { // Shadow messages_option with the actual Vec
+    if let Some(mut messages) = messages_option {
+        // Shadow messages_option with the actual Vec
         let mut conversation_active = true;
         while conversation_active {
             tracing::debug!("Current message history: {:?}", messages);
@@ -120,11 +136,15 @@ async fn start_interactive_session(
             // Check for API errors or empty choices
             let message_option = match response_result {
                 Ok(response) => {
-                    if let Some(choice) = response.choices.into_iter().next() { // Take the first choice
+                    if let Some(choice) = response.choices.into_iter().next() {
+                        // Take the first choice
                         Some(choice.message)
                     } else {
                         tracing::error!("API response did not contain any choices.");
-                        println!("{}", "Error: Received an empty response from the AI service.".red());
+                        println!(
+                            "{}",
+                            "Error: Received an empty response from the AI service.".red()
+                        );
                         None // Indicate no valid message received
                     }
                 }
@@ -137,8 +157,8 @@ async fn start_interactive_session(
 
             // Process the message if we received one
             if let Some(message) = message_option {
-                 // Add a newline before printing AI response for better spacing
-                 println!();
+                // Add a newline before printing AI response for better spacing
+                println!();
 
                 if let Some(content) = &message.content {
                     if !content.is_empty() {
@@ -150,8 +170,8 @@ async fn start_interactive_session(
                         }
                     }
                 }
-                 // Add a newline after printing AI response for better spacing
-                 println!();
+                // Add a newline after printing AI response for better spacing
+                println!();
 
                 // Add assistant message to history BEFORE processing tool calls
                 let assistant_message = ResponseMessage {
@@ -162,15 +182,17 @@ async fn start_interactive_session(
                 };
                 messages.push(assistant_message);
 
-
                 // Process tool calls if present
-                if let Some(tool_calls) = message.tool_calls { // Use the tool_calls from the original message
+                if let Some(tool_calls) = message.tool_calls {
+                    // Use the tool_calls from the original message
                     tracing::info!("Processing {} tool calls", tool_calls.len());
                     // Pass the full config to handle_tool_calls
-                    if let Err(e) = handle_tool_calls(&client, config, tool_calls.to_vec(), &mut messages).await {
-                         tracing::error!("Error handling tool calls: {}", e);
-                         println!("{}\n{}", "Error during tool execution:".red(), e);
-                         // Decide whether to continue or break here. Let's continue for now.
+                    if let Err(e) =
+                        handle_tool_calls(&client, config, tool_calls.to_vec(), &mut messages).await
+                    {
+                        tracing::error!("Error handling tool calls: {}", e);
+                        println!("{}\n{}", "Error during tool execution:".red(), e);
+                        // Decide whether to continue or break here. Let's continue for now.
                     }
                     // After handling tool calls, loop back to call API again
                     continue; // Skip the user input prompt for this iteration
@@ -179,7 +201,10 @@ async fn start_interactive_session(
             } else {
                 // If message_option was None (due to API error or empty choices),
                 // we skip processing and directly prompt the user again.
-                println!("\n{}", "Please try again or enter a different query:".yellow());
+                println!(
+                    "\n{}",
+                    "Please try again or enter a different query:".yellow()
+                );
             }
 
             // Prompt for next user input (only if no tool calls were processed in this iteration)
@@ -203,7 +228,7 @@ async fn start_interactive_session(
             }
 
             // --- Save State Logic ---
-             if conversation_active {
+            if conversation_active {
                 match serde_json::to_string_pretty(&messages) {
                     Ok(state_json) => {
                         if let Err(e) = fs::write(RECOVERY_FILE_PATH, state_json) {
@@ -219,7 +244,7 @@ async fn start_interactive_session(
             }
         } // End while conversation_active
     } // End if let Some(mut messages)
-    // --- End Main Conversation Loop ---
+      // --- End Main Conversation Loop ---
 
     // --- Cleanup Logic (unchanged) ---
     if Path::new(RECOVERY_FILE_PATH).exists() {
@@ -266,11 +291,8 @@ async fn main() -> Result<()> {
         _ => Level::TRACE, // -vvv or more
     };
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(level)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting default subscriber failed");
+    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     // --- Load Configuration ---
     let config = load_runtime_config()

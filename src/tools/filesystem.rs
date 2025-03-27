@@ -27,10 +27,10 @@ pub fn list_directory_contents(
     let mut walker_builder = WalkBuilder::new(start_path);
     walker_builder
         .hidden(!show_hidden) // If show_hidden is true, we negate it for the .hidden() setting
-        .git_ignore(true)     // Enable .gitignore respecting
-        .git_global(true)     // Respect global gitignore
-        .git_exclude(true)    // Respect .git/info/exclude
-        .parents(true);       // Respect ignore files in parent directories
+        .git_ignore(true) // Enable .gitignore respecting
+        .git_global(true) // Respect global gitignore
+        .git_exclude(true) // Respect .git/info/exclude
+        .parents(true); // Respect ignore files in parent directories
 
     // Explicitly add the .gitignore file in the root path if it exists
     // This helps ensure it's respected even if not in a git repo (like in tests)
@@ -55,7 +55,7 @@ pub fn list_directory_contents(
             Ok(entry) => {
                 // Skip the root path itself if depth > 0 or depth is None
                 // WalkBuilder depth 0 is the starting point.
-                if entry.depth() == 0 && max_depth.map_or(true, |d| d > 0) {
+                if entry.depth() == 0 && max_depth.is_none_or(|d| d > 0) {
                     continue;
                 }
 
@@ -69,16 +69,16 @@ pub fn list_directory_contents(
                         // Append the relative path to the output string
                         output.push_str(&relative_path.display().to_string());
                         // Add trailing slash for directories
-                        if entry.file_type().map_or(false, |ft| ft.is_dir()) {
-                           output.push('/');
+                        if entry.file_type().is_some_and(|ft| ft.is_dir()) {
+                            output.push('/');
                         }
                         output.push('\n');
                     }
                     Err(_) => {
                         // Fallback to the full path if stripping the prefix fails (shouldn't normally happen)
                         output.push_str(&entry.path().display().to_string());
-                        if entry.file_type().map_or(false, |ft| ft.is_dir()) {
-                           output.push('/');
+                        if entry.file_type().is_some_and(|ft| ft.is_dir()) {
+                            output.push('/');
                         }
                         output.push('\n');
                     }
@@ -165,14 +165,17 @@ mod tests {
         let output_hidden_depth2 = list_directory_contents(path.to_str().unwrap(), Some(2), true)?;
         let expected_hidden_depth2 = format!(
             ".hidden_dir/\n.hidden_dir{}file3.txt\n.hidden_file\nvisible_file.txt",
-             std::path::MAIN_SEPARATOR
+            std::path::MAIN_SEPARATOR
         );
-         assert_eq!(sort_lines(&output_hidden_depth2), sort_lines(&expected_hidden_depth2));
+        assert_eq!(
+            sort_lines(&output_hidden_depth2),
+            sort_lines(&expected_hidden_depth2)
+        );
 
         Ok(())
     }
 
-     #[test]
+    #[test]
     fn test_list_gitignore() -> Result<()> {
         let dir = tempdir()?;
         let path = dir.path();
@@ -227,14 +230,17 @@ mod tests {
         Ok(())
     }
 
-     #[test]
+    #[test]
     fn test_list_non_existent_path() {
         let result = list_directory_contents("/path/that/does/not/exist", Some(1), false);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Path is not a directory"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Path is not a directory"));
     }
 
-     #[test]
+    #[test]
     fn test_list_file_path() -> Result<()> {
         let dir = tempdir()?;
         let path = dir.path();
@@ -243,7 +249,10 @@ mod tests {
 
         let result = list_directory_contents(file_path.to_str().unwrap(), Some(1), false);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Path is not a directory"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Path is not a directory"));
         Ok(())
     }
 }

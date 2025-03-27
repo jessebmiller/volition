@@ -1,7 +1,7 @@
-use std::io::{self, Write};
+use crate::models::tools::UserInputArgs;
 use anyhow::Result;
 use colored::*;
-use crate::models::tools::UserInputArgs;
+use std::io::{self, Write};
 
 pub fn get_user_input(args: UserInputArgs) -> Result<String> {
     // Display the prompt to the user

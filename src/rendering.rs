@@ -1,8 +1,8 @@
 // src/rendering.rs
 use anyhow::Result;
 use lazy_static::lazy_static;
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use std::io::{self, Write};
-use pulldown_cmark::{Event, Parser, Tag, CodeBlockKind, Options, TagEnd};
 use syntect::{
     easy::HighlightLines,
     highlighting::{Color as SyntectColor, FontStyle, Style, Theme, ThemeSet},
@@ -11,9 +11,11 @@ use syntect::{
 };
 use termimad::{
     crossterm::style::{
-        Attribute, Color, ResetColor, SetAttribute, SetForegroundColor, /* Removed SetBackgroundColor */
+        Attribute, Color, ResetColor, SetAttribute,
+        SetForegroundColor, /* Removed SetBackgroundColor */
     },
-    MadSkin, Error as TermimadError, // Import TermimadError for mapping
+    Error as TermimadError, // Import TermimadError for mapping
+    MadSkin,
 };
 // Import the cmark function and its specific error type
 use pulldown_cmark_to_cmark::{cmark, Error as CmarkError};
@@ -23,13 +25,23 @@ lazy_static! {
     static ref SYNTAX_SET: SyntaxSet = SyntaxSet::load_defaults_newlines();
     static ref THEME_SET: ThemeSet = ThemeSet::load_defaults();
     static ref THEME_NAME: String = "base16-ocean.dark".to_string();
-    static ref CODE_THEME: &'static Theme = THEME_SET.themes.get(&*THEME_NAME)
+    static ref CODE_THEME: &'static Theme = THEME_SET
+        .themes
+        .get(&*THEME_NAME)
         .unwrap_or_else(|| &THEME_SET.themes["base16-ocean.dark"]);
 }
 
 // Helper to convert syntect Color to crossterm Color
 fn syntect_to_crossterm_color(color: SyntectColor) -> Option<Color> {
-    if color.a == 0 { None } else { Some(Color::Rgb { r: color.r, g: color.g, b: color.b }) }
+    if color.a == 0 {
+        None
+    } else {
+        Some(Color::Rgb {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+        })
+    }
 }
 
 // --- Syntect Code Highlighting Function (Simplified Colors) ---
@@ -43,22 +55,20 @@ fn highlight_code<W: Write>(
 ) -> Result<(), io::Error> {
     // ... (rest of function is unchanged) ...
     let lower_lang = language.map(|l| l.to_lowercase());
-    let lang_token_opt = lower_lang.as_deref().map(|lang_str| {
-        match lang_str {
-            "shell" | "bash" | "sh" => "bash",
-            "javascript" | "js" => "javascript",
-            "typescript" | "ts" => "typescript",
-            "python" | "py" => "python",
-            "yaml" | "yml" => "yaml",
-            "html" | "htm" => "html",
-            "css" => "css",
-            "csharp" | "cs" => "c#",
-            "rust" | "rs" => "rust",
-            "markdown" | "md" => "markdown",
-            "json" => "json",
-            "toml" => "toml",
-            other => other,
-        }
+    let lang_token_opt = lower_lang.as_deref().map(|lang_str| match lang_str {
+        "shell" | "bash" | "sh" => "bash",
+        "javascript" | "js" => "javascript",
+        "typescript" | "ts" => "typescript",
+        "python" | "py" => "python",
+        "yaml" | "yml" => "yaml",
+        "html" | "htm" => "html",
+        "css" => "css",
+        "csharp" | "cs" => "c#",
+        "rust" | "rs" => "rust",
+        "markdown" | "md" => "markdown",
+        "json" => "json",
+        "toml" => "toml",
+        other => other,
     });
 
     let syntax = lang_token_opt
@@ -97,11 +107,11 @@ fn highlight_code<W: Write>(
             }
             if style.font_style.contains(FontStyle::ITALIC) {
                 write!(writer, "{}", SetAttribute(Attribute::Italic))?;
-                 applied_attrs = true;
+                applied_attrs = true;
             }
             if style.font_style.contains(FontStyle::UNDERLINE) {
                 write!(writer, "{}", SetAttribute(Attribute::Underlined))?;
-                 applied_attrs = true;
+                applied_attrs = true;
             }
 
             write!(writer, "{}", content)?;
@@ -114,9 +124,7 @@ fn highlight_code<W: Write>(
     }
     write!(writer, "{}", ResetColor)?;
     Ok(())
-
 }
-
 
 // --- Termimad Skin Creation (Simplified) ---
 // (No changes needed in this function)
@@ -135,7 +143,8 @@ fn flush_markdown_buffer<W: Write>(
     events: &mut Vec<Event<'_>>, // Use mutable reference again
     skin: &MadSkin,
     writer: &mut W,
-) -> Result<(), io::Error> { // Return io::Error
+) -> Result<(), io::Error> {
+    // Return io::Error
     if events.is_empty() {
         return Ok(());
     }
@@ -146,18 +155,27 @@ fn flush_markdown_buffer<W: Write>(
     // This avoids cloning/owning and should work now that versions match.
     cmark(events.iter(), &mut md_string)
         // Map CmarkError to io::Error
-        .map_err(|e: CmarkError| io::Error::new(io::ErrorKind::Other, format!("Markdown generation error: {}", e)))?;
+        .map_err(|e: CmarkError| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Markdown generation error: {}", e),
+            )
+        })?;
 
     // Write the reconstructed Markdown string using termimad's skin
     // Map TermimadError to io::Error
     skin.write_text_on(writer, &md_string)
-        .map_err(|e: TermimadError| io::Error::new(io::ErrorKind::Other, format!("Termimad rendering error: {}", e)))?;
+        .map_err(|e: TermimadError| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Termimad rendering error: {}", e),
+            )
+        })?;
 
     // Clear the original buffer now that it's been processed
     events.clear();
     Ok(())
 }
-
 
 // --- Main Printing Function (Refactored) ---
 pub fn print_formatted(markdown_text: &str) -> Result<()> {

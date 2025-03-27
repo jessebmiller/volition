@@ -1,22 +1,22 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 // Add standard IO for direct input
-use std::io::{self, Write};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use colored::*;
+use std::io::{self, Write};
 // Import RuntimeConfig
 use crate::config::RuntimeConfig;
 // Removed unused UserInputArgs and user_input module import
 use crate::models::tools::{ReadFileArgs, WriteFileArgs};
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 pub async fn read_file(args: ReadFileArgs) -> Result<String> {
     let path = &args.path;
 
     info!("Reading file: {}", path);
 
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read file: {}", path))?;
+    let content =
+        fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path))?;
 
     info!("Read {} bytes from file", content.len());
 
@@ -36,7 +36,9 @@ pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<S
     };
 
     // Attempt to canonicalize for a more robust check, but fall back if it fails (e.g., path doesn't exist yet)
-    let canonical_path = absolute_target_path.canonicalize().unwrap_or(absolute_target_path.clone());
+    let canonical_path = absolute_target_path
+        .canonicalize()
+        .unwrap_or(absolute_target_path.clone());
 
     let is_within_project = canonical_path.starts_with(&config.project_root);
     debug!("Target path: {:?}, Absolute Attempt: {:?}, Canonical Attempt: {:?}, Project Root: {:?}, Within Project: {}",
@@ -48,7 +50,12 @@ pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<S
         // --- Updated Confirmation (y/N style, default No) ---
         print!(
             "{}\n{}{} ",
-            format!("WARNING: Attempting to write OUTSIDE project directory: {}", path_str).red().bold(),
+            format!(
+                "WARNING: Attempting to write OUTSIDE project directory: {}",
+                path_str
+            )
+            .red()
+            .bold(),
             "Allow write? ".yellow(),
             "(y/N):".yellow().bold() // Default to No
         );

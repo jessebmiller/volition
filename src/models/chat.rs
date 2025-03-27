@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::tools::ToolCall;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChatMessage {

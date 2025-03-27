@@ -2,9 +2,9 @@
 // and the find_definition tool.
 
 // Removed unused RuntimeConfig import
-use crate::models::tools::{SearchTextArgs, FindDefinitionArgs};
+use crate::models::tools::{FindDefinitionArgs, SearchTextArgs};
 use crate::tools::shell::execute_shell_command_internal; // Use internal executor
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::process::Command;
 
 // Check if ripgrep (rg) is installed and available in PATH
@@ -16,10 +16,18 @@ fn check_ripgrep_installed() -> Result<()> {
         format!("command -v {}", command_name)
     };
 
-    let output = Command::new(if cfg!(target_os = "windows") { "powershell" } else { "sh" })
-        .arg(if cfg!(target_os = "windows") { "-Command" } else { "-c" })
-        .arg(&check_command)
-        .output()?;
+    let output = Command::new(if cfg!(target_os = "windows") {
+        "powershell"
+    } else {
+        "sh"
+    })
+    .arg(if cfg!(target_os = "windows") {
+        "-Command"
+    } else {
+        "-c"
+    })
+    .arg(&check_command)
+    .output()?;
 
     if output.status.success() {
         Ok(())
@@ -32,7 +40,8 @@ fn check_ripgrep_installed() -> Result<()> {
 
 // New search_text implementation using ripgrep
 // Removed unused config argument
-pub async fn search_text(args: SearchTextArgs) -> Result<String> { // Removed config
+pub async fn search_text(args: SearchTextArgs) -> Result<String> {
+    // Removed config
     // Check if rg is installed before proceeding
     check_ripgrep_installed()?;
 
@@ -73,8 +82,14 @@ pub async fn search_text(args: SearchTextArgs) -> Result<String> { // Removed co
     // Execute the search command
     let result = execute_shell_command_internal(&rg_cmd).await?; // Pass command string directly
 
-    if result.is_empty() || result.contains("Command executed successfully with no output") || result.contains("Shell command execution denied") {
-        Ok(format!("No matches found for pattern: '{}' in path: '{}' matching glob: '{}'", pattern, path, file_glob))
+    if result.is_empty()
+        || result.contains("Command executed successfully with no output")
+        || result.contains("Shell command execution denied")
+    {
+        Ok(format!(
+            "No matches found for pattern: '{}' in path: '{}' matching glob: '{}'",
+            pattern, path, file_glob
+        ))
     } else {
         Ok(format!(
             "Search results (format: path:line_number:content):\n{}",
@@ -84,20 +99,46 @@ pub async fn search_text(args: SearchTextArgs) -> Result<String> { // Removed co
 }
 
 // Removed unused config argument
-pub async fn find_definition(args: FindDefinitionArgs) -> Result<String> { // Removed config
+pub async fn find_definition(args: FindDefinitionArgs) -> Result<String> {
+    // Removed config
     let symbol = &args.symbol;
     let directory = args.path.as_deref().unwrap_or(".");
 
-    tracing::info!("Finding definition for symbol: {} in directory: {}", symbol, directory);
+    tracing::info!(
+        "Finding definition for symbol: {} in directory: {}",
+        symbol,
+        directory
+    );
 
     // Determine language-specific search patterns
     let (file_pattern, pattern) = match args.language.as_deref() {
-        Some("rust") => ("*.rs", format!(r"(fn|struct|enum|trait|const|static|type)\s+{}[\s<(]", symbol)),
-        Some("javascript") | Some("js") => ("*.{js,jsx,ts,tsx}", format!(r"(function|class|const|let|var)\s+{}[\s(=]", symbol)),
+        Some("rust") => (
+            "*.rs",
+            format!(
+                r"(fn|struct|enum|trait|const|static|type)\s+{}[\s<(]",
+                symbol
+            ),
+        ),
+        Some("javascript") | Some("js") => (
+            "*.{js,jsx,ts,tsx}",
+            format!(r"(function|class|const|let|var)\s+{}[\s(=]", symbol),
+        ),
         Some("python") | Some("py") => ("*.py", format!(r"(def|class)\s+{}[\s(:]", symbol)),
         Some("go") => ("*.go", format!(r"(func|type|var|const)\s+{}[\s(]", symbol)),
-        Some("java") | Some("kotlin") => ("*.{java,kt}", format!(r"(class|interface|enum|[a-zA-Z0-9]+\s+[a-zA-Z0-9]+)\s+{}[\s<(]", symbol)),
-        Some("c") | Some("cpp") | Some("c++") => ("*.{c,cpp,h,hpp}", format!(r"([a-zA-Z0-9_]+\s+{}\s*\([^)]*\)|class\s+{})", symbol, symbol)),
+        Some("java") | Some("kotlin") => (
+            "*.{java,kt}",
+            format!(
+                r"(class|interface|enum|[a-zA-Z0-9]+\s+[a-zA-Z0-9]+)\s+{}[\s<(]",
+                symbol
+            ),
+        ),
+        Some("c") | Some("cpp") | Some("c++") => (
+            "*.{c,cpp,h,hpp}",
+            format!(
+                r"([a-zA-Z0-9_]+\s+{}\s*\([^)]*\)|class\s+{})",
+                symbol, symbol
+            ),
+        ),
         _ => ("*", symbol.to_string()),
     };
 
@@ -119,7 +160,10 @@ pub async fn find_definition(args: FindDefinitionArgs) -> Result<String> { // Re
     // Execute the search command
     let result = execute_shell_command_internal(&search_cmd).await?; // Pass command string directly
 
-    if result.is_empty() || result.contains("Command executed successfully with no output") || result.contains("Shell command execution denied") {
+    if result.is_empty()
+        || result.contains("Command executed successfully with no output")
+        || result.contains("Shell command execution denied")
+    {
         Ok(format!("No definition found for symbol: {}", symbol))
     } else {
         Ok(result)

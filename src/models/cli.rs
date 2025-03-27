@@ -15,10 +15,10 @@ pub struct Cli {
     #[arg(short, long, action = ArgAction::Count)] // Use count action
     pub verbose: u8, // Store the count as u8
 
-    // Removed debug field
+                     // Removed debug field
 
-    // Removed command field
-    // Removed rest field
+                     // Removed command field
+                     // Removed rest field
 }
 
 // Removed Commands enum
