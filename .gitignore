@@ -2,3 +2,6 @@
 .env
 .conversation_state.json
 history.log
+
+# Test artifacts
+nested/
