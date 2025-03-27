@@ -2,11 +2,14 @@ mod shell;
 mod file;
 mod search; // Renamed from code_search
 mod user_input;
+mod cargo; // Added cargo module
+mod git;   // Added git module
 
 use anyhow::Result;
 use reqwest::Client;
 use crate::models::chat::ResponseMessage;
-use crate::models::tools::ToolCall;
+// Import the new argument structs
+use crate::models::tools::{CargoCommandArgs, GitCommandArgs, ToolCall};
 // Import RuntimeConfig
 use crate::config::RuntimeConfig;
 use serde_json::from_str;
@@ -56,6 +59,16 @@ pub async fn handle_tool_calls(
             "user_input" => {
                 let args = from_str(&tool_call.function.arguments)?;
                 user_input::get_user_input(args)?
+            },
+            // Added cargo_command handler
+            "cargo_command" => {
+                let args: CargoCommandArgs = from_str(&tool_call.function.arguments)?;
+                cargo::run_cargo_command(args).await?
+            },
+            // Added git_command handler
+            "git_command" => {
+                let args: GitCommandArgs = from_str(&tool_call.function.arguments)?;
+                git::run_git_command(args).await?
             },
             _ => {
                 return Err(anyhow::anyhow!("Unknown tool: {}", tool_call.function.name));
