@@ -56,6 +56,29 @@ pub struct UserInputArgs {
     pub options: Option<Vec<String>>,
 }
 
+// --- Unified Cargo Tool Struct ---
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CargoCommandArgs {
+    // The cargo subcommand (e.g., "build", "test", "check", "fmt")
+    pub command: String,
+    // Arguments for the subcommand (e.g., ["--release"], ["--", "--nocapture"])
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+}
+
+// --- Unified Git Tool Struct ---
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GitCommandArgs {
+    // The git subcommand (e.g., "status", "diff", "add", "commit")
+    pub command: String,
+    // Arguments for the subcommand (e.g., ["--porcelain"], ["--staged"], ["src/main.rs"], ["-m", "My message"])
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+}
+
+
 pub struct Tools;
 
 impl Tools {
@@ -219,4 +242,58 @@ impl Tools {
             }
         })
     }
-}
+
+    // --- Unified Cargo Tool Definition ---
+    #[allow(dead_code)] // Allow dead code because this is used externally (e.g., by AI configuration)
+    pub fn cargo_command_definition() -> serde_json::Value {
+        json!({
+            "type": "function",
+            "function": {
+                "name": "cargo_command", // Use a generic name
+                "description": "Run a safe cargo command. Denied commands: publish, install, login, owner, etc.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The cargo subcommand to run (e.g., 'build', 'test', 'check', 'fmt', 'run')"
+                        },
+                        "args": {
+                            "type": "array",
+                            "description": "Arguments for the cargo subcommand (e.g., ['--release'], ['my_test', '--', '--nocapture'])",
+                            "items": { "type": "string" }
+                        }
+                    },
+                    "required": ["command"]
+                }
+            }
+        })
+    }
+
+    // --- Unified Git Tool Definition ---
+    #[allow(dead_code)] // Allow dead code because this is used externally (e.g., by AI configuration)
+    pub fn git_command_definition() -> serde_json::Value {
+        json!({
+            "type": "function",
+            "function": {
+                "name": "git_command", // Use a generic name
+                "description": "Run a safe git command. Denied commands: push, reset, rebase, checkout, branch -D, etc.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The git subcommand to run (e.g., 'status', 'diff', 'add', 'commit', 'log')"
+                        },
+                        "args": {
+                            "type": "array",
+                            "description": "Arguments for the git subcommand (e.g., ['--porcelain'], ['--staged'], ['src/main.rs'], ['-m', 'My message'])",
+                            "items": { "type": "string" }
+                        }
+                    },
+                    "required": ["command"]
+                }
+            }
+        })
+    }
+} // End impl Tools

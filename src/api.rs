@@ -134,7 +134,10 @@ fn build_openai_request(
         Tools::write_file_definition(),
         Tools::search_text_definition(),
         Tools::find_definition_definition(),
-        Tools::user_input_definition()
+        Tools::user_input_definition(),
+        // Added the new tool definitions
+        Tools::git_command_definition(),
+        Tools::cargo_command_definition()
     ]));
 
     // Add parameters from model_config.parameters (unchanged)
