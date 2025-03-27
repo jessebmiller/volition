@@ -172,7 +172,7 @@ fn build_openai_request(
             Tools::shell_definition(),
             Tools::read_file_definition(),
             Tools::write_file_definition(),
-            Tools::search_code_definition(),
+            Tools::search_text_definition(), // <-- Fixed this line
             Tools::find_definition_definition(),
             Tools::user_input_definition()
         ]));
