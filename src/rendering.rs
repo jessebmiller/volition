@@ -13,14 +13,15 @@ use termimad::{
     crossterm::style::{
         Attribute, Color, ResetColor, SetAttribute, SetForegroundColor, /* Removed SetBackgroundColor */
     },
-    MadSkin,
+    MadSkin, Error as TermimadError, // Import TermimadError for mapping
 };
+// Import the cmark function and its specific error type
+use pulldown_cmark_to_cmark::{cmark, Error as CmarkError};
 
 // --- Syntect Setup ---
 lazy_static! {
     static ref SYNTAX_SET: SyntaxSet = SyntaxSet::load_defaults_newlines();
     static ref THEME_SET: ThemeSet = ThemeSet::load_defaults();
-    // Theme is still needed for foreground color information
     static ref THEME_NAME: String = "base16-ocean.dark".to_string();
     static ref CODE_THEME: &'static Theme = THEME_SET.themes.get(&*THEME_NAME)
         .unwrap_or_else(|| &THEME_SET.themes["base16-ocean.dark"]);
@@ -28,11 +29,11 @@ lazy_static! {
 
 // Helper to convert syntect Color to crossterm Color
 fn syntect_to_crossterm_color(color: SyntectColor) -> Option<Color> {
-    // Ignore fully transparent
     if color.a == 0 { None } else { Some(Color::Rgb { r: color.r, g: color.g, b: color.b }) }
 }
 
 // --- Syntect Code Highlighting Function (Simplified Colors) ---
+// (No changes needed in this function)
 fn highlight_code<W: Write>(
     writer: &mut W,
     code: &str,
@@ -40,6 +41,7 @@ fn highlight_code<W: Write>(
     syntax_set: &SyntaxSet,
     theme: &Theme,
 ) -> Result<(), io::Error> {
+    // ... (rest of function is unchanged) ...
     let lower_lang = language.map(|l| l.to_lowercase());
     let lang_token_opt = lower_lang.as_deref().map(|lang_str| {
         match lang_str {
@@ -65,11 +67,9 @@ fn highlight_code<W: Write>(
 
     let mut highlighter = HighlightLines::new(syntax, theme);
 
-    // Initial reset before starting
     write!(writer, "{}", ResetColor)?;
 
     for line in LinesWithEndings::from(code) {
-        // Reset everything at the start of the line
         write!(writer, "{}", ResetColor)?;
         write!(writer, "{}", SetAttribute(Attribute::Reset))?;
 
@@ -80,8 +80,7 @@ fn highlight_code<W: Write>(
         for (style, content) in ranges {
             let fg = style.foreground;
 
-            // Apply style foreground if non-transparent
-            if fg.a > 0 { // a=0 is transparent
+            if fg.a > 0 {
                 if let Some(crossterm_fg) = syntect_to_crossterm_color(fg) {
                     write!(writer, "{}", SetForegroundColor(crossterm_fg))?;
                 } else {
@@ -91,7 +90,6 @@ fn highlight_code<W: Write>(
                 write!(writer, "{}", ResetColor)?;
             }
 
-            // Apply font styles
             let mut applied_attrs = false;
             if style.font_style.contains(FontStyle::BOLD) {
                 write!(writer, "{}", SetAttribute(Attribute::Bold))?;
@@ -108,60 +106,80 @@ fn highlight_code<W: Write>(
 
             write!(writer, "{}", content)?;
 
-            // Reset attributes and color after each segment
             if applied_attrs {
                 write!(writer, "{}", SetAttribute(Attribute::Reset))?;
             }
             write!(writer, "{}", ResetColor)?;
         }
     }
-
-    // Final reset after the whole block
     write!(writer, "{}", ResetColor)?;
     Ok(())
+
 }
 
+
 // --- Termimad Skin Creation (Simplified) ---
+// (No changes needed in this function)
 fn create_skin() -> MadSkin {
     let mut skin = MadSkin::default();
-
-    // Keep inline code slightly distinct with just foreground color
     skin.inline_code.set_fg(Color::Cyan);
-    // Use Color::Reset to unset the background color
     skin.inline_code.set_bg(Color::Reset);
-
-    // Use Color::Reset to unset specific code block colors
     skin.code_block.set_fg(Color::Reset);
     skin.code_block.set_bg(Color::Reset);
-
-    // Example: Customize headers or bold if desired
-    // skin.headers[0].set_fg(Color::Magenta);
-    // skin.bold.set_fg(Color::Yellow);
-
     skin
 }
 
-// --- Main Printing Function (Unchanged) ---
+// Helper function to flush buffered Markdown events using termimad
+// Takes a mutable reference to the events vector.
+fn flush_markdown_buffer<W: Write>(
+    events: &mut Vec<Event<'_>>, // Use mutable reference again
+    skin: &MadSkin,
+    writer: &mut W,
+) -> Result<(), io::Error> { // Return io::Error
+    if events.is_empty() {
+        return Ok(());
+    }
+
+    let mut md_string = String::new();
+
+    // Pass an iterator over references to the events directly.
+    // This avoids cloning/owning and should work now that versions match.
+    cmark(events.iter(), &mut md_string)
+        // Map CmarkError to io::Error
+        .map_err(|e: CmarkError| io::Error::new(io::ErrorKind::Other, format!("Markdown generation error: {}", e)))?;
+
+    // Write the reconstructed Markdown string using termimad's skin
+    // Map TermimadError to io::Error
+    skin.write_text_on(writer, &md_string)
+        .map_err(|e: TermimadError| io::Error::new(io::ErrorKind::Other, format!("Termimad rendering error: {}", e)))?;
+
+    // Clear the original buffer now that it's been processed
+    events.clear();
+    Ok(())
+}
+
+
+// --- Main Printing Function (Refactored) ---
 pub fn print_formatted(markdown_text: &str) -> Result<()> {
     let skin = create_skin();
     let mut stdout = io::stdout().lock();
 
+    // The parser's events borrow from markdown_text
     let parser = Parser::new_ext(markdown_text, Options::empty());
 
-    let mut markdown_buffer = String::new();
+    // Event buffer holds cloned events. Lifetimes might be 'markdown_text or 'static.
+    let mut event_buffer: Vec<Event<'_>> = Vec::new();
     let mut code_buffer = String::new();
     let mut current_language: Option<String> = None;
     let mut in_code_block = false;
 
     for event in parser {
-        match event {
+        match &event {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {
-                if !markdown_buffer.is_empty() {
-                    skin.write_text_on(&mut stdout, &markdown_buffer)?;
-                    markdown_buffer.clear();
-                }
+                // Pass mutable reference to the buffer
+                flush_markdown_buffer(&mut event_buffer, &skin, &mut stdout)?;
                 in_code_block = true;
-                current_language = Some(lang.into_string());
+                current_language = Some(lang.to_string());
                 code_buffer.clear();
                 writeln!(stdout)?;
             }
@@ -182,43 +200,24 @@ pub fn print_formatted(markdown_text: &str) -> Result<()> {
             }
             Event::Text(text) => {
                 if in_code_block {
-                    code_buffer.push_str(&text);
+                    // text borrows from the original event from the parser
+                    code_buffer.push_str(text);
                 } else {
-                    markdown_buffer.push_str(&text);
+                    // Clone the event. If text was borrowed, the clone still borrows.
+                    event_buffer.push(event.clone());
                 }
             }
-            evt => {
-                 if !in_code_block {
-                     match evt {
-                         Event::SoftBreak => markdown_buffer.push('\n'),
-                         Event::HardBreak => markdown_buffer.push_str("\n\n"),
-                         Event::Start(Tag::Paragraph) => {} 
-                         Event::End(TagEnd::Paragraph) => markdown_buffer.push_str("\n\n"),
-                         Event::Start(Tag::Heading { level, .. }) => {
-                             markdown_buffer.push('\n');
-                             for _ in 0..level as usize { markdown_buffer.push('#'); }
-                             markdown_buffer.push(' ');
-                         }
-                         Event::End(TagEnd::Heading(..)) => markdown_buffer.push_str("\n\n"),
-                         Event::Start(Tag::List(_)) => {} 
-                         Event::End(TagEnd::List(..)) => markdown_buffer.push('\n'),
-                         Event::Start(Tag::Item) => markdown_buffer.push_str("* "),
-                         Event::End(TagEnd::Item) => markdown_buffer.push('\n'),
-                         Event::Start(Tag::Emphasis) => markdown_buffer.push('*'),
-                         Event::End(TagEnd::Emphasis) => markdown_buffer.push('*'),
-                         Event::Start(Tag::Strong) => markdown_buffer.push_str("**"),
-                         Event::End(TagEnd::Strong) => markdown_buffer.push_str("**"),
-                         _ => {} 
-                     }
-                 }
+            _ => {
+                if !in_code_block {
+                    // Clone the event.
+                    event_buffer.push(event.clone());
+                }
             }
         }
     }
 
-    if !markdown_buffer.is_empty() {
-        skin.write_text_on(&mut stdout, &markdown_buffer)?;
-    }
+    // Flush any remaining events in the buffer
+    flush_markdown_buffer(&mut event_buffer, &skin, &mut stdout)?;
 
     Ok(())
 }
-
