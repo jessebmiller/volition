@@ -78,6 +78,21 @@ pub struct GitCommandArgs {
     pub args: Vec<String>,
 }
 
+// --- List Directory Tool Struct --- Added
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ListDirectoryArgs {
+    pub path: String,
+    #[serde(default = "default_depth")] // Provide default depth = 1
+    pub depth: Option<usize>,
+    #[serde(default)] // Default show_hidden = false
+    pub show_hidden: bool,
+}
+
+// Function to provide the default value for depth
+fn default_depth() -> Option<usize> {
+    Some(1)
+}
+
 
 pub struct Tools;
 
@@ -296,4 +311,35 @@ impl Tools {
             }
         })
     }
+
+    // --- List Directory Tool Definition --- Added
+    #[allow(dead_code)]
+    pub fn list_directory_definition() -> serde_json::Value {
+        json!({
+            "type": "function",
+            "function": {
+                "name": "list_directory",
+                "description": "List files and directories at a given path, respecting .gitignore. Output is raw text, one path per line.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The directory path to explore."
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Maximum depth to recurse (1 lists immediate contents, 2 includes subdirs, etc.). Defaults to 1. Use 0 to list only the directory itself (if not hidden/ignored)."
+                        },
+                        "show_hidden": {
+                            "type": "boolean",
+                            "description": "Include hidden files/directories (starting with '.'). Defaults to false."
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }
+        })
+    }
+
 } // End impl Tools

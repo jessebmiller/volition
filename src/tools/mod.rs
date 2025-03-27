@@ -1,15 +1,18 @@
-mod shell;
-mod file;
-mod search; // Renamed from code_search
-mod user_input;
-mod cargo; // Added cargo module
-mod git;   // Added git module
+// src/tools/mod.rs
+pub mod shell;
+pub mod file;
+pub mod search; // Renamed from code_search
+pub mod user_input;
+pub mod cargo; // Added cargo module
+pub mod git;   // Added git module
+pub mod filesystem; // Added filesystem module
 
 use anyhow::Result;
 use reqwest::Client;
 use crate::models::chat::ResponseMessage;
 // Import the new argument structs
-use crate::models::tools::{CargoCommandArgs, GitCommandArgs, ToolCall};
+// Updated imports to include ListDirectoryArgs
+use crate::models::tools::{CargoCommandArgs, GitCommandArgs, ListDirectoryArgs, ToolCall};
 // Import RuntimeConfig
 use crate::config::RuntimeConfig;
 use serde_json::from_str;
@@ -69,6 +72,13 @@ pub async fn handle_tool_calls(
             "git_command" => {
                 let args: GitCommandArgs = from_str(&tool_call.function.arguments)?;
                 git::run_git_command(args).await?
+            },
+            // Added list_directory handler
+            "list_directory" => {
+                let args: ListDirectoryArgs = from_str(&tool_call.function.arguments)?;
+                // Call the function from the filesystem module
+                // Note: This function is not async, so no .await
+                filesystem::list_directory_contents(&args.path, args.depth, args.show_hidden)?
             },
             _ => {
                 return Err(anyhow::anyhow!("Unknown tool: {}", tool_call.function.name));
