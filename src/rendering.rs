@@ -1,33 +1,25 @@
 // src/rendering.rs
-use termimad::{MadSkin, MadView, Area};
-use std::io::stdout;
-use anyhow::{Result, Context}; // Use anyhow::Result
+// Removed MadView, Area, MadSkin imports as they are no longer directly used by print_formatted
+// Added print_text import
+use termimad::print_text;
+ // Still needed? print_text writes to stdout by default. Let's keep it for now, cargo check will tell us.
+use anyhow::Result; // Keep Result for function signature consistency, though print_text doesn't return one.
 
-/// Creates a default skin for rendering markdown.
-fn create_skin() -> MadSkin {
-    // Start with the default skin - syntax highlighting is often enabled by default
-    // if syntect is available (which it should be as a termimad dependency).
-    let skin = MadSkin::default();
+// create_skin is no longer needed by print_formatted, but keep it in case it's used elsewhere
+// or for future customization if print_text isn't sufficient.
+// fn create_skin() -> MadSkin {
+//     MadSkin::default()
+// }
 
-    // We will rely on the default theme handling for now.
-    // If customization is needed later, we'll consult the termimad docs for
-    // the correct API (e.g., skin.code_block.set_syntect_theme(...)).
+/// Prints markdown text formatted to the terminal using termimad::print_text.
+/// This function prints directly to stdout without clearing the screen.
+/// Note: termimad::print_text does not return a Result, so this function now always returns Ok(()).
+/// Error handling (e.g., for I/O errors) is handled internally by termimad or would cause a panic.
+pub fn print_formatted(markdown_text: &str) -> Result<()> {
+    // Use termimad's simple print function
+    print_text(markdown_text);
 
-    skin
-}
-
-/// Prints markdown text formatted to the terminal.
-/// Handles wrapping and syntax highlighting for code blocks.
-/// Returns an anyhow::Result to handle potential errors.
-pub fn print_formatted(markdown_text: &str) -> Result<()> { // Changed return type
-    let skin = create_skin();
-    let area = Area::full_screen(); // Use full terminal width
-    // MadView takes ownership, so we clone or pass owned string
-    let view = MadView::from(markdown_text.to_string(), area, skin);
-
-    // Use the write_on method and convert potential termimad::Error
-    view.write_on(&mut stdout())
-        .context("Failed to write formatted markdown to stdout")?; // Convert error to anyhow
-
+    // Since print_text doesn't return a Result, we just return Ok.
+    // If print_text panics on error, that will stop execution anyway.
     Ok(())
 }
