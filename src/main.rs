@@ -1,5 +1,5 @@
 mod api;
-mod config; // Keep this for service config
+mod config;
 mod models;
 mod tools;
 
@@ -10,8 +10,8 @@ use std::{fs, io::{self, Write}, path::Path};
 use tokio::time::Duration;
 
 use crate::api::chat_with_api;
-// Use renamed config struct and loading function
-use crate::config::{load_config, load_volition_project_config, VolitionProjectConfig};
+// Use the single combined config struct and loading function
+use crate::config::{load_runtime_config, RuntimeConfig};
 use crate::models::chat::ResponseMessage;
 use crate::models::cli::{Commands, Cli};
 use crate::tools::handle_tool_calls;
@@ -22,10 +22,9 @@ use tracing_subscriber::FmtSubscriber;
 
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
 
-// Modified handle_conversation to accept VolitionProjectConfig
+// Modified handle_conversation to accept the single RuntimeConfig
 async fn handle_conversation(
-    service_config: &config::Config,
-    project_config: &VolitionProjectConfig, // Updated type
+    config: &RuntimeConfig, // Use the combined config
     query: &str,
 ) -> Result<()> {
     let client = reqwest::Client::builder()
@@ -41,7 +40,7 @@ async fn handle_conversation(
     let mut messages: Vec<ResponseMessage>;
     let recovery_path = Path::new(RECOVERY_FILE_PATH);
 
-    // --- Load State Logic (modified to pass project_config.system_prompt) ---
+    // --- Load State Logic (modified to pass config.system_prompt) ---
     if recovery_path.exists() {
          tracing::info!("Found existing conversation state file: {}", RECOVERY_FILE_PATH);
         print!(
@@ -68,24 +67,24 @@ async fn handle_conversation(
                         tracing::error!("Failed to deserialize state file: {}. Starting fresh.", e);
                         println!("{}", "Error reading state file. Starting a fresh session.".red());
                         let _ = fs::remove_file(recovery_path);
-                        messages = default_messages(query, &project_config.system_prompt); // Pass prompt
+                        messages = default_messages(query, &config.system_prompt); // Pass prompt from combined config
                     }
                 },
                 Err(e) => {
                     tracing::error!("Failed to read state file: {}. Starting fresh.", e);
                     println!("{}", "Error reading state file. Starting a fresh session.".red());
                     let _ = fs::remove_file(recovery_path);
-                    messages = default_messages(query, &project_config.system_prompt); // Pass prompt
+                    messages = default_messages(query, &config.system_prompt); // Pass prompt from combined config
                 }
             }
         } else {
             tracing::info!("User chose not to resume. Starting fresh.");
             println!("{}", "Starting a fresh session.".cyan());
             let _ = fs::remove_file(recovery_path);
-            messages = default_messages(query, &project_config.system_prompt); // Pass prompt
+            messages = default_messages(query, &config.system_prompt); // Pass prompt from combined config
         }
     } else {
-        messages = default_messages(query, &project_config.system_prompt); // Pass prompt
+        messages = default_messages(query, &config.system_prompt); // Pass prompt from combined config
     }
     // --- End Load State Logic ---
 
@@ -95,7 +94,8 @@ async fn handle_conversation(
     while conversation_active {
         tracing::debug!("Current message history: {:?}", messages);
 
-        let response = chat_with_api(&client, service_config, messages.clone(), None).await?;
+        // Pass the combined config to chat_with_api
+        let response = chat_with_api(&client, config, messages.clone(), None).await?;
 
          let message = match response.choices.get(0) {
             Some(choice) => &choice.message,
@@ -121,7 +121,8 @@ async fn handle_conversation(
 
         if let Some(tool_calls) = &message.tool_calls {
             tracing::info!("Processing {} tool calls", tool_calls.len());
-            handle_tool_calls(&client, &service_config.api_key, tool_calls.to_vec(), &mut messages).await?;
+            // Pass the api_key from the combined config
+            handle_tool_calls(&client, &config.api_key, tool_calls.to_vec(), &mut messages).await?;
         } else {
             println!("\n{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
             print!("{} ", ">".green().bold());
@@ -213,23 +214,21 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
 
-    // --- Load Configurations ---
-    // Load service config first (API keys, models, etc.)
-    let service_config = load_config().context("Failed to load service configuration")?;
-    // Load project config (system prompt, etc.) using the renamed function
-    let project_config = load_volition_project_config()
-        .context("Failed to load project configuration from Volition.toml")?; // Updated context message
-    // --- End Load Configurations ---
+    // --- Load Configuration ---
+    // Load the single combined configuration
+    let config = load_runtime_config()
+        .context("Failed to load configuration from Volition.toml and environment")?;
+    // --- End Load Configuration ---
 
-    // Main command matching and execution logic (modified to pass both configs)
+    // Main command matching and execution logic (modified to pass single config)
     match &cli.command {
         Some(Commands::Run { args, verbose: _, debug: _ }) => {
             let query = args.join(" ");
             if query.is_empty() {
                 return Err(anyhow!("Please provide a command to run"));
             }
-            // Pass both configs to handle_conversation
-            handle_conversation(&service_config, &project_config, &query).await?;
+            // Pass the single config to handle_conversation
+            handle_conversation(&config, &query).await?;
         }
         None => {
             if cli.rest.is_empty() {
@@ -244,8 +243,8 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
             let query = cli.rest.join(" ");
-            // Pass both configs to handle_conversation
-            handle_conversation(&service_config, &project_config, &query).await?;
+            // Pass the single config to handle_conversation
+            handle_conversation(&config, &query).await?;
         }
     }
 

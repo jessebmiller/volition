@@ -1,44 +1,40 @@
 use anyhow::{anyhow, Result};
 use reqwest::Client;
-// Removed unused import: Map
 use serde_json::{json, to_value, Value};
 use std::collections::HashMap;
 use tokio::time::Duration;
-use tracing::{debug, warn}; // Removed unused import: info
-use uuid::Uuid; // Import Uuid
+use tracing::{debug, warn};
+use uuid::Uuid;
 
 use crate::models::chat::{ApiResponse, ResponseMessage};
 use crate::models::tools::Tools;
-use crate::config::{Config, ModelConfig};
-
+// Use the combined RuntimeConfig and ModelConfig
+use crate::config::{RuntimeConfig, ModelConfig};
 
 /// Unified function to send chat requests to various endpoints.
 /// It constructs the proper URL, request body, and headers based on the service type and any endpoint override provided in ModelConfig.
 pub async fn chat_with_endpoint(
     client: &Client,
     api_key: Option<&str>, // The API key is passed as an option
-    model_config: &ModelConfig,
+    model_config: &ModelConfig, // Use the specific model config
     messages: Vec<ResponseMessage>,
 ) -> Result<ApiResponse> {
     // Determine the URL: use endpoint_override if set, otherwise use defaults per service.
     let url = if let Some(endpoint) = &model_config.endpoint_override {
         endpoint.clone()
     } else {
-        match model_config.service.as_str() {
-            // Default URL for OpenAI compatible services.
+        // Use case-insensitive matching for service name
+        match model_config.service.to_lowercase().as_str() {
             "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
-            // Removed "gemini" default URL case
             "ollama" => "http://localhost:11434/v1/chat/completions".to_string(),
-            other => return Err(anyhow!("Unsupported service: {}", other)),
+            other => return Err(anyhow!("Unsupported service in model config: {}", other)),
         }
     };
 
-    // Build the request body based on the service type.
-    // Since we're using the OpenAI-compatible endpoint, we always use build_openai_request.
-    let request_body = match model_config.service.as_str() {
+    // Build the request body based on the service type specified in the model config
+    let request_body = match model_config.service.to_lowercase().as_str() {
         "openai" | "ollama" => build_openai_request(&model_config.model_name, messages, model_config)?,
-        // Removed "gemini" request building case
-        other => return Err(anyhow!("Unsupported service: {}", other)),
+        other => return Err(anyhow!("Unsupported service in model config: {}", other)),
     };
 
     debug!("Request URL: {}\nRequest JSON: {}", url, serde_json::to_string_pretty(&request_body)?);
@@ -55,16 +51,15 @@ pub async fn chat_with_endpoint(
     loop {
         let mut request = client.post(&url).header("Content-Type", "application/json");
 
-        // Add service-specific headers and authentication
-        match model_config.service.as_str() {
+        // Add service-specific headers and authentication based on model_config.service
+        match model_config.service.to_lowercase().as_str() {
             "openai" => {
                 // All OpenAI-compatible services use Bearer token authentication.
                 if let Some(key) = api_key {
                     request = request.header("Authorization", format!("Bearer {}", key));
                 } else {
-                    // Only error if it's strictly OpenAI service and key is missing
-                    // For other compatible services using this path, key might be optional or handled differently (e.g., Ollama)
-                    if model_config.service == "openai" && model_config.endpoint_override.is_none() { // Be more specific: only error if using default OpenAI URL
+                    // Only error if it's strictly OpenAI service (default endpoint) and key is missing
+                    if model_config.service.eq_ignore_ascii_case("openai") && model_config.endpoint_override.is_none() {
                          return Err(anyhow!("API key is required for the default OpenAI service endpoint"));
                     }
                     // If using an override or a non-OpenAI service via this path, a missing key might be acceptable.
@@ -142,7 +137,6 @@ pub async fn chat_with_endpoint(
         debug!("=== API RESPONSE ===");
         if let Some(choices) = api_response.choices.get(0) {
              if let Some(tool_calls) = &choices.message.tool_calls {
-                // Log tool calls at debug level with detailed information
                 debug!("Tool calls: {:#?}", tool_calls);
             } else {
                 debug!("No tool calls");
@@ -157,6 +151,7 @@ pub async fn chat_with_endpoint(
     }
 }
 
+// This function remains largely the same, using ModelConfig
 fn build_openai_request(
     model_name: &str,
     messages: Vec<ResponseMessage>,
@@ -166,13 +161,13 @@ fn build_openai_request(
     request_map.insert("model".to_string(), json!(model_name));
     request_map.insert("messages".to_string(), to_value(messages)?);
     
-    // Add tools only if the service is 'openai' or if an endpoint_override is present (assuming compatibility)
-    if model_config.service == "openai" || model_config.endpoint_override.is_some() {
+    // Add tools based on model_config service type (case-insensitive)
+    if model_config.service.eq_ignore_ascii_case("openai") || model_config.endpoint_override.is_some() {
         request_map.insert("tools".to_string(), json!([
             Tools::shell_definition(),
             Tools::read_file_definition(),
             Tools::write_file_definition(),
-            Tools::search_text_definition(), // <-- Fixed this line
+            Tools::search_text_definition(),
             Tools::find_definition_definition(),
             Tools::user_input_definition()
         ]));
@@ -189,78 +184,81 @@ fn build_openai_request(
     Ok(Value::Object(request_map))
 }
 
-/// This function selects the appropriate service based on configuration and delegates the API call to the unified chat_with_endpoint function.
+/// This function selects the appropriate service based on RuntimeConfig and delegates the API call.
 pub async fn chat_with_api(
     client: &Client,
-    config: &Config,
+    config: &RuntimeConfig, // Use the combined RuntimeConfig
     messages: Vec<ResponseMessage>,
-    overrides: Option<HashMap<String, String>>,
+    overrides: Option<HashMap<String, String>>, // Overrides might need adjustment or removal depending on use case
 ) -> Result<ApiResponse> {
-    // Create a clone of the config to modify
+    // Clone the config to apply potential overrides (if overrides are kept)
     let mut effective_config = config.clone();
 
-    // Apply overrides to the configuration
+    // Apply overrides - Note: Overriding parts of RuntimeConfig might be complex.
+    // Consider if overrides are still needed or how they should apply to the new structure.
+    // For now, keeping the logic but it might need refinement.
     if let Some(overrides) = overrides {
+        warn!("Applying overrides to RuntimeConfig. Ensure override keys match the new structure.");
         for (key, value) in overrides {
             match key.as_str() {
-                "api_key" => effective_config.api_key = value, // Updated override key
+                "api_key" => effective_config.api_key = value,
                 "selected_model" => {
-                    // Update the selected model based on the active service
-                    match effective_config.active_service.service.as_str() {
+                    // This override assumes the active service has a selected_model field (like openai)
+                    match effective_config.active_service.service.to_lowercase().as_str() {
                         "openai" => effective_config.openai.selected_model = value,
-                        // Add cases for other services if their selected_model field differs
                         _ => debug!("Override 'selected_model' ignored for active service: {}", effective_config.active_service.service),
                     }
                 },
                 "active_service" => {
-                    effective_config.active_service.service = value;
+                    // Clone the value for the assignment
+                    effective_config.active_service.service = value.clone();
+                    // Warning: Changing active_service via override might lead to inconsistencies
+                    // if not carefully managed with selected_model overrides.
+                    warn!("Overriding active_service to '{}'. Ensure selected_model is compatible.", value);
                 },
-                _ => debug!("Unknown config override: {}", key),
+                 // Add overrides for system_prompt or other fields if needed
+                "system_prompt" => {
+                    effective_config.system_prompt = value;
+                    debug!("Overriding system_prompt.");
+                }
+                _ => debug!("Unknown config override key: {}", key),
             }
         }
+        // Re-validate potentially modified config? Or assume overrides are valid.
     }
 
-    // Use the active service from configuration
+    // Use the active service from the potentially overridden config
     let active_service = &effective_config.active_service.service;
     
-    // Determine the selected model name based on the active service
-    let selected_model_name = match active_service.as_str() {
+    // Determine the selected model name based on the active service section
+    let selected_model_name = match active_service.to_lowercase().as_str() {
         "openai" => &effective_config.openai.selected_model,
-        // For services like ollama, if there isn't a specific selected_model field,
-        // we might need to find a default or the first one listed for that service.
-        // For now, assume a structure similar to openai or that the model name is directly usable.
-        // If adding more distinct services, this logic might need refinement.
-        "ollama" => {
-             // Attempt to find a model name. This might need a dedicated field like `ollama.selected_model` in Config for clarity.
-             // For now, let's rely on the validation in load_config ensuring *a* model exists for the service.
-             // We'll just use the model name found via the models map lookup later.
-             // Placeholder: If ollama had a specific selected_model field: &effective_config.ollama.selected_model,
-             // Since it doesn't, we proceed and rely on the models map lookup.
-             effective_config.models.iter()
-                .find(|(_, model_cfg)| model_cfg.service == "ollama")
-                .map(|(name, _)| name.as_str())
-                .ok_or_else(|| anyhow!("No model configured for the 'ollama' service in config.toml"))?
+        // Add other cases if services have their own selected_model field
+        _ => {
+             return Err(anyhow!(
+                "Active service '{}' is specified, but its configuration section (e.g., [{}]) with a 'selected_model' field is missing or the service is not supported for model selection this way.",
+                active_service, active_service
+            ));
         }
-        _ => return Err(anyhow!("Unsupported active service: {:?}", active_service)),
     };
 
-    // Retrieve the configuration for the selected model
+    // Retrieve the configuration for the selected model from the potentially overridden config
     let model_config = effective_config.models.get(selected_model_name)
-        .ok_or_else(|| anyhow!("Configuration for model '{}' not found", selected_model_name))?;
+        .ok_or_else(|| anyhow!("Configuration for selected model '{}' not found in [models] section", selected_model_name))?;
 
-    // Check if the service of the selected model matches the active service (redundant with load_config validation, but safe)
-    if model_config.service.to_lowercase() != *active_service {
+    // Final check: Ensure the retrieved model_config's service matches the active_service (case-insensitive)
+    if !model_config.service.eq_ignore_ascii_case(active_service) {
         return Err(anyhow!(
-            "Mismatch between active service '{}' and selected model '{}' service '{}'",
+            "Configuration mismatch: Active service is '{}' but the selected model '{}' belongs to service '{}'",
             active_service,
             selected_model_name,
             model_config.service
         ));
     }
 
-    // Pass the API key from the effective_config (which includes env var value and potential override)
+    // Pass the API key from the potentially overridden config
     let api_key_option = Some(effective_config.api_key.as_str());
 
-    // Call the unified endpoint function
+    // Call the unified endpoint function with the specific model_config
     chat_with_endpoint(client, api_key_option, model_config, messages).await
 }

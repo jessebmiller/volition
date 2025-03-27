@@ -1,4 +1,4 @@
-
+# System prompt defining the AI's role and capabilities
 system_prompt = '''
 You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
 
@@ -36,3 +36,36 @@ Best practices to follow:
 
 Provide concise explanations of your reasoning and detailed comments for any code you modify or create.
 '''
+
+# Active service configuration
+[active_service]
+service = "openai" # Currently active service provider (e.g., "openai", "ollama")
+
+# Configuration specific to OpenAI (or compatible) service
+[openai]
+selected_model = "gemini-2-5-pro" # The model identifier to use with the active service
+
+# Definitions for available models
+[models]
+  [models.o3-mini]
+  model_name = "o3-mini"
+  service = "openai"
+  parameters = {}
+
+  [models.gpt-4o]
+  model_name = "gpt-4o"
+  service = "openai"
+  parameters = { temperature = 0.2 }
+
+  [models.gpt-4o-mini]
+  model_name = "gpt-4o-mini"
+  service = "openai"
+  parameters = { temperature = 0.2 }
+
+  [models.gemini-2-5-pro]
+  model_name = "gemini-2.5-pro-exp-03-25"
+  service = "openai" # Note: Service indicates compatibility (uses OpenAI API format)
+  parameters = { temperature = 0.7 }
+  endpoint_override = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+
+# Add other service-specific sections (e.g., [ollama]) or model definitions as needed.
