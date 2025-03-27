@@ -1,8 +1,9 @@
 // This file now contains the implementation for the search_text tool
 // and the find_definition tool.
 
-use crate::models::tools::{SearchTextArgs, FindDefinitionArgs, ShellArgs};
-use crate::tools::shell::run_shell_command;
+// Removed unused RuntimeConfig import
+use crate::models::tools::{SearchTextArgs, FindDefinitionArgs};
+use crate::tools::shell::execute_shell_command_internal; // Use internal executor
 use anyhow::{Result, anyhow};
 use std::process::Command;
 
@@ -24,14 +25,14 @@ fn check_ripgrep_installed() -> Result<()> {
         Ok(())
     } else {
         Err(anyhow!(
-            "'ripgrep' (rg) command not found. Please install it and ensure it's in your PATH. It's required for the search_text tool.
-Installation instructions: https://github.com/BurntSushi/ripgrep#installation"
+            "'ripgrep' (rg) command not found. Please install it and ensure it's in your PATH. It's required for the search_text tool.\nInstallation instructions: https://github.com/BurntSushi/ripgrep#installation"
         ))
     }
 }
 
 // New search_text implementation using ripgrep
-pub async fn search_text(args: SearchTextArgs) -> Result<String> {
+// Removed unused config argument
+pub async fn search_text(args: SearchTextArgs) -> Result<String> { // Removed config
     // Check if rg is installed before proceeding
     check_ripgrep_installed()?;
 
@@ -48,15 +49,11 @@ pub async fn search_text(args: SearchTextArgs) -> Result<String> {
     );
 
     // Build the ripgrep command
-    // We use `rg --json` initially to get structured output, then fall back to text if needed.
-    // Using --trim to remove leading whitespace which can confuse LLMs.
-    // Using --pretty to add file names and line numbers.
     let mut rg_cmd_parts = vec![
         "rg".to_string(),
         "--pretty".to_string(), // Enables file names and line numbers
         "--trim".to_string(),
         format!("--context={}", context_lines),
-        // Note: Using --glob requires forward slashes even on Windows.
         format!("--glob='{}'", file_glob), // Use single quotes for safety
     ];
 
@@ -68,30 +65,26 @@ pub async fn search_text(args: SearchTextArgs) -> Result<String> {
     rg_cmd_parts.push(format!("'{}'", pattern)); // Quote pattern for safety
     rg_cmd_parts.push(path.to_string());
 
-    // Limit results using head (simpler than parsing rg output count)
-    // Note: `head` might cut off mid-context block, but it's a simple way to limit output size.
+    // Limit results using head
     let rg_cmd = format!("{} | head -n {}", rg_cmd_parts.join(" "), max_results);
 
     tracing::debug!("Executing search command: {}", rg_cmd);
 
     // Execute the search command
-    let shell_args = ShellArgs { command: rg_cmd };
-    let result = run_shell_command(shell_args).await?;
+    let result = execute_shell_command_internal(&rg_cmd).await?; // Pass command string directly
 
-    if result.is_empty() || result.contains("Command executed successfully with no output") {
+    if result.is_empty() || result.contains("Command executed successfully with no output") || result.contains("Shell command execution denied") {
         Ok(format!("No matches found for pattern: '{}' in path: '{}' matching glob: '{}'", pattern, path, file_glob))
     } else {
-        // Prepend a note about the output format
         Ok(format!(
-            "Search results (format: path:line_number:content):
-{}",
+            "Search results (format: path:line_number:content):\n{}",
             result
         ))
     }
 }
 
-// Keeping find_definition for now
-pub async fn find_definition(args: FindDefinitionArgs) -> Result<String> {
+// Removed unused config argument
+pub async fn find_definition(args: FindDefinitionArgs) -> Result<String> { // Removed config
     let symbol = &args.symbol;
     let directory = args.path.as_deref().unwrap_or(".");
 
@@ -109,7 +102,6 @@ pub async fn find_definition(args: FindDefinitionArgs) -> Result<String> {
     };
 
     // Build the search command based on the OS
-    // TODO: Consider using ripgrep here too for consistency and potentially better results?
     let search_cmd = if cfg!(target_os = "windows") {
         format!(
             "powershell -Command \"Get-ChildItem -Path {} -Recurse -File -Include {} | Select-String -Pattern '{}' | Select-Object -First 10\"",
@@ -125,10 +117,9 @@ pub async fn find_definition(args: FindDefinitionArgs) -> Result<String> {
     tracing::debug!("Executing find definition command: {}", search_cmd);
 
     // Execute the search command
-    let shell_args = ShellArgs { command: search_cmd };
-    let result = run_shell_command(shell_args).await?;
+    let result = execute_shell_command_internal(&search_cmd).await?; // Pass command string directly
 
-    if result.is_empty() || result.contains("Command executed successfully with no output") {
+    if result.is_empty() || result.contains("Command executed successfully with no output") || result.contains("Shell command execution denied") {
         Ok(format!("No definition found for symbol: {}", symbol))
     } else {
         Ok(result)

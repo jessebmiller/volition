@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf}; // Added PathBuf
 use std::env;
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
@@ -14,25 +14,21 @@ use url::Url; // Added for URL validation
 #[derive(Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
     pub system_prompt: String,
-    // Moved selected_model to top level
     pub selected_model: String, // Identifier (key) for the default model in the [models] map
-    // Removed openai: OpenAIConfig field
     pub models: HashMap<String, ModelConfig>, // Map of model identifier -> model config
 
     #[serde(skip)] // API key is loaded from environment, not the file
     pub api_key: String,
+
+    #[serde(skip)] // Project root is determined at runtime, not from the file
+    pub project_root: PathBuf,
 }
-
-// Removed OpenAIConfig struct
-
-// Removed ActiveService struct
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
     pub model_name: String, // The actual model name to be sent in the API request (e.g., "gpt-4-turbo")
-    // Removed service field
     pub parameters: toml::Value, // Model-specific parameters (e.g., temperature, max_tokens)
-    pub endpoint: String, // The base URL endpoint for the API providing this model (REQUIRED, e.g., "https://api.openai.com/v1")
+    pub endpoint: String, // The base URL endpoint for the API providing this model (REQUIRED)
 }
 
 /// Loads configuration from Volition.toml in the current directory and API key from environment.
@@ -44,8 +40,16 @@ pub fn load_runtime_config() -> Result<RuntimeConfig> {
         return Err(anyhow!("API_KEY environment variable is set but empty."));
     }
 
-    // --- Load Configuration File (Volition.toml) ---
+    // --- Determine Project Root (where Volition.toml is) ---
     let config_path = Path::new("./Volition.toml");
+    let absolute_config_path = config_path.canonicalize()
+        .with_context(|| format!("Failed to get absolute path for config file: {:?}", config_path))?;
+    let project_root = absolute_config_path.parent()
+        .ok_or_else(|| anyhow!("Failed to determine project root directory from config path: {:?}", absolute_config_path))?
+        .to_path_buf();
+    tracing::debug!("Determined project root: {:?}", project_root);
+
+    // --- Load Configuration File (Volition.toml) ---
     if !config_path.exists() {
         return Err(anyhow!(
             "Project configuration file not found at {:?}. Please create it.",
@@ -57,18 +61,24 @@ pub fn load_runtime_config() -> Result<RuntimeConfig> {
         .with_context(|| format!("Failed to read project config file: {:?}", config_path))?;
 
     // Deserialize the configuration file.
-    // This will automatically fail if any model in [models] is missing the required 'endpoint' field.
-    let mut config: RuntimeConfig = toml::from_str(&config_str)
-        .with_context(|| format!("Failed to parse project config file: {:?}. Check syntax and ensure 'selected_model' is defined at the top level, and all models have 'model_name', 'parameters', and 'endpoint' fields.", config_path))?;
+    // Removed mut
+    let partial_config: RuntimeConfigPartial = toml::from_str(&config_str)
+        .with_context(|| format!("Failed to parse project config file: {:?}. Check syntax.", config_path))?;
 
-    // --- Populate API Key ---
-    config.api_key = api_key;
+    // --- Construct Full RuntimeConfig ---
+    // Removed mut
+    let config = RuntimeConfig {
+        system_prompt: partial_config.system_prompt,
+        selected_model: partial_config.selected_model,
+        models: partial_config.models,
+        api_key, // From environment
+        project_root, // Determined above
+    };
 
     // --- Validation ---
     if config.system_prompt.trim().is_empty() {
         return Err(anyhow!("'system_prompt' in {:?} is empty.", config_path));
     }
-    // Updated validation for top-level selected_model
     if config.selected_model.trim().is_empty() {
         return Err(anyhow!("Top-level 'selected_model' key in {:?} is empty.", config_path));
     }
@@ -87,7 +97,7 @@ pub fn load_runtime_config() -> Result<RuntimeConfig> {
         ));
     }
 
-    // Validate all defined models (unchanged)
+    // Validate all defined models
     for (key, model) in &config.models {
         if model.model_name.trim().is_empty() {
              return Err(anyhow!(
@@ -96,7 +106,6 @@ pub fn load_runtime_config() -> Result<RuntimeConfig> {
             ));
         }
         if model.endpoint.trim().is_empty() {
-            // This check is technically redundant due to Url::parse below, but kept for clarity
             return Err(anyhow!(
                 "Model definition '{}' in {:?} has an empty 'endpoint'.",
                 key, config_path
@@ -109,4 +118,12 @@ pub fn load_runtime_config() -> Result<RuntimeConfig> {
 
     tracing::info!("Successfully loaded and validated configuration from {:?} and environment", config_path);
     Ok(config)
+}
+
+// Helper struct for deserializing only the parts from the TOML file
+#[derive(Deserialize)]
+struct RuntimeConfigPartial {
+    system_prompt: String,
+    selected_model: String,
+    models: HashMap<String, ModelConfig>,
 }

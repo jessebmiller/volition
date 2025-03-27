@@ -15,6 +15,7 @@ use crate::config::{load_runtime_config, RuntimeConfig};
 use crate::models::chat::ResponseMessage;
 // Updated import: Remove Commands
 use crate::models::cli::Cli;
+// Pass config into handle_tool_calls
 use crate::tools::handle_tool_calls;
 
 use clap::Parser;
@@ -152,8 +153,8 @@ async fn start_interactive_session(
                 // Process tool calls if present
                 if let Some(tool_calls) = message.tool_calls { // Use the tool_calls from the original message
                     tracing::info!("Processing {} tool calls", tool_calls.len());
-                    // Handle tool calls (which will add tool responses to messages)
-                    if let Err(e) = handle_tool_calls(&client, &config.api_key, tool_calls.to_vec(), &mut messages).await {
+                    // Pass the full config to handle_tool_calls
+                    if let Err(e) = handle_tool_calls(&client, config, tool_calls.to_vec(), &mut messages).await {
                          tracing::error!("Error handling tool calls: {}", e);
                          println!("{}\n{}", "Error during tool execution:".red(), e);
                          // Decide whether to continue or break here. Let's continue for now.
