@@ -1,0 +1,233 @@
+Volition - AI Software Engineering Assistant
+Ready to help you understand and improve your codebase.
+Type 'exit' or press Enter on an empty line to quit
+
+
+Okay, I can help with that. I'll search the codebase for `TODO` comments within Rust files (`*.rs`) and list any that seem potentially actionable.
+
+
+Running: find . -type f -name "*.rs" -not -path "*/\.*" -not -path "*/node_modules/*" -not -path "*/target/*" | xargs grep  -l "TODO" | head -n 100
+
+Okay, I found `TODO` comments in the following files:
+
+*   `./src/tools/code_search.rs`
+*   `./src/config.rs`
+*   `./src/main.rs`
+
+Let me read these files and extract the specific `TODO` comments to see what they say.
+
+
+
+Okay, I have read the files and found the following TODO comments:
+
+1.  **File:** `./src/tools/code_search.rs`
+    *   **Comment:** `//TODO this search_code tool isn't working very well. please write a plan to replace it with something that gives better context to LLM agents like openAI`
+    *   **Analysis:** This comment suggests a significant issue with the current `search_code` tool's effectiveness, particularly in providing useful context for AI analysis. Replacing or improving this tool could directly enhance the capabilities of this AI assistant. This seems like a potentially high-impact task.
+
+2.  **File:** `./src/config.rs`
+    *   **Comment:** `// TODO: Make this more dynamic if multiple service configs (like openai, gemini, anthropic) exist.`
+    *   **Analysis:** This comment is in the configuration loading logic. It points out that the current validation assumes the active service is OpenAI when checking the selected model. It suggests making this check more flexible to support other potential AI services in the future (like Gemini, Anthropic). This is more about future-proofing and extensibility rather than fixing a current bug, unless you plan to add support for other services immediately.
+
+3.  **File:** `./src/main.rs`
+    *   **Comment:** `// TODO: Consider loading the system prompt from a file or configuration`
+    *   **Analysis:** This comment is near the definition of the `SYSTEM_PROMPT` constant. It suggests moving this large text block out of the source code and into a configuration file or a separate text file. This would make the prompt easier to modify without recompiling the application. It's a good practice for maintainability but doesn't affect the current functionality.
+
+**Recommendation:**
+
+Based on the analysis, the TODO in `./src/tools/code_search.rs` seems like the most impactful one to address now. Improving the code search tool could significantly enhance the AI's ability to understand and interact with codebases.
+
+The other two TODOs are good suggestions for maintainability and future flexibility but seem less urgent unless you have specific immediate needs related to them (like adding a new AI service provider or frequently changing the system prompt).
+
+Would you like me to focus on the `search_code` tool TODO and develop a plan to improve it, as suggested by the comment?
+
+Enter a follow-up question or press Enter to exit:
+> You might be discounting the impact of a configurable system prompt. I'm interested in use cases other than software engineering. For example short fiction writing and editing in a similar "AI fiction editor assistant". am I wrong? is there more than that we'd need to do to enable that?
+
+You make a very good point! My apologies. I evaluated the TODOs primarily through the lens of improving the *existing* software engineering assistant functionality. You are absolutely right that if the goal is to adapt this tool for different domains like fiction writing, the ability to easily configure the system prompt becomes significantly more important, potentially even the *most* important of the three TODOs.
+
+Here's why you're right and what else might be needed:
+
+1.  **Importance of the System Prompt:** The system prompt is fundamental in defining the AI's persona, its objectives, its capabilities (including how it should use its tools), and its interaction style. For a "fiction editor assistant," you would need a completely different system prompt than the current one, outlining goals related to plot, character, style, grammar, consistency, etc., instead of code analysis and refactoring. Making this easily configurable (e.g., loading from a file) is crucial for switching between these roles without modifying and recompiling the core code.
+
+2.  **Beyond the System Prompt:** While making the prompt configurable is a necessary first step, enabling a robust fiction editing assistant would likely require more changes:
+    *   **Tool Relevance and Adaptation:** The current tools (`shell`, `search_code`, `find_definition`) are heavily geared towards code. While `read_file` and `write_file` are essential for accessing/editing manuscript files, and `user_input` is always useful, the code-specific tools might be less relevant or need adaptation. For instance, `search_code` could potentially be repurposed to search for keywords or phrases in prose, but its current implementation using `grep` with language-specific patterns might not be ideal.
+    *   **New Tools:** A fiction editor might benefit from entirely new tools, such as:
+        *   A grammar/style checker.
+        *   A tool to analyze character arcs or plot consistency.
+        *   A thesaurus or word suggestion tool.
+        *   Sentiment analysis.
+    *   **AI Model Suitability:** While the underlying LLM might be capable of both coding and creative tasks, you might find that specific models or configurations perform better for fiction editing. The current configuration structure seems flexible enough to potentially support this.
+    *   **Context Handling:** The way context (e.g., the manuscript) is provided to the AI might need adjustments. Code often has clearer structural boundaries than prose.
+
+**Conclusion:**
+
+You are not wrong. For the use case you described, making the system prompt configurable (`// TODO: Consider loading the system prompt from a file or configuration` in `main.rs`) is a high-priority task. It's the most direct way to change the fundamental behavior and purpose of the AI assistant.
+
+However, it's likely just the *first* step. To create a truly effective AI fiction editor assistant based on this codebase, you would also need to evaluate and potentially modify/replace the available tools and their implementations.
+
+Given your interest in this alternative use case, would you like me to prioritize making the system prompt configurable by loading it from an external file?
+
+Enter a follow-up question or press Enter to exit:
+> Let's start by making some changes to the tools that might be helpful for both the TODOs. a more generic search tool than search_code could be useful. We'll need to depend on the model to use the search tool for their specific case intelligently but we can give them good options in the tool. Do you have any ideas what a good general text search tool for both manuscripts (in text files, probably markdown) and code repos would look like?
+
+Okay, that's a great idea. Creating a more generic and powerful text search tool addresses the core issue mentioned in the `search_code` TODO (lack of context) and simultaneously provides a foundation that's useful for diverse content like code *and* prose manuscripts.
+
+Here's a proposal for a new `search_text` tool that could replace `search_code`:
+
+**Goal:** Provide a flexible text search capability that returns matching lines with context, suitable for various file types.
+
+**Proposed Tool:** `search_text`
+
+**Arguments:**
+
+1.  `pattern`: (String, Required) The text or regular expression to search for.
+2.  `path`: (String, Optional) The directory or specific file to search within. Defaults to the current directory (`.`).
+3.  `file_glob`: (String, Optional) A glob pattern to filter files (e.g., `*.rs`, `*.md`, `chapter-*.txt`). Defaults to searching all files (`*`). This helps narrow down searches in large projects or focus on specific manuscript files.
+4.  `case_sensitive`: (Boolean, Optional) Whether the search should be case-sensitive. Defaults to `false`.
+5.  `context_lines`: (Integer, Optional) The number of lines of context to show before and after each matching line. Defaults to `1` (provides minimal context). Setting to `0` shows only the matching line.
+6.  `max_results`: (Integer, Optional) The maximum number of *matching lines* to return across all files. Defaults to `50` to keep the output manageable for the LLM.
+
+**Implementation Strategy:**
+
+Instead of relying on basic `grep` or `Select-String`, we should leverage a more powerful command-line tool designed for this purpose, like `ripgrep` (`rg`).
+
+*   **Why `ripgrep`?**
+    *   It's significantly faster than standard `grep`.
+    *   It respects `.gitignore` and hidden file rules by default, which is great for codebases.
+    *   It handles various file encodings robustly.
+    *   It has built-in support for filtering by glob patterns (`--glob`).
+    *   It natively supports context lines (`--context` or `-C`).
+    *   It provides line numbers (`--line-number` or `-n`).
+    *   Its output format (`file:line_number:matching_line`) is clear and easy for an LLM to parse.
+
+*   **Plan:**
+    1.  Define a new Rust struct `SearchTextArgs` matching the arguments above.
+    2.  Create a new async function `search_text(args: SearchTextArgs) -> Result<String>`.
+    3.  Inside `search_text`:
+        *   Check if `rg` is available on the system's PATH (e.g., using `command -v rg` or `Get-Command rg`). If not, return an informative error suggesting installation.
+        *   Construct the `rg` command string based on the provided arguments:
+            ```bash
+            rg {case_flag} --glob "{file_glob}" --line-number --context {context_lines} "{pattern}" {path} | head -n {max_results}
+            ```
+            (Handling defaults and optional flags correctly).
+        *   Use the existing `run_shell_command` function to execute the constructed command.
+        *   Return the captured standard output, which will contain the formatted search results. Handle potential errors from the shell command.
+    4.  Update the `Tool` enum and `handle_tool_calls` function in the codebase to include `SearchText` and dispatch calls to the new `search_text` function.
+    5.  Update the system prompt (once configurable) to describe the new `search_text` tool and its capabilities, replacing the description of `search_code`.
+    6.  Remove the old `search_code` function and `SearchCodeArgs` struct.
+
+**Example Output Format (from `ripgrep`):**
+
+```
+src/main.rs
+15:use crate::models::cli::{Commands, Cli};
+16:use crate::tools::handle_tool_calls;
+17:
+
+docs/manuscript.md
+88:The wind howled, a lonely pattern against the windowpane.
+89:She looked up from her notes.
+90:Another match for the strange pattern emerged in chapter 3.
+```
+
+**Benefits:**
+
+*   **Contextual Results:** Provides the actual matching lines and surrounding context, far more useful than just filenames.
+*   **Generality:** Works well for code, Markdown, plain text, etc.
+*   **Performance:** Leverages the speed of `ripgrep`.
+*   **Flexibility:** Arguments allow fine-tuning the search scope and output.
+*   **Addresses TODO:** Directly tackles the shortcomings of the old `search_code`.
+
+This approach requires `ripgrep` to be installed on the system where `volition` runs. I think this is a reasonable dependency for providing significantly better search functionality.
+
+What do you think of this plan? Does the proposed `search_text` tool seem like a good fit for your needs, covering both code and manuscript searching?
+
+Enter a follow-up question or press Enter to exit:
+> Yes that sounds excelent please make that change
+
+Okay, I will proceed with implementing the new `search_text` tool using `ripgrep` (`rg`).
+
+**Important Dependency:** This change introduces a dependency on the command-line tool `ripgrep`. Please ensure `rg` is installed and available in the system's PATH where you intend to run `volition`. If it's not installed, the tool will return an error. You can usually install it via package managers (e.g., `apt install ripgrep`, `brew install ripgrep`, `choco install ripgrep`).
+
+**Plan:**
+
+1.  **Create a Git commit:** To ensure we can easily revert if needed.
+2.  **Modify `src/models/tools.rs`:** Define `SearchTextArgs`, replace `SearchCodeArgs` and update relevant enums (`Tool`, `ToolParameters`).
+3.  **Rename `src/tools/code_search.rs`:** Rename to `src/tools/search.rs`.
+4.  **Modify the new `src/tools/search.rs`:** Implement the `search_text` function using `rg`. Keep the existing `find_definition` function in this file for now.
+5.  **Modify `src/tools/mod.rs`:** Update `handle_tool_calls` to use `search_text`. Update the module declaration if the filename change requires it.
+6.  **Modify `src/main.rs`:** Update the `SYSTEM_PROMPT` constant to describe `search_text` instead of `search_code`, and update any `use` statements pointing to the old filename.
+
+Let's start by creating a commit.
+
+
+Running: git add . && git commit -m 'feat: Begin replacing search_code with search_text tool'
+
+Commit created. Now, let's modify the necessary files.
+
+**1. Modify `src/models/tools.rs`**
+
+I'll read the current content first.
+
+
+
+**2. Rename `src/tools/code_search.rs` to `src/tools/search.rs`**
+
+
+Running: git mv src/tools/code_search.rs src/tools/search.rs
+
+**3. Modify the new `src/tools/search.rs`**
+
+I need to read the (renamed) file first, then write the updated implementation.
+
+
+2025-03-26T23:19:39.568602Z  WARN volition::api: API request failed with status 500 Internal Server Error. Retrying in 1 seconds (attempt 1/5)
+2025-03-26T23:19:40.708915Z  WARN volition::api: API request failed with status 429 Too Many Requests. Retrying in 2 seconds (attempt 2/5)
+2025-03-26T23:19:42.950642Z  WARN volition::api: API request failed with status 429 Too Many Requests. Retrying in 4 seconds (attempt 3/5)
+
+**4. Modify `src/tools/mod.rs`**
+
+Reading the file first.
+
+
+
+**5. Modify `src/main.rs`**
+
+Reading the file first.
+
+
+2025-03-26T23:20:50.431809Z  WARN volition::api: API request failed with status 500 Internal Server Error. Retrying in 1 seconds (attempt 1/5)
+
+**6. Final Commit**
+
+Let's commit these changes.
+
+
+Running: git add . && git commit -m 'feat: Replace search_code with search_text tool using ripgrep'
+
+Okay, I have completed the following steps:
+
+1.  Defined `SearchTextArgs` and replaced `SearchCodeArgs` in `src/models/tools.rs`. Updated the tool definition JSON as well.
+2.  Renamed `src/tools/code_search.rs` to `src/tools/search.rs`.
+3.  Implemented the `search_text` function in `src/tools/search.rs` using `ripgrep` (`rg`) via the shell. It includes a check to ensure `rg` is installed.
+4.  Updated `src/tools/mod.rs` to use the new `search` module and call `search_text`.
+5.  Updated the `SYSTEM_PROMPT` in `src/main.rs` to reflect the new `search_text` tool and its description.
+
+The codebase now uses the `search_text` tool, which should provide more contextual and flexible search results for both code and other text files.
+
+**Reminder:** This tool requires `ripgrep` (`rg`) to be installed on the system.
+
+What would you like to do next? We could now address the TODO about making the system prompt configurable, or perhaps test the new search tool?
+
+Enter a follow-up question or press Enter to exit:
+> could you add the ripgrep dependancy to the readme?
+
+Okay, I can definitely add the `ripgrep` dependency information to the README file.
+
+First, I'll read the current `README.md`.
+
+
+Error: Failed to read file: README.md
+
+Caused by:
+    No such file or directory (os error 2)

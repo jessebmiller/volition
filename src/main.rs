@@ -1,16 +1,17 @@
 mod api;
-mod config;
+mod config; // Keep this for service config
 mod models;
 mod tools;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result}; // Added Context
 use colored::*;
 use serde_json;
 use std::{fs, io::{self, Write}, path::Path};
 use tokio::time::Duration;
 
 use crate::api::chat_with_api;
-use crate::config::load_config;
+// Import both config loading functions and the new config struct
+use crate::config::{load_config, load_volition_file_config, VolitionFileConfig};
 use crate::models::chat::ResponseMessage;
 use crate::models::cli::{Commands, Cli};
 use crate::tools::handle_tool_calls;
@@ -19,28 +20,30 @@ use clap::Parser;
 use tracing::{Level};
 use tracing_subscriber::FmtSubscriber;
 
-// Removed SYSTEM_PROMPT constant, assuming it's loaded differently or not needed here
-
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
 
-async fn handle_conversation(config: &config::Config, query: &str) -> Result<()> {
+// Modified handle_conversation to accept volition_config
+async fn handle_conversation(
+    service_config: &config::Config,
+    volition_config: &VolitionFileConfig, // Add volition config
+    query: &str,
+) -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()?;
 
-    // Print welcome message
-    println!("
-{}", "Volition - AI Software Engineering Assistant".cyan().bold());
+    // Print welcome message (unchanged)
+    println!("\n{}", "Volition - AI Software Engineering Assistant".cyan().bold());
     println!("{}", "Ready to help you understand and improve your codebase.".cyan());
     println!("{}", "Type 'exit' or press Enter on an empty line to quit".cyan());
     println!("");
 
     let mut messages: Vec<ResponseMessage>;
-
-    // --- Load State Logic ---
     let recovery_path = Path::new(RECOVERY_FILE_PATH);
+
+    // --- Load State Logic (modified to pass volition_config.system_prompt) ---
     if recovery_path.exists() {
-        tracing::info!("Found existing conversation state file: {}", RECOVERY_FILE_PATH);
+         tracing::info!("Found existing conversation state file: {}", RECOVERY_FILE_PATH);
         print!(
             "{}",
             "An incomplete session state was found. Resume? (Y/n): "
@@ -59,66 +62,57 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
                         messages = loaded_messages;
                         tracing::info!("Successfully resumed session from state file.");
                         println!("{}", "Resuming previous session...".cyan());
-                        // Attempt to remove the file after successful load, ignore error if it fails
                         let _ = fs::remove_file(recovery_path);
                     }
                     Err(e) => {
                         tracing::error!("Failed to deserialize state file: {}. Starting fresh.", e);
                         println!("{}", "Error reading state file. Starting a fresh session.".red());
-                        // Attempt to remove corrupted file
                         let _ = fs::remove_file(recovery_path);
-                        messages = default_messages(query);
+                        messages = default_messages(query, &volition_config.system_prompt); // Pass prompt
                     }
                 },
                 Err(e) => {
                     tracing::error!("Failed to read state file: {}. Starting fresh.", e);
                     println!("{}", "Error reading state file. Starting a fresh session.".red());
-                    // Attempt to remove unreadable file
                     let _ = fs::remove_file(recovery_path);
-                    messages = default_messages(query);
+                    messages = default_messages(query, &volition_config.system_prompt); // Pass prompt
                 }
             }
         } else {
             tracing::info!("User chose not to resume. Starting fresh.");
             println!("{}", "Starting a fresh session.".cyan());
-            // Attempt to remove the file as user opted out
             let _ = fs::remove_file(recovery_path);
-            messages = default_messages(query);
+            messages = default_messages(query, &volition_config.system_prompt); // Pass prompt
         }
     } else {
-        messages = default_messages(query);
+        messages = default_messages(query, &volition_config.system_prompt); // Pass prompt
     }
-
     // --- End Load State Logic ---
 
     let mut conversation_active = true;
 
+    // --- Main Conversation Loop (unchanged content, just ensure service_config is used correctly) ---
     while conversation_active {
         tracing::debug!("Current message history: {:?}", messages);
 
-        let response = chat_with_api(&client, config, messages.clone(), None).await?;
+        // Pass service_config here
+        let response = chat_with_api(&client, service_config, messages.clone(), None).await?;
 
-        // Check if response has choices before accessing
-        let message = match response.choices.get(0) {
+         let message = match response.choices.get(0) {
             Some(choice) => &choice.message,
             None => {
                  tracing::error!("API response did not contain any choices.");
                  println!("{}", "Error: Received an empty response from the AI service.".red());
-                 // Decide how to handle this - maybe retry or exit?
-                 // For now, let's break the loop
                  break;
             }
         };
 
-        // Print content if there is any
         if let Some(content) = &message.content {
             if !content.is_empty() {
-                println!("
-{}", content);
+                println!("\n{}", content);
             }
         }
 
-        // Store the original response message as received
         messages.push(ResponseMessage {
             role: "assistant".to_string(),
             content: message.content.clone(),
@@ -126,16 +120,12 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
             tool_call_id: None,
         });
 
-        // Process tool calls if any
         if let Some(tool_calls) = &message.tool_calls {
             tracing::info!("Processing {} tool calls", tool_calls.len());
-
-            // Updated to use config.api_key from the environment variable
-            handle_tool_calls(&client, &config.api_key, tool_calls.to_vec(), &mut messages).await?;
+            // Use service_config.api_key
+            handle_tool_calls(&client, &service_config.api_key, tool_calls.to_vec(), &mut messages).await?;
         } else {
-            // No tool calls - get follow-up input from user
-            println!("
-{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
+            println!("\n{}", "Enter a follow-up question or press Enter to exit:".cyan().bold());
             print!("{} ", ">".green().bold());
             io::stdout().flush()?;
 
@@ -143,13 +133,10 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
             io::stdin().read_line(&mut input)?;
             let input = input.trim().to_string();
 
-            // Exit if user enters empty string or "exit"
             if input.is_empty() || input.to_lowercase() == "exit" {
-                println!("
-{}", "Goodbye! Thank you for using Volition.".cyan());
+                println!("\n{}", "Goodbye! Thank you for using Volition.".cyan());
                 conversation_active = false;
             } else {
-                // Add user's follow-up input to messages
                 messages.push(ResponseMessage {
                     role: "user".to_string(),
                     content: Some(input),
@@ -159,8 +146,8 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
             }
         }
 
-        // --- Save State Logic ---
-        if conversation_active {
+        // --- Save State Logic (unchanged) ---
+         if conversation_active {
             match serde_json::to_string_pretty(&messages) {
                 Ok(state_json) => {
                     if let Err(e) = fs::write(RECOVERY_FILE_PATH, state_json) {
@@ -174,10 +161,11 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
                 }
             }
         }
-        // --- End Save State Logic ---
     }
+    // --- End Main Conversation Loop ---
 
-    // --- Cleanup Logic ---
+
+    // --- Cleanup Logic (unchanged) ---
     if Path::new(RECOVERY_FILE_PATH).exists() {
         if let Err(e) = fs::remove_file(RECOVERY_FILE_PATH) {
             tracing::warn!("Failed to remove recovery state file on exit: {}", e);
@@ -185,57 +173,18 @@ async fn handle_conversation(config: &config::Config, query: &str) -> Result<()>
             tracing::info!("Removed recovery state file on clean exit.");
         }
     }
-    // --- End Cleanup Logic ---
 
     Ok(())
 }
 
-// Helper function to create the initial messages vector
-// TODO: Consider loading the system prompt from a file or configuration
-// Updated SYSTEM_PROMPT to describe search_text instead of search_code
-const SYSTEM_PROMPT: &str = r#"
-You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
+// Removed the SYSTEM_PROMPT constant
 
-Your goal is to help developers understand, modify, and improve products through expert analysis, precise code edits, and feature implementation.
-
-You have access to powerful tools:
-1. shell - Execute shell commands (be careful to avoid too much output)
-2. read_file - Read file contents
-3. write_file - Write/edit files
-4. search_text - Search for text patterns in files, returning matching lines with context. Requires 'ripgrep' (rg) to be installed.
-5. find_definition - Locate symbol definitions in code
-6. user_input - Ask users for decisions
-
-When a user asks you to help with a codebase:
-1. Gather information about the codebase structure and key files
-2. Analyze code for patterns, architecture, and potential issues
-3. Make a plan for implementing requested changes
-4. Execute the plan using your tools
-5. Provide clear explanations about what you're doing
-6. Ask for user confirmation via user_input before making significant changes
-7. Always try to answer questions yourslef before asking the user
-
-Best practices to follow:
-- Be careful with shell to limit the amount of output so it's not overwhelming
-- Use search_text to find relevant code sections or text in files, providing context.
-- Use find_definition to locate where symbols are defined
-- Always read files before suggesting edits
-- Create git commits we can roll back to before modifying important files
-- Verify changes with targeted tests when possible
-- Explain complex code sections in simple accurate terms
-- Specifically ask for user confirmation before:
-  * Making structural changes to the codebase
-  * Modifying core functionality
-  * Introducing new dependencies
-
-Provide concise explanations of your reasoning and detailed comments for any code you modify or create.
-"#;
-
-fn default_messages(query: &str) -> Vec<ResponseMessage> {
+// Modified default_messages to accept system_prompt as an argument
+fn default_messages(query: &str, system_prompt: &str) -> Vec<ResponseMessage> {
     vec![
         ResponseMessage {
             role: "system".to_string(),
-            content: Some(SYSTEM_PROMPT.to_string()),
+            content: Some(system_prompt.to_string()), // Use the passed argument
             tool_calls: None,
             tool_call_id: None,
         },
@@ -250,13 +199,12 @@ fn default_messages(query: &str) -> Vec<ResponseMessage> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load .env file if present (ignores error if not found)
-    // This should be one of the first things to run.
+    // Load .env file if present (unchanged)
     dotenvy::dotenv().ok();
 
     let cli = Cli::parse();
 
-    // Setup tracing subscriber based on verbosity flags
+    // Setup tracing subscriber (unchanged)
     let level = if cli.verbose {
         Level::DEBUG
     } else if cli.debug {
@@ -270,34 +218,39 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
 
-    // Main command matching and execution logic
+    // --- Load Configurations ---
+    // Load service config first (API keys, models, etc.)
+    let service_config = load_config().context("Failed to load service configuration")?;
+    // Load Volitionfile config (system prompt, etc.)
+    let volition_config = load_volition_file_config().context("Failed to load Volitionfile.toml configuration")?;
+    // --- End Load Configurations ---
+
+
+    // Main command matching and execution logic (modified to pass both configs)
     match &cli.command {
         Some(Commands::Run { args, verbose: _, debug: _ }) => {
             let query = args.join(" ");
             if query.is_empty() {
                 return Err(anyhow!("Please provide a command to run"));
             }
-            // Load configuration - this will now benefit from .env variables
-            let config = load_config()?;
-            handle_conversation(&config, &query).await?;
+            // Pass both configs to handle_conversation
+            handle_conversation(&service_config, &volition_config, &query).await?;
         }
         None => {
-            // Handle cases where no command is provided or implicit command
             if cli.rest.is_empty() {
-                // Print usage instructions if no arguments are given
+                // Print usage instructions (unchanged)
                 println!("Welcome to Volition - AI Software Engineering Assistant");
                 println!("Usage: volition <command> [arguments]");
-                println!("Examples:");
+                 println!("Examples:");
                 println!("  volition \"Analyze the src directory and list the main components\"");
                 println!("  volition \"Find all usages of the login function and refactor it to use async/await\"");
                 println!("  volition \"Help me understand how the routing system works in this codebase\"");
                 println!("  volition --help       - Show more information");
                 return Ok(());
             }
-            // Treat positional arguments after the executable name as the query
             let query = cli.rest.join(" ");
-            let config = load_config()?;
-            handle_conversation(&config, &query).await?;
+            // Pass both configs to handle_conversation
+            handle_conversation(&service_config, &volition_config, &query).await?;
         }
     }
 
