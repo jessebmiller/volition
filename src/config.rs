@@ -14,20 +14,18 @@ use url::Url; // Added for URL validation
 #[derive(Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
     pub system_prompt: String,
-    // Removed active_service field
-    pub openai: OpenAIConfig, // Specifies the default selected model via its key in the [models] map
+    // Moved selected_model to top level
+    pub selected_model: String, // Identifier (key) for the default model in the [models] map
+    // Removed openai: OpenAIConfig field
     pub models: HashMap<String, ModelConfig>, // Map of model identifier -> model config
 
     #[serde(skip)] // API key is loaded from environment, not the file
     pub api_key: String,
 }
 
-// Removed ActiveService struct
+// Removed OpenAIConfig struct
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct OpenAIConfig {
-    pub selected_model: String, // Identifier (key) for the default model in the [models] map
-}
+// Removed ActiveService struct
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
@@ -61,7 +59,7 @@ pub fn load_runtime_config() -> Result<RuntimeConfig> {
     // Deserialize the configuration file.
     // This will automatically fail if any model in [models] is missing the required 'endpoint' field.
     let mut config: RuntimeConfig = toml::from_str(&config_str)
-        .with_context(|| format!("Failed to parse project config file: {:?}. Check syntax and ensure all models have 'model_name', 'parameters', and 'endpoint' fields.", config_path))?;
+        .with_context(|| format!("Failed to parse project config file: {:?}. Check syntax and ensure 'selected_model' is defined at the top level, and all models have 'model_name', 'parameters', and 'endpoint' fields.", config_path))?;
 
     // --- Populate API Key ---
     config.api_key = api_key;
@@ -70,25 +68,26 @@ pub fn load_runtime_config() -> Result<RuntimeConfig> {
     if config.system_prompt.trim().is_empty() {
         return Err(anyhow!("'system_prompt' in {:?} is empty.", config_path));
     }
-    if config.openai.selected_model.trim().is_empty() {
-        return Err(anyhow!("'selected_model' in [openai] section of {:?} is empty.", config_path));
+    // Updated validation for top-level selected_model
+    if config.selected_model.trim().is_empty() {
+        return Err(anyhow!("Top-level 'selected_model' key in {:?} is empty.", config_path));
     }
      if config.models.is_empty() {
         return Err(anyhow!("The [models] section in {:?} is empty. Define at least one model.", config_path));
     }
 
-    // Determine the selected model name (key) directly from the openai config.
-    let selected_model_key = &config.openai.selected_model;
+    // Determine the selected model name (key) directly from the top-level config.
+    let selected_model_key = &config.selected_model;
 
     // Check if the selected model key exists in the models map
     if !config.models.contains_key(selected_model_key) {
          return Err(anyhow!(
-            "Selected model key '{}' specified in [openai] not found in the [models] section of {:?}.",
+            "Selected model key '{}' specified at the top level not found in the [models] section of {:?}.",
             selected_model_key, config_path
         ));
     }
 
-    // Validate all defined models
+    // Validate all defined models (unchanged)
     for (key, model) in &config.models {
         if model.model_name.trim().is_empty() {
              return Err(anyhow!(

@@ -39,10 +39,10 @@ Provide concise explanations of your reasoning and detailed comments for any cod
 
 # Removed active_service section
 
-# Configuration specific to OpenAI (or compatible) service
-[openai]
 # Selects the default model key from the [models] map below
 selected_model = "gemini-2-5-pro"
+
+# Removed [openai] section header
 
 # Definitions for available models
 [models]

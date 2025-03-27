@@ -159,8 +159,8 @@ pub async fn chat_with_api(
 ) -> Result<ApiResponse> {
     // No more effective_config or override logic needed.
 
-    // Retrieve the selected model key directly from the config.
-    let selected_model_key = &config.openai.selected_model;
+    // Retrieve the selected model key directly from the top-level config.
+    let selected_model_key = &config.selected_model;
 
     // Retrieve the configuration for the selected model.
     // The config loader already validated that this key exists.
