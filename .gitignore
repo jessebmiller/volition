@@ -1,3 +1,4 @@
 /target
 .env
 .conversation_state.json
+history.log
