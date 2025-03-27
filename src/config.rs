@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf}; // Added PathBuf
- // Ensure tracing is in scope
+                                // Ensure tracing is in scope
 use url::Url; // Added for URL validation
 
 // --- Combined Configuration Structure ---

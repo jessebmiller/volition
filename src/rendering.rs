@@ -10,14 +10,10 @@ use syntect::{
     util::LinesWithEndings,
 };
 use termimad::{
-    crossterm::style::{
-        Attribute, Color, ResetColor, SetAttribute,
-        SetForegroundColor, /* Removed SetBackgroundColor */
-    },
-    Error as TermimadError, // Import TermimadError for mapping
-    MadSkin,
+    crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
+    Error as TermimadError, MadSkin,
 };
-// Import the cmark function and its specific error type
+
 use pulldown_cmark_to_cmark::{cmark, Error as CmarkError};
 
 // --- Syntect Setup ---

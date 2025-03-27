@@ -91,7 +91,8 @@ pub async fn search_text(args: SearchTextArgs) -> Result<String> {
 }
 
 // Renamed and simplified find_definition to find_rust_definition
-pub async fn find_rust_definition(args: FindRustDefinitionArgs) -> Result<String> { // Updated args type
+pub async fn find_rust_definition(args: FindRustDefinitionArgs) -> Result<String> {
+    // Updated args type
     // Check if rg is installed before proceeding (required for this tool now)
     check_ripgrep_installed()?;
 
@@ -116,8 +117,8 @@ pub async fn find_rust_definition(args: FindRustDefinitionArgs) -> Result<String
         // Use --type rust for more specific filtering if desired, but glob works
         "rg --pretty --trim --glob='{}' --ignore-case --max-count=10 \"{}\" {}",
         file_pattern,
-        pattern,      // Regex pattern
-        directory     // Directory to search
+        pattern,   // Regex pattern
+        directory  // Directory to search
     );
 
     tracing::debug!("Executing find rust definition command: {}", rg_cmd);

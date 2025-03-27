@@ -7,23 +7,15 @@ pub mod search;
 pub mod shell;
 pub mod user_input;
 
+use crate::config::RuntimeConfig;
 use crate::models::chat::ResponseMessage;
+use crate::models::tools::{
+    CargoCommandArgs, FindRustDefinitionArgs, GitCommandArgs, ListDirectoryArgs, ReadFileArgs,
+    SearchTextArgs, ShellArgs, ToolCall, UserInputArgs, WriteFileArgs,
+};
 use anyhow::{Context, Result};
 use colored::*; // Import colored crate traits
 use reqwest::Client;
-use crate::config::RuntimeConfig;
-use crate::models::tools::{
-    CargoCommandArgs,
-    FindRustDefinitionArgs,
-    GitCommandArgs,
-    ListDirectoryArgs,
-    ReadFileArgs,
-    SearchTextArgs,
-    ShellArgs,
-    ToolCall,
-    UserInputArgs,
-    WriteFileArgs,
-};
 use serde_json::from_str;
 use tracing::{info, warn}; // Keeping info for internal logging
 
@@ -58,23 +50,23 @@ pub async fn handle_tool_calls(
 
         let output_result = match tool_name {
             "shell" => {
-                let args: ShellArgs = from_str(tool_args_json)
-                    .context("Failed to parse shell arguments")?;
+                let args: ShellArgs =
+                    from_str(tool_args_json).context("Failed to parse shell arguments")?;
                 shell::run_shell_command(args).await
             }
             "read_file" => {
-                let args: ReadFileArgs = from_str(tool_args_json)
-                    .context("Failed to parse read_file arguments")?;
+                let args: ReadFileArgs =
+                    from_str(tool_args_json).context("Failed to parse read_file arguments")?;
                 file::read_file(args).await
             }
             "write_file" => {
-                let args: WriteFileArgs = from_str(tool_args_json)
-                    .context("Failed to parse write_file arguments")?;
+                let args: WriteFileArgs =
+                    from_str(tool_args_json).context("Failed to parse write_file arguments")?;
                 file::write_file(args, config).await
             }
             "search_text" => {
-                let args: SearchTextArgs = from_str(tool_args_json)
-                    .context("Failed to parse search_text arguments")?;
+                let args: SearchTextArgs =
+                    from_str(tool_args_json).context("Failed to parse search_text arguments")?;
                 search::search_text(args).await
             }
             "find_rust_definition" => {
@@ -83,23 +75,23 @@ pub async fn handle_tool_calls(
                 search::find_rust_definition(args).await
             }
             "user_input" => {
-                let args: UserInputArgs = from_str(tool_args_json)
-                    .context("Failed to parse user_input arguments")?;
+                let args: UserInputArgs =
+                    from_str(tool_args_json).context("Failed to parse user_input arguments")?;
                 user_input::get_user_input(args)
             }
             "cargo_command" => {
-                let args: CargoCommandArgs = from_str(tool_args_json)
-                    .context("Failed to parse cargo_command arguments")?;
+                let args: CargoCommandArgs =
+                    from_str(tool_args_json).context("Failed to parse cargo_command arguments")?;
                 cargo::run_cargo_command(args).await
             }
             "git_command" => {
-                let args: GitCommandArgs = from_str(tool_args_json)
-                    .context("Failed to parse git_command arguments")?;
+                let args: GitCommandArgs =
+                    from_str(tool_args_json).context("Failed to parse git_command arguments")?;
                 git::run_git_command(args).await
             }
             "list_directory" => {
-                let args: ListDirectoryArgs = from_str(tool_args_json)
-                    .context("Failed to parse list_directory arguments")?;
+                let args: ListDirectoryArgs =
+                    from_str(tool_args_json).context("Failed to parse list_directory arguments")?;
                 filesystem::list_directory_contents(&args.path, args.depth, args.show_hidden)
             }
             unknown_tool => {

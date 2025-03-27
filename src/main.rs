@@ -167,8 +167,12 @@ async fn run_conversation_loop(
             }
             Err(e) => {
                 error!("API call failed: {}", e);
-                println!("{}
-{}", "Error calling AI service:".red(), e);
+                println!(
+                    "{}
+{}",
+                    "Error calling AI service:".red(),
+                    e
+                );
                 None // Indicate no valid message received
             }
         };
@@ -209,8 +213,12 @@ async fn run_conversation_loop(
                     handle_tool_calls(client, config, tool_calls.to_vec(), messages).await
                 {
                     error!("Error handling tool calls: {}", e);
-                    println!("{}
-{}", "Error during tool execution:".red(), e);
+                    println!(
+                        "{}
+{}",
+                        "Error during tool execution:".red(),
+                        e
+                    );
                     // Decide whether to continue or break here. Let's continue for now.
                 }
                 // After handling tool calls, loop back to call API again
@@ -328,8 +336,7 @@ async fn main() -> Result<()> {
     };
 
     let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting default subscriber failed");
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     // Load Configuration
     let config = load_runtime_config()
