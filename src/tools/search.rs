@@ -47,8 +47,8 @@ fn check_ripgrep_installed() -> Result<()> {
 // Test mock version - assume rg is always installed
 #[cfg(test)]
 fn check_ripgrep_installed() -> Result<()> {
-     println!("[TEST] Mock check_ripgrep_installed called - assuming OK");
-     Ok(())
+    println!("[TEST] Mock check_ripgrep_installed called - assuming OK");
+    Ok(())
 }
 
 pub async fn search_text(args: SearchTextArgs) -> Result<String> {
@@ -91,8 +91,9 @@ pub async fn search_text(args: SearchTextArgs) -> Result<String> {
 
     // Check if the result indicates no matches found (based on mock output or real rg behavior)
     if result.is_empty() // Check for genuinely empty output
-       || result.starts_with("Command executed") && result.contains("Stdout:\n<no output>") // Check mock/real output indicating no stdout
-       // Add other checks if needed, e.g., specific exit codes if execute_shell_command_internal provides them clearly
+       || result.starts_with("Command executed") && result.contains("Stdout:\n<no output>")
+    // Check mock/real output indicating no stdout
+    // Add other checks if needed, e.g., specific exit codes if execute_shell_command_internal provides them clearly
     {
         Ok(format!(
             "No matches found for pattern: '{}' in path: '{}' matching glob: '{}'",
@@ -129,7 +130,7 @@ pub async fn find_rust_definition(args: FindRustDefinitionArgs) -> Result<String
     let rg_cmd = format!(
         "rg --pretty --trim --glob='{}' --ignore-case --max-count=10 -e \"{}\" {}",
         file_pattern,
-        pattern,   // Use -e for pattern to treat it as regex explicitly
+        pattern, // Use -e for pattern to treat it as regex explicitly
         directory
     );
 
@@ -137,8 +138,9 @@ pub async fn find_rust_definition(args: FindRustDefinitionArgs) -> Result<String
 
     let result = execute_shell_command_internal(&rg_cmd).await?;
 
-     if result.is_empty() // Check for genuinely empty output
-       || result.starts_with("Command executed") && result.contains("Stdout:\n<no output>") // Check mock/real output indicating no stdout
+    if result.is_empty() // Check for genuinely empty output
+       || result.starts_with("Command executed") && result.contains("Stdout:\n<no output>")
+    // Check mock/real output indicating no stdout
     {
         Ok(format!("No Rust definition found for symbol: {}", symbol))
     } else {
@@ -149,7 +151,6 @@ pub async fn find_rust_definition(args: FindRustDefinitionArgs) -> Result<String
         ))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -38,10 +38,11 @@ pub async fn handle_tool_calls(
         const MAX_ARG_DISPLAY_LEN: usize = 80;
         let args_display = if tool_args_json.chars().count() > MAX_ARG_DISPLAY_LEN {
             // Find the byte index corresponding to the 80th character boundary
-            let truncate_at = tool_args_json.char_indices()
-                                .nth(MAX_ARG_DISPLAY_LEN)
-                                .map(|(idx, _)| idx)
-                                .unwrap_or(tool_args_json.len()); // Should always find if count > MAX
+            let truncate_at = tool_args_json
+                .char_indices()
+                .nth(MAX_ARG_DISPLAY_LEN)
+                .map(|(idx, _)| idx)
+                .unwrap_or(tool_args_json.len()); // Should always find if count > MAX
 
             // Format directly into a new String with "..."
             format!("{}...", &tool_args_json[..truncate_at])
@@ -179,7 +180,6 @@ pub async fn handle_tool_calls(
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(messages.len(), 0);
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_handle_tool_calls_read_file_invalid_json() {
         let client = Client::new();
         let config = create_dummy_config();
@@ -251,14 +251,18 @@ mod tests {
         assert_eq!(messages.len(), 0);
     }
 
-
-     #[tokio::test]
-    async fn test_handle_tool_calls_shell_missing_required_arg() { // Renamed test
+    #[tokio::test]
+    async fn test_handle_tool_calls_shell_missing_required_arg() {
+        // Renamed test
         let client = Client::new();
         let config = create_dummy_config();
         let mut messages = vec![];
-         // Missing 'command' field
-        let tool_calls = vec![create_tool_call("id1", "shell", r#"{"working_dir": "/tmp"}"#)];
+        // Missing 'command' field
+        let tool_calls = vec![create_tool_call(
+            "id1",
+            "shell",
+            r#"{"working_dir": "/tmp"}"#,
+        )];
 
         let result = handle_tool_calls(&client, &config, tool_calls, &mut messages).await;
 
@@ -275,15 +279,16 @@ mod tests {
         let client = Client::new();
         let config = create_dummy_config();
         let mut messages = vec![];
-        let tool_calls = vec![
-            create_tool_call("id1", "nonexistent_tool", r#"{}"#),
-        ];
+        let tool_calls = vec![create_tool_call("id1", "nonexistent_tool", r#"{}"#)];
 
         let result = handle_tool_calls(&client, &config, tool_calls, &mut messages).await;
 
-        assert!(result.is_err(), "Expected error due to unknown tool, but got Ok");
+        assert!(
+            result.is_err(),
+            "Expected error due to unknown tool, but got Ok"
+        );
         let error_string = format!("{:?}", result.err().unwrap());
-         // The error comes from the `handle_tool_calls` match statement directly
+        // The error comes from the `handle_tool_calls` match statement directly
         assert!(error_string.contains("Unknown tool: nonexistent_tool"));
         assert_eq!(messages.len(), 0);
     }

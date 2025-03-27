@@ -27,7 +27,10 @@ fn get_denied_cargo_commands() -> HashSet<String> {
 
 // Internal execution function (real version)
 #[cfg(not(test))]
-async fn execute_cargo_command_internal(command_name: &str, command_args: &[String]) -> Result<String> {
+async fn execute_cargo_command_internal(
+    command_name: &str,
+    command_args: &[String],
+) -> Result<String> {
     let full_command = format!("cargo {} {}", command_name, command_args.join(" "));
     debug!("Executing internal cargo command: {}", full_command);
 
@@ -55,8 +58,16 @@ async fn execute_cargo_command_internal(command_name: &str, command_args: &[Stri
         command_name,
         command_args.join(" "),
         status,
-        if stdout.is_empty() { "<no output>" } else { &stdout },
-        if stderr.is_empty() { "<no output>" } else { &stderr }
+        if stdout.is_empty() {
+            "<no output>"
+        } else {
+            &stdout
+        },
+        if stderr.is_empty() {
+            "<no output>"
+        } else {
+            &stderr
+        }
     );
 
     Ok(result)
@@ -64,9 +75,15 @@ async fn execute_cargo_command_internal(command_name: &str, command_args: &[Stri
 
 // Internal execution function (test mock version)
 #[cfg(test)]
-async fn execute_cargo_command_internal(command_name: &str, command_args: &[String]) -> Result<String> {
+async fn execute_cargo_command_internal(
+    command_name: &str,
+    command_args: &[String],
+) -> Result<String> {
     let full_command_for_print = format!("cargo {} {}", command_name, command_args.join(" "));
-    println!("[TEST] Mock execute_cargo_command_internal called with: {}", full_command_for_print);
+    println!(
+        "[TEST] Mock execute_cargo_command_internal called with: {}",
+        full_command_for_print
+    );
 
     // Mock based on command_name and potentially args
     match command_name {
@@ -130,9 +147,9 @@ mod tests {
         assert!(output.contains("Error: The cargo command 'install' is not allowed"));
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_run_cargo_command_allowed_check_success() {
-         // This test now implicitly tests execute_cargo_command_internal mock
+        // This test now implicitly tests execute_cargo_command_internal mock
         let args = CargoCommandArgs {
             command: "check".to_string(), // Allowed command
             args: vec![],
@@ -146,24 +163,24 @@ mod tests {
         assert!(output.contains("Stderr:\n<no output>"));
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_run_cargo_command_allowed_build_fail() {
-         // This test now implicitly tests execute_cargo_command_internal mock for build failure
+        // This test now implicitly tests execute_cargo_command_internal mock for build failure
         let args = CargoCommandArgs {
             command: "build".to_string(), // Allowed command
-            args: vec![], // No --release, triggers mock failure case
+            args: vec![],                 // No --release, triggers mock failure case
         };
         let result = run_cargo_command(args).await;
         assert!(result.is_ok());
         let output = result.unwrap();
-         println!("Mocked Output:\n{}", output);
+        println!("Mocked Output:\n{}", output);
         assert!(output.contains("Status: 101"));
         assert!(output.contains("Stderr:\nerror[E0308]: mismatched types"));
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_run_cargo_command_allowed_build_release_success() {
-         // This test now implicitly tests execute_cargo_command_internal mock for release build
+        // This test now implicitly tests execute_cargo_command_internal mock for release build
         let args = CargoCommandArgs {
             command: "build".to_string(), // Allowed command
             args: vec!["--release".to_string()],
@@ -171,9 +188,9 @@ mod tests {
         let result = run_cargo_command(args).await;
         assert!(result.is_ok());
         let output = result.unwrap();
-         println!("Mocked Output:\n{}", output);
+        println!("Mocked Output:\n{}", output);
         assert!(output.contains("Status: 0"));
-         assert!(output.contains("Finished release"));
+        assert!(output.contains("Finished release"));
         assert!(output.contains("Stderr:\n<no output>"));
     }
 }

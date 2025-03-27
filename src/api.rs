@@ -5,9 +5,9 @@ use tokio::time::Duration;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
+use crate::config::{ModelConfig, RuntimeConfig};
 use crate::models::chat::{ApiResponse, ResponseMessage};
 use crate::models::tools::Tools;
-use crate::config::{ModelConfig, RuntimeConfig};
 
 /// Unified function to send chat requests to an OpenAI-compatible endpoint.
 /// Constructs the URL, request body, and headers based on the provided ModelConfig.
@@ -88,16 +88,13 @@ pub async fn chat_with_endpoint(
             retries += 1;
             warn!(
                 "API request failed with status {}. Retrying in {:?} (attempt {}/{})",
-                status,
-                wait_time,
-                retries,
-                max_retries
+                status, wait_time, retries, max_retries
             );
             tokio::time::sleep(wait_time).await;
-             // Calculate next delay using exponential backoff after this attempt
+            // Calculate next delay using exponential backoff after this attempt
             current_delay = std::cmp::min(
-                 Duration::from_secs_f64(current_delay.as_secs_f64() * backoff_factor),
-                 max_delay,
+                Duration::from_secs_f64(current_delay.as_secs_f64() * backoff_factor),
+                max_delay,
             );
             continue;
         }
@@ -126,7 +123,10 @@ pub async fn chat_with_endpoint(
 
         if !response_json_obj.contains_key("id") {
             let new_id = format!("chatcmpl-{}", Uuid::new_v4());
-            debug!("Added missing 'id' field to API response with value: {}", new_id);
+            debug!(
+                "Added missing 'id' field to API response with value: {}",
+                new_id
+            );
             response_json_obj.insert("id".to_string(), json!(new_id));
         }
 
@@ -136,12 +136,17 @@ pub async fn chat_with_endpoint(
         let api_response = match api_response_result {
             Ok(resp) => resp,
             Err(e) => {
-                if e.classify() == SerdeJsonCategory::Data && e.to_string().contains("missing field `choices`") {
+                if e.classify() == SerdeJsonCategory::Data
+                    && e.to_string().contains("missing field `choices`")
+                {
                     warn!(
                         "API response successfully received but missing 'choices' field. Response body: {}",
                         serde_json::to_string_pretty(&response_json_obj).unwrap_or_else(|_| format!("{:?}", response_json_obj))
                     );
-                    return Err(anyhow!("API call succeeded but response was missing the expected 'choices' field.").context(e));
+                    return Err(anyhow!(
+                        "API call succeeded but response was missing the expected 'choices' field."
+                    )
+                    .context(e));
                 } else {
                     return Err(anyhow!("Failed to deserialize API response").context(e));
                 }
@@ -189,7 +194,8 @@ fn build_openai_request(
     );
     if let Some(parameters) = model_config.parameters.as_table() {
         for (key, value) in parameters {
-            let json_value = to_value(value.clone()).with_context(|| format!("Failed to convert TOML parameter '{}' to JSON", key))?;
+            let json_value = to_value(value.clone())
+                .with_context(|| format!("Failed to convert TOML parameter '{}' to JSON", key))?;
             request_map.insert(key.clone(), json_value);
         }
     }
@@ -204,7 +210,10 @@ pub async fn chat_with_api(
 ) -> Result<ApiResponse> {
     let selected_model_key = &config.selected_model;
     let model_config = config.models.get(selected_model_key).ok_or_else(|| {
-        anyhow!("Internal error: Selected model key '{}' not found in models map after config load.", selected_model_key)
+        anyhow!(
+            "Internal error: Selected model key '{}' not found in models map after config load.",
+            selected_model_key
+        )
     })?;
 
     // Define production retry parameters
@@ -233,8 +242,8 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use toml;
     use std::time::Duration;
+    use toml;
 
     use httpmock::prelude::*;
     use tokio;
@@ -243,7 +252,9 @@ mod tests {
         ModelConfig {
             model_name: "test-model-name".to_string(),
             endpoint: endpoint.to_string(),
-            parameters: params.map(toml::Value::Table).unwrap_or(toml::Value::Table(toml::value::Table::new())),
+            parameters: params
+                .map(toml::Value::Table)
+                .unwrap_or(toml::Value::Table(toml::value::Table::new())),
         }
     }
 
@@ -262,7 +273,12 @@ mod tests {
     #[test]
     fn test_build_openai_request_basic() {
         let model_name = "gpt-basic";
-        let messages = vec![ResponseMessage { role: "user".to_string(), content: Some("Hello".to_string()), tool_calls: None, tool_call_id: None }];
+        let messages = vec![ResponseMessage {
+            role: "user".to_string(),
+            content: Some("Hello".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
         let model_config = create_test_model_config("http://fake.endpoint/v1", None);
         let result = build_openai_request(model_name, messages.clone(), &model_config);
         assert!(result.is_ok());
@@ -277,7 +293,12 @@ mod tests {
     #[test]
     fn test_build_openai_request_with_parameters() {
         let model_name = "gpt-params";
-        let messages = vec![ResponseMessage { role: "user".to_string(), content: Some("Test".to_string()), tool_calls: None, tool_call_id: None }];
+        let messages = vec![ResponseMessage {
+            role: "user".to_string(),
+            content: Some("Test".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
         let mut params = toml::value::Table::new();
         params.insert("temperature".to_string(), toml::Value::Float(0.9));
         params.insert("max_tokens".to_string(), toml::Value::Integer(100));
@@ -295,13 +316,22 @@ mod tests {
     #[test]
     fn test_build_openai_request_includes_all_tools() {
         let model_name = "gpt-tools-check";
-        let messages = vec![ResponseMessage { role: "user".to_string(), content: Some("Test".to_string()), tool_calls: None, tool_call_id: None }];
+        let messages = vec![ResponseMessage {
+            role: "user".to_string(),
+            content: Some("Test".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
         let model_config = create_test_model_config("http://fake.endpoint/v1", None);
         let result = build_openai_request(model_name, messages, &model_config);
         assert!(result.is_ok());
         let value = result.unwrap();
         let tools_array = value["tools"].as_array().expect("Tools should be an array");
-        let tool_names: Vec<String> = tools_array.iter().filter_map(|t| t.get("function").and_then(|f| f.get("name"))).filter_map(|n| n.as_str().map(String::from)).collect();
+        let tool_names: Vec<String> = tools_array
+            .iter()
+            .filter_map(|t| t.get("function").and_then(|f| f.get("name")))
+            .filter_map(|n| n.as_str().map(String::from))
+            .collect();
         assert!(tool_names.contains(&"shell".to_string()));
         assert!(tool_names.contains(&"read_file".to_string()));
         assert!(tool_names.contains(&"write_file".to_string()));
@@ -327,10 +357,18 @@ mod tests {
         let endpoint_path = "/v1/chat/completions";
         let server_url = server.base_url();
         let full_endpoint_url = format!("{}{}", server_url, endpoint_path);
-        let messages = vec![ResponseMessage { role: "user".to_string(), content: Some("Ping".to_string()), tool_calls: None, tool_call_id: None }];
+        let messages = vec![ResponseMessage {
+            role: "user".to_string(),
+            content: Some("Ping".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
         let model_config = create_test_model_config(&full_endpoint_url, None);
         let runtime_config = create_test_runtime_config(model_key, model_config.clone());
-        let runtime_config = RuntimeConfig { api_key: api_key.to_string(), ..runtime_config };
+        let runtime_config = RuntimeConfig {
+            api_key: api_key.to_string(),
+            ..runtime_config
+        };
         let specific_model_config = runtime_config.models.get(model_key).unwrap();
 
         let mock = server.mock_async(|when, then| {
@@ -345,14 +383,30 @@ mod tests {
 
         let client = Client::new();
         // Pass test retry parameters (though they won't be used here)
-        let result = chat_with_endpoint(&client, &runtime_config, specific_model_config, messages, TEST_MAX_RETRIES, TEST_INITIAL_DELAY, TEST_MAX_DELAY).await;
+        let result = chat_with_endpoint(
+            &client,
+            &runtime_config,
+            specific_model_config,
+            messages,
+            TEST_MAX_RETRIES,
+            TEST_INITIAL_DELAY,
+            TEST_MAX_DELAY,
+        )
+        .await;
 
         mock.assert_async().await;
-        assert!(result.is_ok(), "Expected Ok result, got Err: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Expected Ok result, got Err: {:?}",
+            result.err()
+        );
         let response = result.unwrap();
         assert_eq!(response.id, "chatcmpl-123");
         assert_eq!(response.choices.len(), 1);
-        assert_eq!(response.choices[0].message.content, Some("Pong".to_string()));
+        assert_eq!(
+            response.choices[0].message.content,
+            Some("Pong".to_string())
+        );
         assert_eq!(response.choices[0].message.role, "assistant");
     }
 
@@ -364,26 +418,57 @@ mod tests {
         let endpoint_path = "/v1/chat/completions";
         let server_url = server.base_url();
         let full_endpoint_url = format!("{}{}", server_url, endpoint_path);
-        let messages = vec![ResponseMessage { role: "user".to_string(), content: Some("Test".to_string()), tool_calls: None, tool_call_id: None }];
+        let messages = vec![ResponseMessage {
+            role: "user".to_string(),
+            content: Some("Test".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
         let model_config = create_test_model_config(&full_endpoint_url, None);
         let runtime_config = create_test_runtime_config(model_key, model_config.clone());
-        let runtime_config = RuntimeConfig { api_key: api_key.to_string(), ..runtime_config };
+        let runtime_config = RuntimeConfig {
+            api_key: api_key.to_string(),
+            ..runtime_config
+        };
         let specific_model_config = runtime_config.models.get(model_key).unwrap();
 
-        let mock = server.mock_async(|when, then| {
-            when.method(POST).path(endpoint_path).header("Authorization", &format!("Bearer {}", api_key));
-            then.status(401).header("Content-Type", "application/json").body("{\"error\": \"Invalid API key\"}");
-        }).await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path(endpoint_path)
+                    .header("Authorization", &format!("Bearer {}", api_key));
+                then.status(401)
+                    .header("Content-Type", "application/json")
+                    .body("{\"error\": \"Invalid API key\"}");
+            })
+            .await;
 
         let client = Client::new();
-        let result = chat_with_endpoint(&client, &runtime_config, specific_model_config, messages, TEST_MAX_RETRIES, TEST_INITIAL_DELAY, TEST_MAX_DELAY).await;
+        let result = chat_with_endpoint(
+            &client,
+            &runtime_config,
+            specific_model_config,
+            messages,
+            TEST_MAX_RETRIES,
+            TEST_INITIAL_DELAY,
+            TEST_MAX_DELAY,
+        )
+        .await;
 
         assert_eq!(mock.hits(), 1);
         assert!(result.is_err(), "Expected Err result, but got Ok");
         let error = result.err().unwrap();
         let error_string = error.to_string();
-        assert!(error_string.contains("API error: 401 Unauthorized"), "Error message mismatch: {}", error_string);
-        assert!(error_string.contains("Invalid API key"), "Error message mismatch: {}", error_string);
+        assert!(
+            error_string.contains("API error: 401 Unauthorized"),
+            "Error message mismatch: {}",
+            error_string
+        );
+        assert!(
+            error_string.contains("Invalid API key"),
+            "Error message mismatch: {}",
+            error_string
+        );
     }
 
     #[tokio::test]
@@ -394,31 +479,62 @@ mod tests {
         let endpoint_path = "/v1/chat/completions";
         let server_url = server.base_url();
         let full_endpoint_url = format!("{}{}", server_url, endpoint_path);
-        let messages = vec![ResponseMessage { role: "user".to_string(), content: Some("Test Retry".to_string()), tool_calls: None, tool_call_id: None }];
+        let messages = vec![ResponseMessage {
+            role: "user".to_string(),
+            content: Some("Test Retry".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
         let model_config = create_test_model_config(&full_endpoint_url, None);
         let runtime_config = create_test_runtime_config(model_key, model_config.clone());
-        let runtime_config = RuntimeConfig { api_key: api_key.to_string(), ..runtime_config };
+        let runtime_config = RuntimeConfig {
+            api_key: api_key.to_string(),
+            ..runtime_config
+        };
         let specific_model_config = runtime_config.models.get(model_key).unwrap();
 
-        let mock = server.mock_async(|when, then| {
-            when.method(POST).path(endpoint_path);
-            then.status(500).body("Server error");
-        }).await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(POST).path(endpoint_path);
+                then.status(500).body("Server error");
+            })
+            .await;
 
         let client = Client::builder()
-             // Use standard client, rely on short test delays passed to function
-             // .timeout(Duration::from_millis(100))
-             .build().unwrap();
+            // Use standard client, rely on short test delays passed to function
+            // .timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
 
         // Pass TEST delays here
-        let result = chat_with_endpoint(&client, &runtime_config, specific_model_config, messages, TEST_MAX_RETRIES, TEST_INITIAL_DELAY, TEST_MAX_DELAY).await;
+        let result = chat_with_endpoint(
+            &client,
+            &runtime_config,
+            specific_model_config,
+            messages,
+            TEST_MAX_RETRIES,
+            TEST_INITIAL_DELAY,
+            TEST_MAX_DELAY,
+        )
+        .await;
 
         assert_eq!(mock.hits(), TEST_MAX_RETRIES as usize + 1); // Check hits AFTER action (usize cast)
-        assert!(result.is_err(), "Expected Err result after retries, but got Ok");
+        assert!(
+            result.is_err(),
+            "Expected Err result after retries, but got Ok"
+        );
         let error = result.err().unwrap();
         let error_string = error.to_string();
-        assert!(error_string.contains("API error: 500 Internal Server Error"), "Error message mismatch: {}", error_string);
-        assert!(error_string.contains("Server error"), "Error message mismatch: {}", error_string);
+        assert!(
+            error_string.contains("API error: 500 Internal Server Error"),
+            "Error message mismatch: {}",
+            error_string
+        );
+        assert!(
+            error_string.contains("Server error"),
+            "Error message mismatch: {}",
+            error_string
+        );
     }
 
     #[tokio::test]
@@ -429,10 +545,18 @@ mod tests {
         let endpoint_path = "/v1/chat/completions";
         let server_url = server.base_url();
         let full_endpoint_url = format!("{}{}", server_url, endpoint_path);
-        let messages = vec![ResponseMessage { role: "user".to_string(), content: Some("Test missing choices".to_string()), tool_calls: None, tool_call_id: None }];
+        let messages = vec![ResponseMessage {
+            role: "user".to_string(),
+            content: Some("Test missing choices".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
         let model_config = create_test_model_config(&full_endpoint_url, None);
         let runtime_config = create_test_runtime_config(model_key, model_config.clone());
-        let runtime_config = RuntimeConfig { api_key: api_key.to_string(), ..runtime_config };
+        let runtime_config = RuntimeConfig {
+            api_key: api_key.to_string(),
+            ..runtime_config
+        };
         let specific_model_config = runtime_config.models.get(model_key).unwrap();
 
         let mock = server.mock_async(|when, then| {
@@ -444,14 +568,36 @@ mod tests {
         }).await;
 
         let client = Client::new();
-        let result = chat_with_endpoint(&client, &runtime_config, specific_model_config, messages, TEST_MAX_RETRIES, TEST_INITIAL_DELAY, TEST_MAX_DELAY).await;
+        let result = chat_with_endpoint(
+            &client,
+            &runtime_config,
+            specific_model_config,
+            messages,
+            TEST_MAX_RETRIES,
+            TEST_INITIAL_DELAY,
+            TEST_MAX_DELAY,
+        )
+        .await;
 
         mock.assert_async().await;
-        assert!(result.is_err(), "Expected Err result due to missing choices, but got Ok");
+        assert!(
+            result.is_err(),
+            "Expected Err result due to missing choices, but got Ok"
+        );
         let error = result.err().unwrap();
         let error_string = format!("{:?}", error);
-        assert!(error_string.contains("API call succeeded but response was missing the expected 'choices' field"), "Error message mismatch: {}", error_string);
-        assert!(error_string.contains("missing field `choices`"), "Underlying serde error context missing: {}", error_string);
+        assert!(
+            error_string.contains(
+                "API call succeeded but response was missing the expected 'choices' field"
+            ),
+            "Error message mismatch: {}",
+            error_string
+        );
+        assert!(
+            error_string.contains("missing field `choices`"),
+            "Underlying serde error context missing: {}",
+            error_string
+        );
     }
 
     #[tokio::test]
@@ -462,15 +608,34 @@ mod tests {
         let endpoint_path_b = "/v1/model_b";
         let server_url = server.base_url();
 
-        let model_config_a = ModelConfig { model_name: "model-a-name".to_string(), endpoint: format!("{}{}", server_url, endpoint_path_a), parameters: toml::Value::Table(toml::value::Table::new()) };
-        let model_config_b = ModelConfig { model_name: "model-b-name".to_string(), endpoint: format!("{}{}", server_url, endpoint_path_b), parameters: toml::Value::Table(toml::value::Table::new()) };
+        let model_config_a = ModelConfig {
+            model_name: "model-a-name".to_string(),
+            endpoint: format!("{}{}", server_url, endpoint_path_a),
+            parameters: toml::Value::Table(toml::value::Table::new()),
+        };
+        let model_config_b = ModelConfig {
+            model_name: "model-b-name".to_string(),
+            endpoint: format!("{}{}", server_url, endpoint_path_b),
+            parameters: toml::Value::Table(toml::value::Table::new()),
+        };
 
         let mut models = HashMap::new();
         models.insert("model_a".to_string(), model_config_a);
         models.insert("model_b".to_string(), model_config_b.clone());
 
-        let runtime_config = RuntimeConfig { system_prompt: "Selector test".to_string(), selected_model: "model_b".to_string(), models, api_key: api_key.to_string(), project_root: PathBuf::from("/fake/selector") };
-        let messages = vec![ResponseMessage { role: "user".to_string(), content: Some("Select test".to_string()), tool_calls: None, tool_call_id: None }];
+        let runtime_config = RuntimeConfig {
+            system_prompt: "Selector test".to_string(),
+            selected_model: "model_b".to_string(),
+            models,
+            api_key: api_key.to_string(),
+            project_root: PathBuf::from("/fake/selector"),
+        };
+        let messages = vec![ResponseMessage {
+            role: "user".to_string(),
+            content: Some("Select test".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
 
         let mock_b = server.mock_async(|when, then| {
             when.method(POST).path(endpoint_path_b).header("Authorization", &format!("Bearer {}", api_key))
@@ -488,6 +653,9 @@ mod tests {
         assert!(result.is_ok(), "chat_with_api failed: {:?}", result.err());
         let response = result.unwrap();
         assert_eq!(response.id, "chatcmpl-selected-b");
-        assert_eq!(response.choices[0].message.content, Some("Selected B".to_string()));
+        assert_eq!(
+            response.choices[0].message.content,
+            Some("Selected B".to_string())
+        );
     }
 }

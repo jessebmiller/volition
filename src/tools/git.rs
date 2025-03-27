@@ -40,7 +40,10 @@ fn is_git_command_denied(command_name: &str, args: &[String]) -> bool {
 
 // Internal execution function (real version)
 #[cfg(not(test))]
-async fn execute_git_command_internal(command_name: &str, command_args: &[String]) -> Result<String> {
+async fn execute_git_command_internal(
+    command_name: &str,
+    command_args: &[String],
+) -> Result<String> {
     let full_command = format!("git {} {}", command_name, command_args.join(" "));
     debug!("Executing internal git command: {}", full_command);
 
@@ -68,17 +71,31 @@ async fn execute_git_command_internal(command_name: &str, command_args: &[String
         command_name,
         command_args.join(" "),
         status,
-        if stdout.is_empty() { "<no output>" } else { &stdout },
-        if stderr.is_empty() { "<no output>" } else { &stderr }
+        if stdout.is_empty() {
+            "<no output>"
+        } else {
+            &stdout
+        },
+        if stderr.is_empty() {
+            "<no output>"
+        } else {
+            &stderr
+        }
     );
     Ok(result)
 }
 
 // Internal execution function (test mock version)
 #[cfg(test)]
-async fn execute_git_command_internal(command_name: &str, command_args: &[String]) -> Result<String> {
+async fn execute_git_command_internal(
+    command_name: &str,
+    command_args: &[String],
+) -> Result<String> {
     let full_command_for_print = format!("git {} {}", command_name, command_args.join(" "));
-    println!("[TEST] Mock execute_git_command_internal called with: {}", full_command_for_print);
+    println!(
+        "[TEST] Mock execute_git_command_internal called with: {}",
+        full_command_for_print
+    );
 
     // Mock based on command_name and potentially args
     match command_name {
@@ -125,7 +142,6 @@ pub async fn run_git_command(args: GitCommandArgs) -> Result<String> {
     execute_git_command_internal(command_name, command_args).await
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,10 +168,12 @@ mod tests {
         let result = run_git_command(args).await;
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(output.contains("Error: The git command 'git branch -D old-feature' is not allowed"));
+        assert!(
+            output.contains("Error: The git command 'git branch -D old-feature' is not allowed")
+        );
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_run_git_command_allowed_status_success() {
         let args = GitCommandArgs {
             command: "status".to_string(),
@@ -170,7 +188,7 @@ mod tests {
         assert!(output.contains("Stderr:\n<no output>"));
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_run_git_command_allowed_log_success() {
         let args = GitCommandArgs {
             command: "log".to_string(),

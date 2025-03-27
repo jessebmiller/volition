@@ -1,11 +1,11 @@
 use std::fs;
 // Removed unused `Path` import, only `PathBuf` needed here now
-use std::path::PathBuf;
+use crate::config::RuntimeConfig;
+use crate::models::tools::{ReadFileArgs, WriteFileArgs};
 use anyhow::{Context, Result};
 use colored::*;
 use std::io::{self, Write};
-use crate::config::RuntimeConfig;
-use crate::models::tools::{ReadFileArgs, WriteFileArgs};
+use std::path::PathBuf;
 use tracing::{debug, info, warn};
 
 pub async fn read_file(args: ReadFileArgs) -> Result<String> {
@@ -30,10 +30,9 @@ pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<S
         // Otherwise, join with project root
         config.project_root.join(&target_path_relative)
     };
-     // Clean the path (e.g. resolve ..) for more reliable checks. std::fs::canonicalize requires existence.
-     // Using a simple normalization approach for now.
+    // Clean the path (e.g. resolve ..) for more reliable checks. std::fs::canonicalize requires existence.
+    // Using a simple normalization approach for now.
     // let absolute_target_path = normalize_path(&absolute_target_path); // Assuming a helper if needed
-
 
     // --- Check if path is within project root ---
     // Use starts_with on the potentially non-canonicalized path. This is generally safe
@@ -77,7 +76,10 @@ pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<S
     }
     // --- End Check ---
 
-    info!("Writing to file (absolute path): {:?}", absolute_target_path);
+    info!(
+        "Writing to file (absolute path): {:?}",
+        absolute_target_path
+    );
 
     // Create parent directories if they don't exist, using the absolute path
     if let Some(parent) = absolute_target_path.parent() {
@@ -101,15 +103,14 @@ pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<S
 // Helper function might be needed for robust path normalization if not using external crate
 // fn normalize_path(path: &Path) -> PathBuf { ... }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::RuntimeConfig;
-    use tempfile::tempdir;
-    use std::fs::{File};
-    use std::io::Write;
     use std::collections::HashMap;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
     use tokio;
     // Need std::path::Path for helper function signature and tests
     use std::path::Path;
@@ -134,7 +135,9 @@ mod tests {
         file.write_all(expected_content.as_bytes()).unwrap();
         drop(file);
 
-        let args = ReadFileArgs { path: file_path.to_str().unwrap().to_string() };
+        let args = ReadFileArgs {
+            path: file_path.to_str().unwrap().to_string(),
+        };
         let result = read_file(args).await;
 
         assert!(result.is_ok());
@@ -147,7 +150,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("non_existent_file.txt");
 
-        let args = ReadFileArgs { path: file_path.to_str().unwrap().to_string() };
+        let args = ReadFileArgs {
+            path: file_path.to_str().unwrap().to_string(),
+        };
         let result = read_file(args).await;
 
         assert!(result.is_err());
@@ -159,11 +164,13 @@ mod tests {
     async fn test_read_file_is_directory() {
         let dir = tempdir().unwrap();
 
-        let args = ReadFileArgs { path: dir.path().to_str().unwrap().to_string() };
+        let args = ReadFileArgs {
+            path: dir.path().to_str().unwrap().to_string(),
+        };
         let result = read_file(args).await;
 
         assert!(result.is_err());
-         let error_string = result.err().unwrap().to_string();
+        let error_string = result.err().unwrap().to_string();
         assert!(error_string.contains("Failed to read file"));
     }
 
@@ -185,11 +192,17 @@ mod tests {
         let result = write_file(args, &config).await;
 
         assert!(result.is_ok(), "write_file failed: {:?}", result.err());
-        assert!(file_path_absolute.exists(), "File was not created at absolute path");
+        assert!(
+            file_path_absolute.exists(),
+            "File was not created at absolute path"
+        );
 
         let read_content = fs::read_to_string(&file_path_absolute).unwrap();
         assert_eq!(read_content, content_to_write);
-        assert!(result.unwrap().contains(&format!("Successfully wrote to file: {}", file_path_relative)));
+        assert!(result.unwrap().contains(&format!(
+            "Successfully wrote to file: {}",
+            file_path_relative
+        )));
     }
 
     #[tokio::test]
@@ -215,7 +228,10 @@ mod tests {
 
         let read_content = fs::read_to_string(&file_path_absolute).unwrap();
         assert_eq!(read_content, content_to_write);
-        assert!(result.unwrap().contains(&format!("Successfully wrote to file: {}", file_path_relative)));
+        assert!(result.unwrap().contains(&format!(
+            "Successfully wrote to file: {}",
+            file_path_relative
+        )));
     }
 
     #[tokio::test]
@@ -238,12 +254,21 @@ mod tests {
         let result = write_file(args, &config).await;
 
         assert!(result.is_ok(), "write_file failed: {:?}", result.err());
-        assert!(nested_dir_absolute.exists(), "Nested directory was not created");
-        assert!(file_path_absolute.exists(), "File was not created in nested directory");
+        assert!(
+            nested_dir_absolute.exists(),
+            "Nested directory was not created"
+        );
+        assert!(
+            file_path_absolute.exists(),
+            "File was not created in nested directory"
+        );
 
         let read_content = fs::read_to_string(&file_path_absolute).unwrap();
         assert_eq!(read_content, content_to_write);
-         assert!(result.unwrap().contains(&format!("Successfully wrote to file: {}", file_path_relative.display())));
+        assert!(result.unwrap().contains(&format!(
+            "Successfully wrote to file: {}",
+            file_path_relative.display()
+        )));
     }
 
     // TODO: Tests for writing outside project root (requires stdin/stdout mocking)
