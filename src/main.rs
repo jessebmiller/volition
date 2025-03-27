@@ -244,14 +244,14 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // Setup tracing subscriber (unchanged)
-    let level = if cli.verbose {
-        Level::DEBUG // Changed to DEBUG for verbose
-    } else if cli.debug {
-        Level::INFO // Changed to INFO for debug
-    } else {
-        Level::WARN // Default level
+    // Setup tracing subscriber based on verbosity count
+    let level = match cli.verbose {
+        0 => Level::WARN,  // Default
+        1 => Level::INFO,  // -v
+        2 => Level::DEBUG, // -vv
+        _ => Level::TRACE, // -vvv or more
     };
+
     let subscriber = FmtSubscriber::builder()
         .with_max_level(level)
         .finish();
