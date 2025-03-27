@@ -261,7 +261,7 @@ impl Tools {
     }
 
     // --- Unified Cargo Tool Definition ---
-    #[allow(dead_code)] // Allow dead code because this is used externally (e.g., by AI configuration)
+    // Removed #[allow(dead_code)]
     pub fn cargo_command_definition() -> serde_json::Value {
         json!({
             "type": "function",
@@ -288,7 +288,7 @@ impl Tools {
     }
 
     // --- Unified Git Tool Definition ---
-    #[allow(dead_code)] // Allow dead code because this is used externally (e.g., by AI configuration)
+    // Removed #[allow(dead_code)]
     pub fn git_command_definition() -> serde_json::Value {
         json!({
             "type": "function",
@@ -315,7 +315,7 @@ impl Tools {
     }
 
     // --- List Directory Tool Definition --- Added
-    #[allow(dead_code)]
+    // Removed #[allow(dead_code)]
     pub fn list_directory_definition() -> serde_json::Value {
         json!({
             "type": "function",

@@ -137,7 +137,8 @@ fn build_openai_request(
         Tools::user_input_definition(),
         // Added the new tool definitions
         Tools::git_command_definition(),
-        Tools::cargo_command_definition()
+        Tools::cargo_command_definition(),
+        Tools::list_directory_definition() // Added list_directory
     ]));
 
     // Add parameters from model_config.parameters (unchanged)
