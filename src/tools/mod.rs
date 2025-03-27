@@ -32,6 +32,7 @@ pub async fn handle_tool_calls(
 
     for tool_call in tool_calls.iter() { // No need for index `i` here anymore
 
+        // TODO this tool call logging should be a standard part of the UX not info logging
         // Log the tool call details *before* execution
         info!(
             tool_name = tool_call.function.name.as_str(),
