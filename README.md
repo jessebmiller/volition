@@ -8,12 +8,12 @@
 
 **Volition is a contextually-aware AI assistant that supercharges your Rust development workflow.**
 
-[Getting Started](#getting-started) • 
-[Features](#key-features) • 
-[Installation](#installation) • 
-[Configuration](#configuration) • 
-[Usage](#usage) • 
-[Community](#community) • 
+[Getting Started](#getting-started) •
+[Features](#key-features) •
+[Installation](#installation) •
+[Configuration](#configuration) •
+[Usage](#usage) •
+[Community](#community) •
 [Contributing](#contributing)
 
 </div>
@@ -26,13 +26,13 @@ Volition is an open-source CLI tool that brings the power of advanced AI assista
 
 > 💡 **Built for Rust developers by Rust developers** - Volition understands Rust idioms and best practices.
 
-```
+```ignore
 $ volition "Find references to RuntimeConfig across the codebase and explain how it's used"
 
 Volition - AI Assistant
 Searching for references to RuntimeConfig in the codebase...
 
-I found 12 references to RuntimeConfig across 5 files. The struct is defined in src/config.rs 
+I found 12 references to RuntimeConfig across 5 files. The struct is defined in src/config.rs
 and represents configuration loaded from Volition.toml plus environment variables.
 
 Key usage patterns:
@@ -158,7 +158,15 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for more detai
 
 ## License
 
-Volition is released under the MIT License. See [LICENSE](LICENSE) for details.
+Volition is released under the Apache-2.0 License. See [LICENSE](LICENSE) for details.
+
+## License Change Notice
+
+**Important:** This project was previously released under the MIT License. As of 2025-03-28, the license has been changed to Apache License 2.0.
+
+The Apache 2.0 license provides additional patent protections not present in the MIT license. This change was made to better protect contributors and users of this project while maintaining the open source nature of the code.
+
+Any copies or forks of this repository created prior to this change date would still be under the MIT license terms. All new contributions and usage will be governed by the Apache License 2.0.
 
 ---
 
