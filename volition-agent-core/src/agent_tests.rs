@@ -11,11 +11,10 @@ use httpmock::prelude::*;
 use serde_json::json;
 use tracing_subscriber;
 
-// --- Mock User Interaction ---
-#[derive(Default)] // Add default derive
+#[derive(Default)]
 struct MockUI {
-    ask_responses: Mutex<Vec<String>>, // Queue of responses to return
-    ask_prompts: Mutex<Vec<String>>,   // Log of prompts received
+    ask_responses: Mutex<Vec<String>>,
+    ask_prompts: Mutex<Vec<String>>,
 }
 
 #[async_trait]
@@ -26,14 +25,14 @@ impl UserInteraction for MockUI {
             .ask_responses
             .lock()
             .unwrap()
-            .pop() // Get the next response from the end
-            .unwrap_or_else(|| "yes".to_string()); // Default to "yes" if queue is empty
+            .pop()
+            .unwrap_or_else(|| "yes".to_string());
         Ok(response)
     }
 }
 
 impl MockUI {
-    #[allow(dead_code)] // Keep for future tests requiring specific user responses
+    #[allow(dead_code)]
     fn add_response(&self, response: &str) {
         self.ask_responses
             .lock()
@@ -41,8 +40,6 @@ impl MockUI {
             .push(response.to_string());
     }
 }
-
-// --- Mock Tool Provider ---
 
 #[derive(Clone)]
 struct MockToolProvider {
@@ -113,10 +110,8 @@ impl ToolProvider for MockToolProvider {
     }
 }
 
-// --- Test Helpers ---
-
 const TEST_ENDPOINT_PATH: &str = "/test/completions";
-const TEST_ITERATION_LIMIT: usize = 5; // Define a limit for tests
+const TEST_ITERATION_LIMIT: usize = 5;
 
 fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
     let mock_endpoint = format!("{}{}", mock_server_base_url, TEST_ENDPOINT_PATH);
@@ -137,14 +132,12 @@ fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
     }
 }
 
-// --- Agent Tests ---
-
 #[tokio::test]
 async fn test_agent_initialization() {
     let config = create_test_config("http://unused");
     let mock_provider = Arc::new(MockToolProvider::new(vec![], HashMap::new()));
-    let mock_ui = Arc::new(MockUI::default()); // Create mock UI
-                                               // Pass mock_ui and TEST_ITERATION_LIMIT
+    let mock_ui = Arc::new(MockUI::default());
+
     let agent_result = Agent::new(config, mock_provider, mock_ui, TEST_ITERATION_LIMIT);
     assert!(agent_result.is_ok());
 }
@@ -162,10 +155,9 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     let tool_output_content = "The weather is sunny.".to_string();
     tool_outputs.insert(tool_name.to_string(), Ok(tool_output_content.clone()));
     let mock_provider = Arc::new(MockToolProvider::new(tool_defs.clone(), tool_outputs));
-    let mock_ui = Arc::new(MockUI::default()); // Create mock UI
+    let mock_ui = Arc::new(MockUI::default());
 
     let config = create_test_config(&mock_base_url);
-    // Pass mock_ui and TEST_ITERATION_LIMIT
     let agent = Agent::new(
         config.clone(),
         mock_provider.clone(),
@@ -177,7 +169,6 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     let tool_call_id = "call_123";
     let tool_args = json!({ "arg": "today" });
 
-    // --- Mock 1 Setup (Initial Request) ---
     let expected_messages_1 = json!([
         { "role": "system", "content": config.system_prompt },
         { "role": "user", "content": goal },
@@ -217,7 +208,6 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
         })
         .await;
 
-    // --- Mock 2 Setup (Request with Tool Result) ---
     let final_answer = "The weather today is sunny.";
     let mock_response_2 = json!({
         "id": "resp2",
@@ -267,10 +257,9 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
         })
         .await;
 
-    // --- Run Agent ---
     let working_dir = PathBuf::from(".");
     println!("Running agent...");
-    // Create the initial message history for the new method signature
+
     let initial_messages = vec![
         ChatMessage {
             role: "system".to_string(),
@@ -283,11 +272,10 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
             ..Default::default()
         },
     ];
-    // Call the renamed method
+
     let agent_output_result = agent.run(initial_messages, &working_dir).await;
     println!("Agent run finished. Result: {:?}", agent_output_result);
 
-    // --- Assertions ---
     println!("Checking mock 1 hits...");
     api_mock_1.assert_hits(1);
     println!("Checking mock 2 hits...");
@@ -305,8 +293,6 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     assert_eq!(calls[0].0, tool_name);
     assert_eq!(calls[0].1, tool_args.to_string());
 
-    // Removed assertion for suggested_summary
-    // assert!(agent_output.suggested_summary.is_some());
     assert_eq!(agent_output.applied_tool_results.len(), 1);
     let tool_result = &agent_output.applied_tool_results[0];
     assert_eq!(tool_result.tool_call_id, tool_call_id);
