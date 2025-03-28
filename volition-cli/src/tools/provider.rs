@@ -7,6 +7,7 @@ use std::path::Path;
 
 use volition_agent_core::{async_trait, models::tools::*, ToolProvider};
 
+// Use the re-exported functions directly from the search module
 use super::{cargo, file, filesystem, git, search, shell, user_input};
 
 pub struct CliToolProvider {}
@@ -64,10 +65,7 @@ impl ToolProvider for CliToolProvider {
                 description: "Run a shell command and get the output ".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
-                    properties: HashMap::from([(
-                        "command".to_string(),
-                        Self::string_param("The shell command to run "),
-                    )]),
+                    properties: HashMap::from([("command".to_string(), Self::string_param("The shell command to run "))]),
                     required: vec!["command".to_string()],
                 },
             },
@@ -76,10 +74,7 @@ impl ToolProvider for CliToolProvider {
                 description: "Read the contents of a file ".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
-                    properties: HashMap::from([(
-                        "path".to_string(),
-                        Self::string_param("Path to the file to read "),
-                    )]),
+                    properties: HashMap::from([("path".to_string(), Self::string_param("Path to the file to read "))]),
                     required: vec!["path".to_string()],
                 },
             },
@@ -89,56 +84,24 @@ impl ToolProvider for CliToolProvider {
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        (
-                            "path".to_string(),
-                            Self::string_param("Path to the file to write "),
-                        ),
-                        (
-                            "content".to_string(),
-                            Self::string_param("Content to write to the file "),
-                        ),
+                        ("path".to_string(), Self::string_param("Path to the file to write ")),
+                        ("content".to_string(), Self::string_param("Content to write to the file ")),
                     ]),
                     required: vec!["path".to_string(), "content".to_string()],
                 },
             },
             ToolDefinition {
                 name: "search_text".to_string(),
-                description: "Search for text patterns in files, returning matching lines with context. Requires \'ripgrep\' (rg) to be installed. ".to_string(),
+                description: "Search for text patterns in files, returning matching lines with context. Requires 'ripgrep' (rg) to be installed. ".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        (
-                            "pattern".to_string(),
-                            Self::string_param("Text or regex pattern to search for "),
-                        ),
-                        (
-                            "path".to_string(),
-                            Self::string_param(
-                                "Directory or file path to search in (defaults to current directory) ",
-                            ),
-                        ),
-                        (
-                            "file_glob".to_string(),
-                            Self::string_param(
-                                "Glob pattern to filter files (e.g., \'*.rs\', \'*.md\', defaults to \'*\') - Use forward slashes ('/') as path separators in globs, even on Windows. ",
-                            ),
-                        ),
-                        (
-                            "case_sensitive".to_string(),
-                            Self::bool_param("Perform case-sensitive search (defaults to false) "),
-                        ),
-                        (
-                            "context_lines".to_string(),
-                            Self::int_param(
-                                "Number of context lines before and after each match (defaults to 1) ",
-                            ),
-                        ),
-                        (
-                            "max_results".to_string(),
-                            Self::int_param(
-                                "Maximum number of matching lines to return (defaults to 50) ",
-                            ),
-                        ),
+                        ("pattern".to_string(), Self::string_param("Text or regex pattern to search for ")),
+                        ("path".to_string(), Self::string_param("Directory or file path to search in (defaults to current directory) ")),
+                        ("file_glob".to_string(), Self::string_param("Glob pattern to filter files (e.g., '*.rs', '*.md', defaults to '*') - Use forward slashes ('/') as path separators in globs, even on Windows. ")),
+                        ("case_sensitive".to_string(), Self::bool_param("Perform case-sensitive search (defaults to false) ")),
+                        ("context_lines".to_string(), Self::int_param("Number of context lines before and after each match (defaults to 1) ")),
+                        ("max_results".to_string(), Self::int_param("Maximum number of matching lines to return (defaults to 50) ")),
                     ]),
                     required: vec!["pattern".to_string()],
                 },
@@ -149,18 +112,8 @@ impl ToolProvider for CliToolProvider {
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        (
-                            "symbol".to_string(),
-                            Self::string_param(
-                                "Rust symbol name to search for (function, struct, enum, trait, macro, etc.) ",
-                            ),
-                        ),
-                        (
-                            "path".to_string(),
-                            Self::string_param(
-                                "Directory path to search in (defaults to current directory) ",
-                            ),
-                        ),
+                        ("symbol".to_string(), Self::string_param("Rust symbol name to search for (function, struct, enum, trait, macro, etc.) ")),
+                        ("path".to_string(), Self::string_param("Directory path to search in (defaults to current directory) ")),
                     ]),
                     required: vec!["symbol".to_string()],
                 },
@@ -171,16 +124,8 @@ impl ToolProvider for CliToolProvider {
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        (
-                            "prompt".to_string(),
-                            Self::string_param("The question or prompt to show the user "),
-                        ),
-                        (
-                            "options".to_string(),
-                            Self::string_array_param(
-                                "Optional list of specific options to present to the user ",
-                            ),
-                        ),
+                        ("prompt".to_string(), Self::string_param("The question or prompt to show the user ")),
+                        ("options".to_string(), Self::string_array_param("Optional list of specific options to present to the user ")),
                     ]),
                     required: vec!["prompt".to_string()],
                 },
@@ -193,15 +138,13 @@ impl ToolProvider for CliToolProvider {
                     properties: HashMap::from([
                         (
                             "command".to_string(),
-                            Self::string_param(
-                                "The git subcommand to run (e.g., \"status\", \"diff\", \"add\", \"commit\", \"log\") ",
-                            ),
+                            // Corrected string literal with escaped quotes
+                            Self::string_param("The git subcommand to run (e.g., \"status\", \"diff\", \"add\", \"commit\", \"log\") "),
                         ),
                         (
                             "args".to_string(),
-                            Self::string_array_param(
-                                "Arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"]) ",
-                            ),
+                            // Corrected string literal with escaped quotes
+                            Self::string_array_param("Arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"]) "),
                         ),
                     ]),
                     required: vec!["command".to_string()],
@@ -215,15 +158,13 @@ impl ToolProvider for CliToolProvider {
                     properties: HashMap::from([
                         (
                             "command".to_string(),
-                            Self::string_param(
-                                "The cargo subcommand to run (e.g., \"build\", \"test\", \"check\", \"fmt\", \"run\") ",
-                            ),
+                            // Corrected string literal with escaped quotes
+                            Self::string_param("The cargo subcommand to run (e.g., \"build\", \"test\", \"check\", \"fmt\", \"run\") "),
                         ),
                         (
                             "args".to_string(),
-                            Self::string_array_param(
-                                "Arguments for the cargo subcommand (e.g., [\"--release\"], [\"my_test\", \"--\", \"--nocapture\"]) ",
-                            ),
+                             // Corrected string literal with escaped quotes
+                            Self::string_array_param("Arguments for the cargo subcommand (e.g., [\"--release\"], [\"my_test\", \"--\", \"--nocapture\"]) "),
                         ),
                     ]),
                     required: vec!["command".to_string()],
@@ -235,22 +176,9 @@ impl ToolProvider for CliToolProvider {
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        (
-                            "path".to_string(),
-                            Self::string_param("The directory path to explore. "),
-                        ),
-                        (
-                            "depth".to_string(),
-                            Self::int_param(
-                                "Maximum depth to recurse (1 lists immediate contents, 2 includes subdirs, etc.). Defaults to 1. Use 0 to list only the directory itself (if not hidden/ignored). ",
-                            ),
-                        ),
-                        (
-                            "show_hidden".to_string(),
-                            Self::bool_param(
-                                "Include hidden files/directories (starting with \'.\'). Defaults to false. ",
-                            ),
-                        ),
+                        ("path".to_string(), Self::string_param("The directory path to explore. ")),
+                        ("depth".to_string(), Self::int_param("Maximum depth to recurse (1 lists immediate contents, 2 includes subdirs, etc.). Defaults to 1. Use 0 to list only the directory itself (if not hidden/ignored). ")),
+                        ("show_hidden".to_string(), Self::bool_param("Include hidden files/directories (starting with '.'). Defaults to false. ")),
                     ]),
                     required: vec!["path".to_string()],
                 },
@@ -292,7 +220,8 @@ impl ToolProvider for CliToolProvider {
                 let case_sensitive: Option<bool> = get_optional_arg(&args, "case_sensitive")?;
                 let context_lines: Option<u32> = get_optional_arg(&args, "context_lines")?;
                 let max_results: Option<usize> = get_optional_arg(&args, "max_results")?;
-                search::run_search_text(
+                // Call search_text directly
+                search::search_text(
                     &pattern,
                     path.as_deref(),
                     file_glob.as_deref(),
@@ -306,7 +235,8 @@ impl ToolProvider for CliToolProvider {
             "find_rust_definition" => {
                 let symbol: String = get_required_arg(&args, "symbol")?;
                 let path: Option<String> = get_optional_arg(&args, "path")?;
-                search::run_find_rust_definition(&symbol, path.as_deref(), working_dir).await
+                 // Call find_rust_definition directly
+                search::find_rust_definition(&symbol, path.as_deref(), working_dir).await
             }
             "user_input" => {
                 let prompt: String = get_required_arg(&args, "prompt")?;
