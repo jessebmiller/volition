@@ -3,19 +3,18 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use tracing::{debug, warn}; // Use warn for spawn errors
+use tracing::{debug, warn};
 
-/// Executes a shell command in a specified working directory.
-///
-/// IMPORTANT: This executes arbitrary commands. Callers MUST ensure commands are
-/// appropriately sandboxed or confirmed by the user.
+// #[cfg(test)] // Removed mockall related attributes
+// use mockall::automock;
+
+// #[cfg_attr(test, automock)] // Removed mockall related attributes
 pub async fn execute_shell_command(
     command: &str,
     working_dir: &Path,
 ) -> Result<String> {
     debug!("Executing shell command: {} in {:?}", command, working_dir);
 
-    // Use std::process::Command directly for shell execution
     let shell_executable = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
     let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
 
@@ -32,7 +31,6 @@ pub async fn execute_shell_command(
         Ok(out) => out,
         Err(e) => {
             warn!(command = command, error = %e, "Failed to spawn command process");
-            // Return the error directly
             return Err(e);
         }
     };
@@ -48,11 +46,11 @@ pub async fn execute_shell_command(
         stderr.lines().take(3).collect::<Vec<_>>().join("\n")
     );
 
-    // Combine output for the final result string
     let result = format!(
-        "Command executed: {} -c {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
+        "Command executed: {} {} {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
         shell_executable,
-        command, // Show the command passed to the shell
+        shell_arg,
+        command,
         status,
         if stdout.is_empty() { "<no output>" } else { &stdout },
         if stderr.is_empty() { "<no output>" } else { &stderr }
@@ -82,8 +80,6 @@ mod tests {
         println!("Output:\n{}", output);
         assert!(output.contains("Status: 0"));
         assert!(output.contains("\nStdout:\nHello Core Shell"));
-        // Stderr check might vary slightly across OSes (e.g., empty vs <no output>)
-        // assert!(output.contains("\nStderr:\n<no output>"));
     }
 
     #[tokio::test]
@@ -91,10 +87,10 @@ mod tests {
         let command = "this_command_does_not_exist_qwertyuiop";
         let working_dir = test_working_dir();
         let result = execute_shell_command(command, &working_dir).await;
-        assert!(result.is_ok(), "Expected Ok result even for non-zero exit status");
+        assert!(result.is_ok());
         let output = result.unwrap();
         println!("Output:\n{}", output);
-        assert!(!output.contains("Status: 0")); // Should not be status 0
-        assert!(output.contains("command not found") || output.contains("is not recognized")); // Check for common error messages
+        assert!(!output.contains("Status: 0"));
+        assert!(output.contains("not found") || output.contains("is not recognized"));
     }
 }

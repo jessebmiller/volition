@@ -1,37 +1,33 @@
 // volition-agent-core/src/tools/search.rs
 
-// Use the shell executor from the same core tools module
 use super::shell::execute_shell_command;
-use anyhow::{anyhow, Result};
+use anyhow::{Result};
 use std::path::Path;
-use std::process::Command;
 use tracing::{debug, info};
 
-// Real check using std::process::Command
 #[cfg(not(test))]
 fn check_ripgrep_installed() -> Result<()> {
+    use std::process::Command;
+    // ... (implementation unchanged)
     let command_name = "rg";
     let check_command = if cfg!(target_os = "windows") {
         format!("Get-Command {}", command_name)
     } else {
         format!("command -v {}", command_name)
     };
-
     let output = Command::new(if cfg!(target_os = "windows") { "powershell" } else { "sh" })
         .arg(if cfg!(target_os = "windows") { "-Command" } else { "-c" })
         .arg(&check_command)
         .output()?;
-
     if output.status.success() {
         Ok(())
     } else {
-        Err(anyhow!(
+        Err(anyhow::anyhow!(
             "\'ripgrep\' (rg) command not found. Please install it and ensure it\'s in your PATH. It\'s required for search/definition tools.\nInstallation instructions: https://github.com/BurntSushi/ripgrep#installation"
         ))
     }
 }
 
-// Test mock version
 #[cfg(test)]
 fn check_ripgrep_installed() -> Result<()> {
     Ok(())
@@ -61,48 +57,35 @@ pub async fn search_text(
     );
 
     let context_str = context_arg.to_string();
-    let mut rg_cmd_vec = vec![
-        "rg",
-        "--pretty",
-        "--trim",
-        "--context",
-        &context_str,
-        "--glob",
-        glob_arg,
-    ];
+    // Build command string for shell execution, including pipe to head
+    // Use shell escaping carefully only where needed
+    let mut command_parts = vec!["rg".to_string()];
+    command_parts.push("--pretty".to_string());
+    command_parts.push("--trim".to_string());
+    command_parts.push(format!("--context={}", context_arg));
+    command_parts.push("--glob".to_string());
+    command_parts.push(format!("'{}'", glob_arg.replace('\'', "'\\''"))); // Quote glob
+    if ignore_case_flag { command_parts.push("--ignore-case".to_string()); }
+    // Pass pattern and path without extra quotes, let execute_shell_command handle it?
+    // Or quote them carefully?
+    // Let's try quoting pattern, assuming path usually doesn't need it.
+    command_parts.push(format!("'{}'", pattern.replace('\'', "'\\''"))); 
+    command_parts.push(path_arg.to_string());
 
-    if ignore_case_flag {
-        rg_cmd_vec.push("--ignore-case");
-    }
+    let rg_command = command_parts.join(" ");
+    let full_cmd = format!("{} | head -n {}", rg_command, max_lines);
 
-    rg_cmd_vec.push(pattern);
-    rg_cmd_vec.push(path_arg);
+    debug!("Executing search command via shell: {}", full_cmd);
 
-    let rg_cmd_base = rg_cmd_vec
-        .iter()
-        .map(|s| format!("'{}'", s.replace('\'', "'\\''")))
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let full_cmd = format!("{} | head -n {}", rg_cmd_base, max_lines);
-
-    debug!("Executing search command: {}", full_cmd);
-
-    // Use the public shell executor from this crate
     let result = execute_shell_command(&full_cmd, working_dir).await?;
 
-    // Check if the result indicates no matches found
-    // Need to parse the output format of execute_shell_command
+    // Check based on rg exit status (1 for no matches) and stdout content
     let no_stdout = result.contains("\nStdout:\n<no output>");
-    // Consider checking stderr too, or exit status if needed
+    let no_match_status = result.contains("\nStatus: 1\n"); 
 
-    if no_stdout {
-        Ok(format!(
-            "No matches found for pattern: '{}' in path: '{}' matching glob: '{}'",
-            pattern, path_arg, glob_arg
-        ))
+    if no_stdout || no_match_status {
+        Ok(format!("No matches found for pattern: '{}' in path: '{}' matching glob: '{}'", pattern, path_arg, glob_arg))
     } else {
-        // Return the full formatted result from execute_shell_command
         Ok(result)
     }
 }
@@ -115,52 +98,45 @@ pub async fn find_rust_definition(
 ) -> Result<String> {
     check_ripgrep_installed()?;
 
-    let directory_arg = search_path.unwrap_or(".");
-
-    info!(
-        "Finding Rust definition for symbol: {} in directory: {}",
-        symbol,
-        directory_arg
-    );
+    let directory_or_file_arg = search_path.unwrap_or(".");
+    let is_dir = working_dir.join(directory_or_file_arg).is_dir();
+    
+    info!("Finding Rust definition for symbol: {} in path: {} (is_dir: {})", symbol, directory_or_file_arg, is_dir);
 
     let file_pattern = "*.rs";
     let escaped_symbol = regex::escape(symbol);
     let pattern = format!(
-        r"^(?:pub\s+)?(?:unsafe\s+)?(?:async\s+)?(fn|struct|enum|trait|const|static|type|mod|impl|macro_rules!)\s+{}\\b",
+        r"(?:pub\s+)?(?:unsafe\s+)?(?:async\s+)?(fn|struct|enum|trait|const|static|type|mod|impl|macro_rules!)\s+{}\\b",
         escaped_symbol
     );
 
-    let rg_cmd_vec = vec![
-        "rg",
-        "--pretty",
-        "--trim",
-        "--glob",
-        file_pattern,
-        "--ignore-case",
-        "--max-count=10",
-        "-e",
-        &pattern,
-        directory_arg,
-    ];
+    // Build command string for execute_shell_command
+    let mut command_parts = vec!["rg".to_string()];
+    command_parts.push("--trim".to_string());
+    if is_dir {
+        command_parts.push("--glob".to_string());
+        command_parts.push(format!("'{}'", file_pattern.replace('\'', "'\\''"))); // Quote glob
+    }
+    command_parts.push("--ignore-case".to_string());
+    command_parts.push("--max-count=10".to_string());
+    command_parts.push("-e".to_string());
+    // Pass regex pattern carefully quoted for shell
+    command_parts.push(format!("'{}'", pattern.replace('\'', "'\\''"))); 
+    command_parts.push(directory_or_file_arg.to_string());
 
-    let full_cmd = rg_cmd_vec
-        .iter()
-        .map(|s| format!("'{}'", s.replace('\'', "'\\''")))
-        .collect::<Vec<_>>()
-        .join(" ");
+    let full_cmd = command_parts.join(" ");
 
-    debug!("Executing find rust definition command: {}", full_cmd);
+    debug!("Executing find rust definition command via shell: {}", full_cmd);
 
-    // Use the public shell executor from this crate
     let result = execute_shell_command(&full_cmd, working_dir).await?;
 
-    // Check result based on execute_shell_command output format
     let no_stdout = result.contains("\nStdout:\n<no output>");
+    let no_match_status = result.contains("\nStatus: 1\n");
 
-    if no_stdout {
+    if no_stdout || no_match_status {
         Ok(format!("No Rust definition found for symbol: {}", symbol))
     } else {
-        // Return the full formatted result
+        // Return the full result string which includes stdout
         Ok(result)
     }
 }
@@ -171,9 +147,11 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::tempdir;
     use tokio;
+    use std::fs;
 
     fn test_working_dir() -> PathBuf {
-        tempdir().map(|d| d.into_path()).unwrap_or_default()
+        // Use tempdir for isolation
+        tempdir().expect("Failed to create temp dir").into_path()
     }
 
     #[tokio::test]
@@ -181,42 +159,49 @@ mod tests {
         assert!(check_ripgrep_installed().is_ok());
     }
 
-    // Mock execute_shell_command for search tests
-    async fn mock_shell_executor_for_search(cmd: &str, _wd: &Path) -> Result<String> {
-        println!("[TEST] Mock shell executor called with: {}", cmd);
-        if cmd.contains("rg") && cmd.contains("no_match_pattern") {
-             Ok("Command executed: ...\nStatus: 1\nStdout:\n<no output>\nStderr:\n<no output>".to_string())
-        } else if cmd.contains("rg") && cmd.contains("find_this_symbol") {
-             Ok("Command executed: ...\nStatus: 0\nStdout:\nsrc/lib.rs:10:1:pub fn find_this_symbol() {}\nStderr:\n<no output>".to_string())
-        } else {
-             Ok("Command executed: ...\nStatus: 0\nStdout:\nMock search results\nStderr:\n<no output>".to_string())
-        }
-    }
-
     #[tokio::test]
     async fn test_search_text_no_matches() {
-        let pattern = "no_match_pattern";
+        let pattern = "pattern_that_will_not_match_in_a_million_years";
         let working_dir = test_working_dir();
-        // Override the actual shell executor with our mock for this test scope
-        async fn execute_shell_command(cmd: &str, wd: &Path) -> Result<String> { mock_shell_executor_for_search(cmd, wd).await }
-
+        let dummy_file = working_dir.join("dummy_search.txt");
+        fs::write(&dummy_file, "content").unwrap(); 
+        
         let result = search_text(pattern, None, None, None, None, None, &working_dir).await;
         assert!(result.is_ok());
-        assert!(result.unwrap().contains("No matches found"));
+        let output = result.unwrap();
+        println!("search_text_no_matches output:\n{}", output);
+        // Check for the specific "No matches found" message
+        assert!(output.contains("No matches found"), "Output should indicate no matches were found");
+        // Also check that the original command output isn't returned directly
+        // (It might contain status 1, but should be replaced by our message)
+        assert!(!output.contains("\nStatus: 1\n")); 
     }
 
      #[tokio::test]
-    async fn test_find_rust_definition_found() {
-        let symbol = "find_this_symbol";
+    async fn test_find_rust_definition_found_in_test_file() -> Result<()> {
+        let symbol = "find_this_test_fn_abc"; // Unique symbol
         let working_dir = test_working_dir();
-        // Override the actual shell executor with our mock for this test scope
-        async fn execute_shell_command(cmd: &str, wd: &Path) -> Result<String> { mock_shell_executor_for_search(cmd, wd).await }
+        let test_file_name = "test_src_find_def.rs";
+        let test_file_path = working_dir.join(test_file_name);
+        let file_content = format!("\n  // Some comment\npub fn {}() {{\n    println!(\"Found!\");\n}}\n", symbol);
+        fs::write(&test_file_path, file_content)?;
 
+        // Search in the directory containing the file
         let result = find_rust_definition(symbol, None, &working_dir).await;
-        assert!(result.is_ok());
+        
+        assert!(result.is_ok(), "find_rust_definition failed: {:?}", result.err());
         let output = result.unwrap();
-        // Check that the output is the *formatted* output from the mock executor
-        assert!(output.contains("Command executed:"));
-        assert!(output.contains("src/lib.rs:10:1:pub fn find_this_symbol"));
+        println!("find_rust_definition output:\n{}", output);
+        
+        // Check that the output contains the line from the file
+        let expected_line = format!("pub fn {}()", symbol);
+        assert!(output.contains(&expected_line), "Output did not contain function signature");
+        
+        // Check that the output includes the Stdout section header from execute_shell_command
+        assert!(output.contains("\nStdout:\n"), "Output did not contain Stdout section");
+        
+        // Check that it *doesn't* say "No definition found"
+        assert!(!output.contains("No Rust definition found"), "Output incorrectly stated no definition found");
+        Ok(())
     }
 }

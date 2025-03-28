@@ -3,12 +3,8 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use tracing::{debug, info}; // Removed warn as deny list is removed
+use tracing::{debug, info};
 
-/// Executes a cargo command in a specified working directory.
-///
-/// Note: This does not perform safety checks. Callers should ensure
-/// the command/args are safe or implement checks separately.
 pub async fn execute_cargo_command(
     command_name: &str,
     command_args: &[String],
@@ -60,12 +56,9 @@ mod tests {
     use tokio;
 
     fn test_working_dir() -> PathBuf {
-        // Try to create a temp dir for cargo commands, default to . if it fails
         tempdir()
             .map(|d| {
                 let path = d.into_path();
-                // Basic cargo init for some tests?
-                // For now, just return the path.
                 path
             })
             .unwrap_or_else(|_| PathBuf::from("."))
@@ -74,7 +67,6 @@ mod tests {
     #[tokio::test]
     async fn test_execute_cargo_check() {
         let working_dir = test_working_dir();
-        // Create a dummy Cargo.toml if testing in temp dir
         if working_dir != Path::new(".") {
             std::fs::write(working_dir.join("Cargo.toml"), "[package]\nname = \"test_crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n").unwrap();
              std::fs::create_dir(working_dir.join("src")).unwrap();
@@ -86,26 +78,26 @@ mod tests {
         let output = result.unwrap();
         println!("Output:\n{}", output);
         assert!(output.contains("Status: 0"));
-        assert!(output.contains("Checking test_crate") || output.contains("Checking volition")); // Name depends on where test runs
-        assert!(output.contains("Finished dev"));
+        assert!(output.contains("Checking test_crate") || output.contains("Checking volition"));
+        // Updated assertion to match actual output format
+        assert!(output.contains("Finished `dev` profile"));
     }
 
      #[tokio::test]
     async fn test_execute_cargo_build_fail_no_src() {
         let working_dir = test_working_dir();
-         // Create ONLY Cargo.toml, no src/lib.rs
         if working_dir != Path::new(".") {
             std::fs::write(working_dir.join("Cargo.toml"), "[package]\nname = \"test_crate_fail\"\nversion = \"0.1.0\"\nedition = \"2021\"\n").unwrap();
         }
 
-        // Don't run this test if working_dir is "." as it might find real src
         if working_dir != Path::new(".") {
             let result = execute_cargo_command("build", &[], &working_dir).await;
-            assert!(result.is_ok(), "Expected Ok result even on build failure");
+            assert!(result.is_ok());
             let output = result.unwrap();
             println!("Output:\n{}", output);
-            assert!(output.contains("Status: 101")); // Build should fail
-            assert!(output.contains("failed to run `rustc`")); // Common error message
+            assert!(output.contains("Status: 101"));
+            // Updated assertion to match actual error
+            assert!(output.contains("no targets specified in the manifest"));
         }
     }
 }

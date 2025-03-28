@@ -4,11 +4,10 @@ use anyhow::{anyhow, Context, Result};
 use ignore::WalkBuilder;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tracing::{debug, info}; // Removed warn as confirmation is removed
+use tracing::{debug, info};
 
 // --- Read File --- 
 
-/// Reads the entire content of a file relative to the working directory.
 pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String> {
     let absolute_path = working_dir.join(relative_path);
     info!("Reading file (absolute): {:?}", absolute_path);
@@ -20,10 +19,6 @@ pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String
 
 // --- Write File --- 
 
-/// Writes content to a file relative to the working directory.
-/// Creates parent directories if needed.
-/// IMPORTANT: This does NOT check if the path is outside the working directory.
-/// Callers MUST perform sandboxing checks or user confirmation if necessary.
 pub async fn write_file(
     relative_path: &str,
     content: &str,
@@ -37,7 +32,6 @@ pub async fn write_file(
         absolute_target_path
     );
 
-    // Create parent directories if they don't exist
     if let Some(parent) = absolute_target_path.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent)
@@ -46,19 +40,16 @@ pub async fn write_file(
         }
     }
 
-    // Write using the absolute path
     fs::write(&absolute_target_path, content)
         .with_context(|| format!("fs::write failed for: {:?}", absolute_target_path))?;
 
     info!("Successfully wrote {} bytes to file", content.len());
 
-    // Return the original relative path string in the success message
     Ok(format!("Successfully wrote to file: {}", relative_path))
 }
 
 // --- List Directory --- 
 
-/// Lists directory contents relative to a working directory, respecting .gitignore rules.
 pub fn list_directory_contents(
     relative_path: &str,
     max_depth: Option<usize>,
@@ -128,10 +119,7 @@ pub fn list_directory_contents(
                 }
             }
             Err(err) => {
-                // Log errors encountered during walk
                 debug!("Warning during directory walk: {}", err);
-                // Optionally include warnings in the output string?
-                // output.push_str(&format!("WARN: Failed to access entry: {}\n", err));
             }
         }
     }
@@ -143,7 +131,7 @@ pub fn list_directory_contents(
 mod tests {
     use super::*;
     use std::fs::{self, File};
-    use std::io::Write;
+    // use std::io::Write; // Unused import
     use tempfile::tempdir;
     use tokio;
 
@@ -227,6 +215,4 @@ mod tests {
         assert_eq!(sort_lines(&output), sort_lines(&expected));
         Ok(())
     }
-
-    // Add more list tests (hidden, gitignore, etc.) if needed
 }

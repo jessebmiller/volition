@@ -8,15 +8,13 @@ use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::config::{ModelConfig, RuntimeConfig};
-// Updated import: ResponseMessage -> ChatMessage
 use crate::models::chat::{ApiResponse, ChatMessage};
 use crate::models::tools::ToolDefinition;
 
-/// Sends chat requests to the configured AI model endpoint with retry logic.
 pub async fn get_chat_completion(
     client: &Client,
     config: &RuntimeConfig,
-    messages: Vec<ChatMessage>, // Updated type
+    messages: Vec<ChatMessage>,
     tool_definitions: &[ToolDefinition],
 ) -> Result<ApiResponse> {
     let model_config = config.selected_model_config()?;
@@ -28,7 +26,7 @@ pub async fn get_chat_completion(
 
     let request_body = build_openai_request(
         &model_config.model_name,
-        messages, // Pass Vec<ChatMessage>
+        messages,
         model_config,
         tool_definitions,
     )?;
@@ -155,10 +153,9 @@ pub async fn get_chat_completion(
     }
 }
 
-/// Builds the request body for OpenAI-compatible chat completion endpoints.
 fn build_openai_request(
     model_name: &str,
-    messages: Vec<ChatMessage>, // Updated type
+    messages: Vec<ChatMessage>,
     model_config: &ModelConfig,
     tool_definitions: &[ToolDefinition],
 ) -> Result<Value> {
@@ -194,13 +191,12 @@ fn build_openai_request(
 mod tests {
     use super::*;
     use crate::config::{ModelConfig, RuntimeConfig};
-    // Updated import: ResponseMessage -> ChatMessage
     use crate::models::chat::ChatMessage;
     use crate::models::tools::{ToolDefinition, ToolParametersDefinition, ToolParameter, ToolParameterType};
     use serde_json::json;
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::time::Duration;
+    // use std::time::Duration; // Removed unused import
     use toml;
 
     use httpmock::prelude::*;
@@ -222,7 +218,7 @@ mod tests {
         ModelConfig {
             model_name: "test-model-name".to_string(),
             endpoint: endpoint.to_string(),
-            parameters: params.map(toml::Value::Table).unwrap_or_default(),
+            parameters: params.map_or(toml::Value::Table(Default::default()), toml::Value::Table),
         }
     }
 
@@ -244,7 +240,6 @@ mod tests {
     #[test]
     fn test_build_openai_request_basic() {
         let model_name = "gpt-basic";
-        // Use ChatMessage
         let messages = vec![ChatMessage { role: "user".into(), content: Some("Hello".into()), ..Default::default() }];
         let model_config = create_test_model_config("http://fake.endpoint/v1", None);
         let tool_definitions = create_mock_tool_definitions();
@@ -256,7 +251,6 @@ mod tests {
     #[test]
     fn test_build_openai_request_no_tools() {
         let model_name = "gpt-no-tools";
-        // Use ChatMessage
         let messages = vec![ChatMessage { role: "user".into(), content: Some("Hi".into()), ..Default::default() }];
         let model_config = create_test_model_config("http://fake.endpoint/v1", None);
         let tool_definitions: Vec<ToolDefinition> = vec![];
@@ -268,7 +262,6 @@ mod tests {
     #[test]
     fn test_build_openai_request_with_parameters() {
         let model_name = "gpt-params";
-        // Use ChatMessage
         let messages = vec![ChatMessage { role: "user".into(), content: Some("Test".into()), ..Default::default() }];
         let mut params = toml::value::Table::new();
         params.insert("temperature".to_string(), toml::Value::Float(0.9));
@@ -287,7 +280,6 @@ mod tests {
         let model_key = "selected_model";
         let endpoint_path = "/v1/chat/completions";
         let full_endpoint_url = format!("{}{}", server.base_url(), endpoint_path);
-        // Use ChatMessage
         let messages = vec![ChatMessage { role: "user".into(), content: Some("Ping".into()), ..Default::default() }];
         let model_config = create_test_model_config(&full_endpoint_url, None);
         let runtime_config = create_test_runtime_config(model_key, model_config.clone());
@@ -319,11 +311,11 @@ mod tests {
         let mut models = HashMap::new();
         models.insert("model_a".to_string(), model_config_a);
         models.insert("model_b".to_string(), model_config_b.clone());
+        let dummy_model_config = ModelConfig { model_name: "".into(), endpoint: "".into(), parameters: toml::Value::Table(Default::default()) };
         let runtime_config = RuntimeConfig {
             selected_model: "model_b".to_string(), models,
-            ..create_test_runtime_config("dummy", ModelConfig { model_name: "".into(), endpoint: "".into(), parameters: Default::default() })
+            ..create_test_runtime_config("dummy", dummy_model_config)
         };
-        // Use ChatMessage
         let messages = vec![ChatMessage { role: "user".into(), content: Some("Select B".into()), ..Default::default() }];
         let tool_definitions = create_mock_tool_definitions();
 
@@ -348,7 +340,6 @@ mod tests {
         let model_key = "retry_model";
         let endpoint_path = "/v1/chat/completions";
         let full_endpoint_url = format!("{}{}", server.base_url(), endpoint_path);
-        // Use ChatMessage
         let messages = vec![ChatMessage { role: "user".into(), content: Some("Retry".into()), ..Default::default() }];
         let model_config = create_test_model_config(&full_endpoint_url, None);
         let runtime_config = create_test_runtime_config(model_key, model_config.clone());

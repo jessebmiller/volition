@@ -1,8 +1,11 @@
 // volition-agent-core/src/lib.rs
 pub mod api;
 pub mod config;
-// pub mod models; // Ensure this line is REMOVED
+// pub mod models; // REMOVED DUPLICATE
 pub mod tools;
+
+#[cfg(test)]
+mod agent_tests;
 
 use anyhow::{anyhow, Context, Result};
 use std::path::Path;
@@ -205,7 +208,7 @@ impl Agent {
 }
 
 // --- Modules ---
-// This should be the ONLY declaration of the models module
+// This is the ONLY declaration
 pub mod models {
     pub mod chat;
     pub mod tools;
