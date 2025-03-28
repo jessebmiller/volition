@@ -1,13 +1,38 @@
 // volition-agent-core/src/tools/shell.rs
 
+//! Core implementation for executing shell commands.
+
 use super::CommandOutput;
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use tracing::{debug, warn};
 
-// Removed mockall attributes and use
+#[cfg(test)]
+use mockall::automock;
 
+/// Executes an arbitrary shell command in a specified working directory.
+///
+/// This function uses the platform's default shell (`sh -c` on Unix, `cmd /C` on Windows).
+/// It captures stdout, stderr, and the exit status.
+///
+/// **Warning:** This function executes arbitrary commands as provided.
+/// It does **not** perform any sandboxing, validation, or user confirmation.
+/// Callers **must** ensure the command is safe to execute or implement appropriate
+/// safety measures (like user confirmation) before calling this function.
+/// Consider using more specific tool functions (e.g., `execute_git_command`)
+/// where possible.
+///
+/// # Arguments
+///
+/// * `command`: The command string to execute via the shell.
+/// * `working_dir`: The directory in which to execute the command.
+///
+/// # Returns
+///
+/// A `Result` containing a [`CommandOutput`] struct with the status, stdout, and stderr,
+/// or an error if the process failed to spawn.
+#[cfg_attr(test, automock)]
 pub async fn execute_shell_command(
     command: &str,
     working_dir: &Path,

@@ -1,4 +1,7 @@
 // volition-agent-core/src/config.rs
+
+//! Handles configuration structures and parsing for the agent library.
+
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -6,23 +9,44 @@ use url::Url;
 
 // --- Configuration Structures ---
 
+/// Represents the validated runtime configuration needed by the [`Agent`].
+///
+/// This struct is typically created by parsing a TOML configuration source
+/// using [`RuntimeConfig::from_toml_str`]. It does not include environment-specific
+/// details like the project root path.
 #[derive(Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
+    /// The system prompt to guide the AI model's behavior.
     pub system_prompt: String,
+    /// The key selecting the default model from the `models` map.
     pub selected_model: String,
+    /// A map containing configurations for available AI models, keyed by a user-defined identifier.
     pub models: HashMap<String, ModelConfig>,
+    /// The API key used for authenticating with the AI model endpoint.
+    /// This is not deserialized from TOML but provided separately.
     #[serde(skip)]
     pub api_key: String,
 }
 
+/// Represents the configuration for a specific AI model endpoint.
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
+    /// The specific model name expected by the AI endpoint (e.g., "gpt-4-turbo").
     pub model_name: String,
+    /// Additional parameters specific to the model (e.g., temperature, max_tokens).
+    /// Expected to be a TOML table.
     pub parameters: toml::Value,
+    /// The full URL of the AI model's chat completion endpoint.
     pub endpoint: String,
 }
 
 impl RuntimeConfig {
+    /// Returns a reference to the currently selected [`ModelConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `selected_model` key stored in this `RuntimeConfig`
+    /// does not exist in the `models` map.
     pub fn selected_model_config(&self) -> Result<&ModelConfig> {
         self.models.get(&self.selected_model).ok_or_else(|| {
             anyhow!(
@@ -33,6 +57,25 @@ impl RuntimeConfig {
     }
 
     /// Parses TOML configuration content and validates it against the provided API key.
+    ///
+    /// This is the primary way to create a [`RuntimeConfig`]. It ensures the TOML
+    /// is valid, required fields are present, the selected model exists, and URLs are valid.
+    ///
+    /// # Arguments
+    ///
+    /// * `config_toml_content`: A string slice containing the TOML configuration.
+    /// * `api_key`: The API key (read from environment or other source by the caller).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The `api_key` is empty.
+    /// * The `config_toml_content` is not valid TOML.
+    /// * Required fields (`system_prompt`, `selected_model`, `models` table) are missing or empty.
+    /// * The `selected_model` key does not correspond to an entry in the `models` table.
+    /// * Any model definition is missing `model_name` or `endpoint`.
+    /// * Any model endpoint URL is invalid.
+    /// * Any model `parameters` field is not a TOML table.
     pub fn from_toml_str(
         config_toml_content: &str,
         api_key: String,
@@ -66,7 +109,7 @@ impl RuntimeConfig {
             ));
         }
 
-        // This context message IS checked by tests
+        // Check selected model exists
         config.selected_model_config().context("Validation failed for selected model")?;
 
         for (key, model) in &config.models {
@@ -102,6 +145,7 @@ impl RuntimeConfig {
     }
 }
 
+/// Helper for initial deserialization from TOML content.
 #[derive(Deserialize)]
 struct RuntimeConfigPartial {
     system_prompt: String,
@@ -207,7 +251,6 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         println!("test_from_toml_str_missing_selected_key Error: {}", err_msg);
-        // Check the context message added by .context() in from_toml_str
         assert!(err_msg.contains("Validation failed for selected model")); 
     }
 

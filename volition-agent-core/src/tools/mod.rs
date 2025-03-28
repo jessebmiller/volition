@@ -1,9 +1,10 @@
 // volition-agent-core/src/tools/mod.rs
 
 //! Contains implementations for standard, non-interactive tools.
+//! 
 //! These functions provide the core logic for interacting with external commands
-//! or the filesystem. They are designed as reusable building blocks for
-//! `ToolProvider` implementations.
+//! (shell, git, cargo), the filesystem, and performing searches.
+//! They are designed as reusable building blocks for `ToolProvider` implementations.
 //! 
 //! **Important:** These functions generally do *not* include safety checks
 //! (like command argument validation, file path sandboxing) or user interaction
@@ -19,11 +20,11 @@ pub mod shell;
 /// Represents the structured output of an executed external command.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommandOutput {
-    /// The exit status code of the command.
+    /// The exit status code of the command (e.g., 0 for success).
     pub status: i32,
-    /// The captured standard output.
+    /// The captured standard output as a string.
     pub stdout: String,
-    /// The captured standard error.
+    /// The captured standard error as a string.
     pub stderr: String,
 }
 
@@ -32,6 +33,4 @@ impl CommandOutput {
     pub fn success(&self) -> bool {
         self.status == 0
     }
-
-    // Formatting is now responsibility of the caller (e.g., ToolProvider impl)
 }

@@ -1,12 +1,10 @@
 // volition-agent-core/src/lib.rs
 
-//! Core library for the Volition AI agent.
-//! Provides the main `Agent` struct and related types for interacting with AI models
-//! and executing tools via the `ToolProvider` trait.
+#![doc = include_str!("../../README.md")] // Corrected path
 
 pub mod api;
 pub mod config;
-// pub mod models; // DEFINITELY REMOVED
+// pub mod models; // REMOVED!
 pub mod tools;
 
 #[cfg(test)]
@@ -17,7 +15,6 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info, error};
 
-// Use RuntimeConfig::from_toml_str directly via the struct itself
 pub use config::{ModelConfig, RuntimeConfig};
 pub use models::chat::{ApiResponse, Choice, ChatMessage};
 pub use models::tools::{
@@ -27,19 +24,16 @@ pub use models::tools::{
 
 pub use async_trait::async_trait;
 
-/// Trait defining the interface for providing tools to the `Agent`.
-/// Consumers of the library implement this trait to make tools available.
+/// Trait defining the interface for providing tools to the [`Agent`].
 #[async_trait]
 pub trait ToolProvider: Send + Sync {
     /// Returns the definitions of all tools available.
     fn get_tool_definitions(&self) -> Vec<ToolDefinition>;
     /// Executes the tool with the given name and input arguments.
-    /// `working_dir` specifies the context for filesystem operations.
-    /// Returns the tool's output as a single string on success.
     async fn execute_tool(&self, tool_name: &str, input: ToolInput, working_dir: &Path) -> Result<String>;
 }
 
-/// Represents the final output of an `Agent::run` execution.
+/// Represents the final output of an [`Agent::run`] execution.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AgentOutput {
     /// A list detailing the results of each tool executed during the run.
@@ -48,18 +42,18 @@ pub struct AgentOutput {
     pub final_state_description: Option<String>,
 }
 
-/// Details the execution result of a single tool call.
+/// Details the execution result of a single tool call within an [`AgentOutput`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolExecutionResult {
     /// The unique ID associated with the AI's request to call this tool.
     pub tool_call_id: String,
     /// The name of the tool that was executed.
     pub tool_name: String,
-    /// The input arguments passed to the tool (as a JSON value).
+    /// The input arguments passed to the tool (represented as a JSON value).
     pub input: serde_json::Value,
-    /// The string output produced by the tool (or an error message).
+    /// The string output produced by the tool (or an error message if status is Failure).
     pub output: String,
-    /// The status of the execution (Success or Failure).
+    /// The status of the execution.
     pub status: ToolExecutionStatus,
 }
 
@@ -79,7 +73,6 @@ use std::collections::HashMap;
 const MAX_ITERATIONS: usize = 10;
 
 /// The main struct for interacting with the AI agent.
-/// Orchestrates calls to the AI model and tool execution via a `ToolProvider`.
 pub struct Agent {
     config: RuntimeConfig,
     tool_provider: Arc<dyn ToolProvider>,
@@ -88,11 +81,6 @@ pub struct Agent {
 
 impl Agent {
     /// Creates a new `Agent` instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `config`: The validated `RuntimeConfig` containing API keys, model selection, etc.
-    /// * `tool_provider`: An `Arc` wrapping an implementation of the `ToolProvider` trait.
     pub fn new(config: RuntimeConfig, tool_provider: Arc<dyn ToolProvider>) -> Result<Self> {
         let http_client = Client::builder()
             .build()
@@ -105,18 +93,6 @@ impl Agent {
     }
 
     /// Runs the agent to achieve a given goal.
-    ///
-    /// This involves potentially multiple interactions with the AI model and the `ToolProvider`.
-    ///
-    /// # Arguments
-    ///
-    /// * `goal`: The user's objective or task for the agent.
-    /// * `working_dir`: The directory context for tool execution (e.g., for file paths, git commands).
-    ///
-    /// # Returns
-    ///
-    /// An `AgentOutput` summarizing the results, including tool executions and the final AI response,
-    /// or an error if the process fails (e.g., API error, max iterations reached).
     pub async fn run(&self, goal: &str, working_dir: &Path) -> Result<AgentOutput> {
         info!(agent_goal = goal, working_dir = ?working_dir, "Starting agent run.");
 
@@ -277,7 +253,7 @@ impl Agent {
 }
 
 // --- Modules ---
-// This is the ONLY definition for models module
+// This is the ONLY definition for the models module
 pub mod models {
     pub mod chat;
     pub mod tools;
