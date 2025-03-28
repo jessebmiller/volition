@@ -6,21 +6,15 @@ mod tools;
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 use std::{
-    env,
-    fs,
+    env, fs,
     io::{self, Write},
     path::{Path, PathBuf},
 };
 use tokio::time::Duration;
 
 use volition_agent_core::{
-    async_trait,
-    config::RuntimeConfig,
-    models::chat::ChatMessage,
-    Agent,
-    AgentOutput,
-    ToolProvider,
-    UserInteraction,
+    async_trait, config::RuntimeConfig, models::chat::ChatMessage, Agent, AgentOutput,
+    ToolProvider, UserInteraction,
 };
 
 use crate::models::cli::Cli;

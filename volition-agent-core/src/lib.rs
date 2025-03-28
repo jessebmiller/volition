@@ -119,7 +119,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         mut messages: Vec<ChatMessage>,
         working_dir: &Path,
     ) -> Result<AgentOutput> {
-
         info!(num_initial_messages = messages.len(), working_dir = ?working_dir, "Starting agent run.");
 
         if messages.is_empty() {
@@ -144,7 +143,8 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     "Agent reached iteration limit."
                 );
 
-                let additional_iterations = ((current_iteration_limit as f64 / 3.0).ceil() as usize).max(1);
+                let additional_iterations =
+                    ((current_iteration_limit as f64 / 3.0).ceil() as usize).max(1);
 
                 let prompt = format!(
                     "Agent reached iteration limit ({current_iteration_limit}). \
@@ -157,8 +157,15 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                 match self.ui_handler.ask(prompt, options).await {
                     Ok(response) => {
                         let response_lower = response.trim().to_lowercase();
-                        if response_lower.is_empty() || response_lower == "yes" || response_lower == "y" {
-                            info!(additional = additional_iterations, new_limit = current_iteration_limit + additional_iterations, "User chose to continue agent run.");
+                        if response_lower.is_empty()
+                            || response_lower == "yes"
+                            || response_lower == "y"
+                        {
+                            info!(
+                                additional = additional_iterations,
+                                new_limit = current_iteration_limit + additional_iterations,
+                                "User chose to continue agent run."
+                            );
                             current_iteration_limit += additional_iterations;
                         } else {
                             info!("User chose to stop agent run at iteration limit.");
@@ -182,7 +189,9 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
             info!(
                 iteration = iteration,
                 limit = current_iteration_limit,
-                "Starting agent iteration {}/{}.", iteration, current_iteration_limit
+                "Starting agent iteration {}/{}.",
+                iteration,
+                current_iteration_limit
             );
 
             let tool_definitions = self.tool_provider.get_tool_definitions();
@@ -192,7 +201,10 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                 tool_definitions.len()
             );
 
-            let model_config = self.config.selected_model_config().expect("Selected model config should be valid");
+            let model_config = self
+                .config
+                .selected_model_config()
+                .expect("Selected model config should be valid");
             debug!(
                 model = %model_config.model_name,
                 endpoint = %model_config.endpoint,
@@ -301,10 +313,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                             error!(tool_call_id = %tool_call.id, tool_name = %tool_name, error = ?e, "Execution failed for tool '{}'.", tool_name);
                             trace!(tool_call_id = %tool_call.id, error = %e, "Error during execution of tool '{}'", tool_name);
                             (
-                                format!(
-                                    "Error executing tool '{}': {}",
-                                    tool_name, e
-                                ),
+                                format!("Error executing tool '{}': {}", tool_name, e),
                                 ToolExecutionStatus::Failure,
                             )
                         }
