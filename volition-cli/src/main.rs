@@ -6,18 +6,22 @@ mod tools;
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 use std::{
-    env, fs,
-    io::{self, Write},
+    env,
+    fs,
+    io::{self, Write}, // Add io::Write
     path::{Path, PathBuf},
 };
 use tokio::time::Duration;
 
+// Import the core trait and async_trait
 use volition_agent_core::{
+    async_trait,
     config::RuntimeConfig,
-    models::chat::ChatMessage, // Keep this
+    models::chat::ChatMessage,
     Agent,
-    AgentOutput, // Import AgentOutput
+    AgentOutput,
     ToolProvider,
+    UserInteraction, // Import the trait
 };
 
 use crate::models::cli::Cli;
@@ -27,11 +31,36 @@ use crate::tools::CliToolProvider;
 use clap::Parser;
 use reqwest::Client;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn, Level}; // Added debug
-use tracing_subscriber::FmtSubscriber; // Keep this import
+use tracing::{debug, error, info, warn, Level};
+use tracing_subscriber::FmtSubscriber;
 
 const CONFIG_FILENAME: &str = "Volition.toml";
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
+
+// --- Add CliUserInteraction Struct and Implementation ---
+/// Simple struct to handle CLI user interactions.
+struct CliUserInteraction;
+
+#[async_trait]
+impl UserInteraction for CliUserInteraction {
+    /// Asks the user a question via the command line.
+    /// The prompt should ideally include formatting like "[Y/n]".
+    async fn ask(&self, prompt: String, _options: Vec<String>) -> Result<String> {
+        // Print the prompt without a newline, using yellow bold like other prompts
+        print!("{}", prompt.yellow().bold());
+        // Ensure the prompt is displayed immediately
+        io::stdout().flush().context("Failed to flush stdout")?;
+
+        let mut buffer = String::new();
+        io::stdin()
+            .read_line(&mut buffer)
+            .context("Failed to read line from stdin")?;
+
+        // Return the trimmed input
+        Ok(buffer.trim().to_string())
+    }
+}
+// --- End CliUserInteraction ---
 
 // --- Configuration Loading ---
 
@@ -73,7 +102,11 @@ fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
 // --- Session Management ---
 
 fn print_welcome_message() {
-    println!("\n{}", "Volition - AI Assistant".cyan().bold());
+    println!(
+        "
+{}",
+        "Volition - AI Assistant".cyan().bold()
+    );
     println!(
         "{}",
         "Type 'exit' or press Enter on an empty line to quit.".cyan()
@@ -81,7 +114,6 @@ fn print_welcome_message() {
     println!();
 }
 
-// Refined: Doesn't delete recovery file prematurely
 fn load_or_initialize_session(
     config: &RuntimeConfig,
     project_root: &Path,
@@ -93,7 +125,7 @@ fn load_or_initialize_session(
         info!("Found existing session state file: {:?}", recovery_path);
         print!(
             "{}",
-            "An incomplete session state was found. Resume? (Y/n): "
+            "An incomplete session state was found. Resume? [Y/n]: " // Updated prompt format
                 .yellow()
                 .bold()
         );
@@ -108,30 +140,23 @@ fn load_or_initialize_session(
                         messages_option = Some(loaded_messages);
                         info!("Successfully loaded session state from file.");
                         println!("{}", "Resuming previous session...".cyan());
-                        // DO NOT remove recovery file here. Remove only after successful run or clean exit.
                     }
                     Err(e) => {
                         error!("Failed to deserialize state file: {}. Starting fresh.", e);
                         println!("{}", "Error reading state file. Starting fresh.".red());
-                        // Optionally remove the corrupted file
-                        // let _ = fs::remove_file(&recovery_path);
                     }
                 },
                 Err(e) => {
                     error!("Failed to read state file: {}. Starting fresh.", e);
                     println!("{}", "Error reading state file. Starting fresh.".red());
-                    // Optionally remove the unreadable file
-                    // let _ = fs::remove_file(&recovery_path);
                 }
             }
         } else {
             info!("User chose not to resume. Starting fresh.");
             println!("{}", "Starting a fresh session.".cyan());
-            // DO NOT remove recovery file here. It will be overwritten or removed later.
         }
     }
 
-    // Initialize with system prompt if no session was loaded
     if messages_option.is_none() {
         messages_option = Some(vec![ChatMessage {
             role: "system".to_string(),
@@ -141,33 +166,35 @@ fn load_or_initialize_session(
         info!("Initialized new session with system prompt.");
     }
 
-    // We just return the messages (or None if user chose 'n' during a failed load maybe - though current logic prevents this)
-    // The caller (main) will handle asking for the first goal.
-    // We return Option<Vec<ChatMessage>> directly.
     Ok(messages_option)
 }
 
 // --- Agent Execution ---
-// Uses Agent::run(messages: Vec<ChatMessage>)
+// Modify signature to accept max_iterations and ui_handler
 async fn run_agent_session(
     config: &RuntimeConfig,
-    _client: &Client,                     // Keep client for potential future use
-    tool_provider: Arc<dyn ToolProvider>, // Takes the provider Arc
-    messages: Vec<ChatMessage>,           // Takes the full message history
+    _client: &Client,
+    tool_provider: Arc<dyn ToolProvider>,
+    messages: Vec<ChatMessage>,
     working_dir: &Path,
+    max_iterations: usize,               // Add max_iterations
+    ui_handler: Arc<CliUserInteraction>, // Add ui_handler
 ) -> Result<AgentOutput> {
-    // Still returns AgentOutput
-    // Agent::new requires Arc<dyn ToolProvider>, cloning it here is fine.
-    let agent = Agent::new(config.clone(), Arc::clone(&tool_provider))
-        .context("Failed to create agent instance")?;
+    // Pass max_iterations and ui_handler to Agent::new
+    let agent = Agent::new(
+        config.clone(),
+        Arc::clone(&tool_provider),
+        ui_handler,     // Pass the handler Arc
+        max_iterations, // Pass the iteration limit
+    )
+    .context("Failed to create agent instance")?;
 
     info!("Starting agent run with {} messages", messages.len());
     debug!(
-        "Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>",
-        config
+        "Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>, Max Iterations: {}",
+        config, max_iterations
     );
 
-    // Call the primary run method which now takes the message history
     match agent.run(messages, working_dir).await {
         Ok(agent_output) => {
             info!("Agent run finished successfully.");
@@ -176,7 +203,6 @@ async fn run_agent_session(
             if !agent_output.applied_tool_results.is_empty() {
                 println!("{}:", "Tool Execution Results".cyan());
                 for result in &agent_output.applied_tool_results {
-                    // Borrow result
                     let status_color = match result.status {
                         volition_agent_core::ToolExecutionStatus::Success => "Success".green(),
                         volition_agent_core::ToolExecutionStatus::Failure => "Failure".red(),
@@ -190,7 +216,6 @@ async fn run_agent_session(
             }
 
             if let Some(final_desc) = &agent_output.final_state_description {
-                // Borrow final_desc
                 println!("{}:", "Final AI Message".cyan());
                 if let Err(e) = print_formatted(final_desc) {
                     error!(
@@ -199,17 +224,16 @@ async fn run_agent_session(
                     );
                     println!("{}", final_desc);
                 } else {
-                    println!(); // Add newline after successful markdown rendering
+                    println!();
                 }
             } else {
                 warn!("Agent finished but provided no final description in output.");
             }
             println!("-----------------------");
-            Ok(agent_output) // Return the output
+            Ok(agent_output)
         }
         Err(e) => {
             error!("Agent run failed: {:?}", e);
-            // Error is printed in the main loop, just propagate it
             Err(e)
         }
     }
@@ -243,10 +267,9 @@ async fn main() -> Result<()> {
         _ => Level::TRACE,
     };
 
-    // Configure tracing subscriber
     let subscriber = FmtSubscriber::builder()
         .with_max_level(level)
-        .with_target(false) // Don't include module path
+        .with_target(false)
         .with_timer(tracing_subscriber::fmt::time::Uptime::default())
         .finish();
 
@@ -260,10 +283,48 @@ async fn main() -> Result<()> {
         .build()
         .context("Failed to build HTTP client")?;
 
-    // Create Arc<dyn ToolProvider> explicitly here
     let tool_provider: Arc<dyn ToolProvider> = Arc::new(CliToolProvider::new());
 
-    // Load existing session or initialize a new one
+    // --- Determine Max Iterations ---
+    const DEFAULT_MAX_ITERATIONS: usize = 20;
+    let max_iterations =
+        env::var("VOLITION_MAX_ITERATIONS")
+            .ok()
+            .and_then(|s| {
+                s.parse::<usize>().map_err(|e| {
+                warn!(
+                    env_var = "VOLITION_MAX_ITERATIONS",
+                    value = %s,
+                    error = ?e,
+                    "Failed to parse iteration limit from environment variable. Using default."
+                );
+                e
+            }).ok() // Convert Result to Option, discarding the error after logging
+            })
+            .unwrap_or(DEFAULT_MAX_ITERATIONS);
+
+    info!(
+        limit = max_iterations,
+        source = if env::var("VOLITION_MAX_ITERATIONS").is_ok()
+            && env::var("VOLITION_MAX_ITERATIONS")
+                .unwrap()
+                .parse::<usize>()
+                .is_ok()
+        {
+            "env(VOLITION_MAX_ITERATIONS)"
+        } else if env::var("VOLITION_MAX_ITERATIONS").is_ok() {
+            "env(parse_failed)->default"
+        } else {
+            "default"
+        },
+        "Agent iteration limit set."
+    );
+    // --- End Determine Max Iterations ---
+
+    // --- Create UI Handler ---
+    let ui_handler = Arc::new(CliUserInteraction);
+    // --- End Create UI Handler ---
+
     let mut messages = match load_or_initialize_session(&config, &project_root)? {
         Some(msgs) => msgs,
         None => {
@@ -272,7 +333,6 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Ensure messages always starts with the system prompt if somehow empty after loading/init
     if messages.is_empty() || messages[0].role != "system" {
         warn!("Messages list was empty or missing system prompt after init. Re-initializing.");
         messages = vec![ChatMessage {
@@ -284,7 +344,6 @@ async fn main() -> Result<()> {
 
     print_welcome_message();
 
-    // Main interaction loop
     loop {
         println!("{}", "How can I help you?".cyan());
         print!("{} ", ">".green().bold());
@@ -298,14 +357,12 @@ async fn main() -> Result<()> {
             break;
         }
 
-        // Add user message to history
         messages.push(ChatMessage {
             role: "user".to_string(),
             content: Some(trimmed_input.to_string()),
             ..Default::default()
         });
 
-        // Save state *before* the agent run
         let recovery_path = project_root.join(RECOVERY_FILE_PATH);
         match serde_json::to_string_pretty(&messages) {
             Ok(state_json) => {
@@ -323,52 +380,51 @@ async fn main() -> Result<()> {
             }
         }
 
-        // Now Arc::clone(&tool_provider) should work as it's cloning an Arc<dyn ToolProvider>
-        // Run the agent with the full message history
+        // Pass max_iterations and ui_handler to the session runner
         match run_agent_session(
             &config,
-            &client, // Pass client reference
-            Arc::clone(&tool_provider), // Pass the cloned Arc<dyn ToolProvider>
-            messages.clone(), // Pass a clone of the current history
+            &client,
+            Arc::clone(&tool_provider),
+            messages.clone(),
             &project_root,
+            max_iterations,          // Pass the limit
+            Arc::clone(&ui_handler), // Pass the UI handler Arc
         )
-        .await // Don't forget await!
+        .await
         {
             Ok(agent_output) => {
-                 // Agent run succeeded, add assistant response to history
-                 if let Some(final_desc) = agent_output.final_state_description {
-                     messages.push(ChatMessage {
-                         role: "assistant".to_string(),
-                         content: Some(final_desc),
-                         ..Default::default()
-                     });
-                 } else {
-                     // Agent succeeded but gave no text response. Don't add empty message.
-                     // Logged inside run_agent_session
-                 }
+                if let Some(final_desc) = agent_output.final_state_description {
+                    messages.push(ChatMessage {
+                        role: "assistant".to_string(),
+                        content: Some(final_desc),
+                        ..Default::default()
+                    });
+                }
 
-                 // Clean up the recovery file now that this turn is successfully completed
-                 if recovery_path.exists() {
-                     if let Err(e) = fs::remove_file(&recovery_path) {
-                         warn!("Failed to remove recovery state file after successful run: {}", e);
-                     } else {
-                         info!("Removed recovery state file after successful run.");
-                     }
-                 }
+                if recovery_path.exists() {
+                    if let Err(e) = fs::remove_file(&recovery_path) {
+                        warn!(
+                            "Failed to remove recovery state file after successful run: {}",
+                            e
+                        );
+                    } else {
+                        info!("Removed recovery state file after successful run.");
+                    }
+                }
             }
             Err(e) => {
-                // Agent run failed. Print error and let the loop continue.
-                // Do NOT remove the recovery file, it holds the state *before* the failed run.
-                println!("{}: {:?}\n", "Agent run encountered an error".red(), e); // Added newline for separation
-                // Remove the last user message we optimistically added, so they can retry
-                // or ask something else based on the previous state.
+                println!(
+                    "{}: {:?}
+",
+                    "Agent run encountered an error".red(),
+                    e
+                );
                 messages.pop();
                 info!("Removed last user message from history due to agent error.");
             }
         }
     }
 
-    // Cleanup recovery file only on clean exit from the loop
     let _ = cleanup_session_state(&project_root);
     println!("{}", "Thanks!".cyan());
     Ok(())

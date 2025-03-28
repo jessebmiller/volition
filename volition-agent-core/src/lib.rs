@@ -4,7 +4,7 @@
 
 pub mod api;
 pub mod config;
-// pub mod models; // REMOVED!
+// pub mod models; // REMOVED! - Keep removed
 pub mod tools;
 
 #[cfg(test)]
@@ -14,7 +14,12 @@ use anyhow::{anyhow, Context, Result};
 use std::path::Path;
 use std::sync::Arc;
 // Ensure trace is imported
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
+
+// --- Remove dotenvy/env imports ---
+// use std::env; // REMOVED
+// use dotenvy::dotenv; // REMOVED
+// --- End Remove ---
 
 pub use config::{ModelConfig, RuntimeConfig};
 pub use models::chat::{ApiResponse, ChatMessage, Choice};
@@ -39,6 +44,19 @@ pub trait ToolProvider: Send + Sync {
     ) -> Result<String>;
 }
 
+// --- Keep UserInteraction Trait ---
+/// Trait defining the interface for handling user interaction needed by the Agent core.
+#[async_trait]
+pub trait UserInteraction: Send + Sync {
+    /// Asks the user a question with optional predefined options.
+    /// Returns the user's response string.
+    /// If options are provided, the implementation should guide the user.
+    /// An empty response or case-insensitive "yes"/"y" typically signifies confirmation.
+    async fn ask(&self, prompt: String, options: Vec<String>) -> Result<String>;
+}
+// --- End Keep UserInteraction Trait ---
+
+
 /// Represents the final output of an [`Agent::run`] execution.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AgentOutput {
@@ -58,7 +76,7 @@ pub struct ToolExecutionResult {
     /// The input arguments passed to the tool (represented as a JSON value).
     pub input: serde_json::Value,
     /// The string output produced by the tool (or an error message if status is Failure).
-    pub output: String,
+    pub output: String, // Added newline for clarity
     /// The status of the execution.
     pub status: ToolExecutionStatus,
 }
@@ -76,18 +94,36 @@ use reqwest::Client;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
-const MAX_ITERATIONS: usize = 10;
+// --- Remove const MAX_ITERATIONS, DEFAULT_MAX_ITERATIONS, ITERATION_ENV_VAR ---
+// const MAX_ITERATIONS: usize = 10; // REMOVED
+// const DEFAULT_MAX_ITERATIONS: usize = 20; // REMOVED
+// const ITERATION_ENV_VAR: &str = "VOLITION_MAX_ITERATIONS"; // REMOVED
+// --- End Remove ---
 
 /// The main struct for interacting with the AI agent.
-pub struct Agent {
+// --- Add Generic Parameter, ui_handler, and initial_max_iterations fields ---
+pub struct Agent<UI: UserInteraction> {
     config: RuntimeConfig,
     tool_provider: Arc<dyn ToolProvider>,
     http_client: Client,
+    ui_handler: Arc<UI>,
+    initial_max_iterations: usize, // Add field to store the limit
 }
+// --- End Add ---
 
-impl Agent {
+// --- Update Agent impl block ---
+impl<UI: UserInteraction + 'static> Agent<UI> { // Add 'static bound for Arc
+// --- End Update ---
+
     /// Creates a new `Agent` instance.
-    pub fn new(config: RuntimeConfig, tool_provider: Arc<dyn ToolProvider>) -> Result<Self> {
+    // --- Update `new` signature ---
+    pub fn new(
+        config: RuntimeConfig,
+        tool_provider: Arc<dyn ToolProvider>,
+        ui_handler: Arc<UI>,      // Add parameter
+        max_iterations: usize, // Add parameter for max iterations
+    ) -> Result<Self> {
+    // --- End Update ---
         let http_client = Client::builder()
             .build()
             .context("Failed to build HTTP client for Agent")?;
@@ -95,16 +131,21 @@ impl Agent {
             config,
             tool_provider,
             http_client,
+            ui_handler,
+            initial_max_iterations: max_iterations, // Store the provided limit
         })
     }
 
     /// Runs the agent based on the provided message history.
-    // Renamed back to run, but keeps the history functionality
     pub async fn run(
         &self,
         mut messages: Vec<ChatMessage>, // Takes ownership and makes mutable
         working_dir: &Path,
     ) -> Result<AgentOutput> {
+        // --- Remove environment variable loading ---
+        // dotenv().ok(); // REMOVED
+        // --- End Remove ---
+
         info!(num_initial_messages = messages.len(), working_dir = ?working_dir, "Starting agent run.");
 
         // Basic validation: Ensure we have some messages to work with.
@@ -113,24 +154,71 @@ impl Agent {
             return Err(anyhow!("Cannot run agent with empty message history"));
         }
 
+        // --- Initialize iteration limit from stored field ---
+        let mut current_iteration_limit = self.initial_max_iterations;
+        info!(
+            limit = current_iteration_limit,
+            "Agent iteration limit set to {}.", current_iteration_limit
+        );
+        // --- End Initialize limit ---
+
         let mut iteration = 0;
         let mut collected_tool_results: Vec<ToolExecutionResult> = Vec::new();
 
         loop {
-            if iteration >= MAX_ITERATIONS {
-                error!(
-                    limit = MAX_ITERATIONS,
-                    "Agent reached maximum iteration limit."
+            // --- Keep iteration check and prompting logic ---
+            if iteration >= current_iteration_limit {
+                warn!(
+                    iteration = iteration,
+                    limit = current_iteration_limit,
+                    "Agent reached iteration limit."
                 );
-                return Err(anyhow!(
-                    "Agent stopped after reaching maximum iterations ({})",
-                    MAX_ITERATIONS
-                ));
+
+                // Calculate additional iterations (at least 1)
+                let additional_iterations = ((current_iteration_limit as f64 / 3.0).ceil() as usize).max(1);
+
+                // --- Update prompt message ---
+                let prompt = format!(
+                    "Agent reached iteration limit ({current_iteration_limit}). \
+                    Would you like to continue for {additional_iterations} more iterations? [Y/n] \
+                    (The initial limit is configured when the agent starts)",
+                );
+                // --- End Update prompt ---
+
+                // Provide options for clarity, though the handler might interpret directly
+                let options = vec!["Yes".to_string(), "No".to_string()];
+
+                match self.ui_handler.ask(prompt, options).await {
+                    Ok(response) => {
+                        let response_lower = response.trim().to_lowercase();
+                        if response_lower.is_empty() || response_lower == "yes" || response_lower == "y" {
+                            info!(additional = additional_iterations, new_limit = current_iteration_limit + additional_iterations, "User chose to continue agent run.");
+                            current_iteration_limit += additional_iterations;
+                            // Allow loop to continue with the increased limit
+                        } else {
+                            info!("User chose to stop agent run at iteration limit.");
+                            return Err(anyhow!(
+                                "Agent stopped by user after reaching iteration limit ({})",
+                                iteration // Report the limit that was actually hit
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = ?e, "Failed to get user input about continuing iteration.");
+                        return Err(e.context(format!(
+                            "Failed to get user input at iteration limit ({})",
+                            iteration
+                        )));
+                    }
+                }
             }
+            // --- End Keep iteration check ---
+
             iteration += 1;
             info!(
                 iteration = iteration,
-                "Starting agent iteration {}.", iteration
+                limit = current_iteration_limit, // Log current limit
+                "Starting agent iteration {}/{}.", iteration, current_iteration_limit
             );
 
             let tool_definitions = self.tool_provider.get_tool_definitions();
@@ -141,7 +229,6 @@ impl Agent {
             );
 
             // --- Tracing before API call ---
-            // Safely access model config
             let model_config = self.config.selected_model_config().expect("Selected model config should be valid");
             debug!(
                 model = %model_config.model_name,
@@ -149,7 +236,6 @@ impl Agent {
                 num_messages = messages.len(),
                 "Sending request to AI model."
             );
-            // Use serde_json::to_string_pretty for better trace formatting of messages
             trace!(payload = %serde_json::to_string_pretty(&messages).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Messages sent to API");
             trace!(tools = %serde_json::to_string_pretty(&tool_definitions).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Tools sent to API");
             // ---
@@ -344,7 +430,7 @@ impl Agent {
 }
 
 // --- Modules ---
-// This is the ONLY definition for the models module
+// Ensure the models module definition is present if required
 pub mod models {
     pub mod chat;
     pub mod tools;

@@ -11,6 +11,33 @@ use httpmock::prelude::*;
 use serde_json::json;
 use tracing_subscriber;
 
+// --- Mock User Interaction ---
+#[derive(Default)] // Add default derive
+struct MockUI {
+    ask_responses: Mutex<Vec<String>>, // Queue of responses to return
+    ask_prompts: Mutex<Vec<String>>,   // Log of prompts received
+}
+
+#[async_trait]
+impl UserInteraction for MockUI {
+    async fn ask(&self, prompt: String, _options: Vec<String>) -> Result<String> {
+        self.ask_prompts.lock().unwrap().push(prompt);
+        let response = self
+            .ask_responses
+            .lock()
+            .unwrap()
+            .pop() // Get the next response from the end
+            .unwrap_or_else(|| "yes".to_string()); // Default to "yes" if queue is empty
+        Ok(response)
+    }
+}
+
+impl MockUI {
+    fn add_response(&self, response: &str) {
+        self.ask_responses.lock().unwrap().push(response.to_string());
+    }
+}
+
 // --- Mock Tool Provider ---
 
 #[derive(Clone)]
@@ -85,6 +112,7 @@ impl ToolProvider for MockToolProvider {
 // --- Test Helpers ---
 
 const TEST_ENDPOINT_PATH: &str = "/test/completions";
+const TEST_ITERATION_LIMIT: usize = 5; // Define a limit for tests
 
 fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
     let mock_endpoint = format!("{}{}", mock_server_base_url, TEST_ENDPOINT_PATH);
@@ -111,7 +139,9 @@ fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
 async fn test_agent_initialization() {
     let config = create_test_config("http://unused");
     let mock_provider = Arc::new(MockToolProvider::new(vec![], HashMap::new()));
-    let agent_result = Agent::new(config, mock_provider);
+    let mock_ui = Arc::new(MockUI::default()); // Create mock UI
+    // Pass mock_ui and TEST_ITERATION_LIMIT
+    let agent_result = Agent::new(config, mock_provider, mock_ui, TEST_ITERATION_LIMIT);
     assert!(agent_result.is_ok());
 }
 
@@ -128,9 +158,11 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     let tool_output_content = "The weather is sunny.".to_string();
     tool_outputs.insert(tool_name.to_string(), Ok(tool_output_content.clone()));
     let mock_provider = Arc::new(MockToolProvider::new(tool_defs.clone(), tool_outputs));
+    let mock_ui = Arc::new(MockUI::default()); // Create mock UI
 
     let config = create_test_config(&mock_base_url);
-    let agent = Agent::new(config.clone(), mock_provider.clone())?;
+    // Pass mock_ui and TEST_ITERATION_LIMIT
+    let agent = Agent::new(config.clone(), mock_provider.clone(), mock_ui, TEST_ITERATION_LIMIT)?;
 
     let goal = "What is the weather?";
     let tool_call_id = "call_123";
@@ -236,7 +268,11 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
             content: Some(config.system_prompt.clone()),
             ..Default::default()
         },
-        ChatMessage { role: "user".to_string(), content: Some(goal.to_string()), ..Default::default() },
+        ChatMessage {
+            role: "user".to_string(),
+            content: Some(goal.to_string()),
+            ..Default::default()
+        },
     ];
     // Call the renamed method
     let agent_output_result = agent.run(initial_messages, &working_dir).await;
@@ -278,3 +314,4 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
 }
 
 // TODO: More tests
+// TODO: Test iteration limit prompt
