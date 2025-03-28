@@ -17,7 +17,7 @@ First off, thank you for considering contributing to Volition! It's people like 
 - Make sure your code passes lints (`cargo clippy`).
 - Add tests for any new functionality.
 - Ensure the test suite passes (`cargo test`).
-- Issue that pull request!
+- Issue the pull request!
 
 ## Code of Conduct
 This project and everyone participating in it is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior.

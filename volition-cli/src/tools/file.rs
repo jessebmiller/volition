@@ -1,58 +1,62 @@
+// volition-cli/src/tools/file.rs
 use std::fs;
-// Removed unused `Path` import, only `PathBuf` needed here now
-use crate::config::RuntimeConfig;
-use crate::models::tools::{ReadFileArgs, WriteFileArgs};
+use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use colored::*;
 use std::io::{self, Write};
-use std::path::PathBuf;
 use tracing::{debug, info, warn};
 
-pub async fn read_file(args: ReadFileArgs) -> Result<String> {
-    let path = &args.path;
-    info!("Reading file: {}", path);
-    let content =
-        fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path))?;
+// Removed unused imports: RuntimeConfig, ReadFileArgs, WriteFileArgs
+
+/// Reads the entire content of a file relative to the working directory.
+pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String> {
+    let absolute_path = working_dir.join(relative_path);
+    info!("Reading file (absolute): {:?}", absolute_path);
+    let content = fs::read_to_string(&absolute_path)
+        .with_context(|| format!("Failed to read file: {:?}", absolute_path))?;
     info!("Read {} bytes from file", content.len());
     Ok(content)
 }
 
-pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<String> {
-    let path_str = &args.path;
-    let content = &args.content;
-    let target_path_relative = PathBuf::from(path_str);
+/// Writes content to a file relative to the working directory.
+/// Includes safety check for writing outside the working directory.
+pub async fn write_file(
+    relative_path: &str,
+    content: &str,
+    working_dir: &Path,
+) -> Result<String> {
+    let target_path_relative = PathBuf::from(relative_path);
 
-    // --- Construct Absolute Path --- Always resolve relative to project root
+    // --- Construct Absolute Path --- Always resolve relative to working directory
     let absolute_target_path = if target_path_relative.is_absolute() {
         // If user provided absolute path, use it directly (but check sandbox below)
         target_path_relative.clone()
     } else {
-        // Otherwise, join with project root
-        config.project_root.join(&target_path_relative)
+        // Otherwise, join with working_dir
+        working_dir.join(&target_path_relative)
     };
-    // Clean the path (e.g. resolve ..) for more reliable checks. std::fs::canonicalize requires existence.
-    // Using a simple normalization approach for now.
-    // let absolute_target_path = normalize_path(&absolute_target_path); // Assuming a helper if needed
+    // Clean the path (e.g. resolve ..)
+    // Using std::fs::canonicalize requires existence, which might not be the case yet.
+    // For simplicity, we rely on the starts_with check below, assuming no malicious symlinks.
+    // let absolute_target_path = normalize_path(&absolute_target_path); // If a helper exists
 
-    // --- Check if path is within project root ---
-    // Use starts_with on the potentially non-canonicalized path. This is generally safe
-    // unless symlinks are used maliciously to escape the root.
-    let is_within_project = absolute_target_path.starts_with(&config.project_root);
+    // --- Check if path is within working directory (sandbox) ---
+    let is_within_project = absolute_target_path.starts_with(working_dir);
 
     debug!(
-        "Target path: {:?}, Resolved Absolute: {:?}, Project Root: {:?}, Within Project: {}",
-        path_str, absolute_target_path, config.project_root, is_within_project
+        "Target path: {:?}, Resolved Absolute: {:?}, Working Dir: {:?}, Within Dir: {}",
+        relative_path, absolute_target_path, working_dir, is_within_project
     );
 
     if !is_within_project {
-        warn!("Attempt to write file outside project root: {}", path_str);
+        warn!("Attempt to write file outside working directory: {}", relative_path);
 
         // --- Confirmation Logic (y/N style, default No) ---
         print!(
             "{}\n{}{} ",
             format!(
-                "WARNING: Attempting to write OUTSIDE project directory: {}",
-                path_str // Show original path in warning
+                "WARNING: Attempting to write OUTSIDE working directory: {}",
+                relative_path // Show original relative path in warning
             )
             .red()
             .bold(),
@@ -67,12 +71,11 @@ pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<S
             .context("Failed to read user input")?;
 
         if user_choice.trim().to_lowercase() != "y" {
-            warn!("User denied write to outside project root: {}", path_str);
+            warn!("User denied write to outside working directory: {}", relative_path);
             println!("{}", "File write denied.".red());
-            // Return Ok with a message, as denying isn't a program error
-            return Ok(format!("File write denied by user: {}", path_str));
+            return Ok(format!("File write denied by user: {}", relative_path));
         }
-        info!("User approved write outside project root: {}", path_str);
+        info!("User approved write outside working directory: {}", relative_path);
     }
     // --- End Check ---
 
@@ -96,8 +99,8 @@ pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<S
 
     info!("Successfully wrote {} bytes to file", content.len());
 
-    // Return the original path string provided by the user in the success message
-    Ok(format!("Successfully wrote to file: {}", path_str))
+    // Return the original relative path string provided by the user in the success message
+    Ok(format!("Successfully wrote to file: {}", relative_path))
 }
 
 // Helper function might be needed for robust path normalization if not using external crate
@@ -106,39 +109,21 @@ pub async fn write_file(args: WriteFileArgs, config: &RuntimeConfig) -> Result<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::RuntimeConfig;
-    use std::collections::HashMap;
     use std::fs::File;
     use std::io::Write;
     use tempfile::tempdir;
     use tokio;
-    // Need std::path::Path for helper function signature and tests
     use std::path::Path;
-
-    #[allow(dead_code)]
-    fn create_dummy_config_for_dir(project_dir: &Path) -> RuntimeConfig {
-        RuntimeConfig {
-            system_prompt: "".to_string(),
-            selected_model: "".to_string(),
-            models: HashMap::new(),
-            api_key: "".to_string(),
-            project_root: project_dir.to_path_buf(),
-        }
-    }
 
     #[tokio::test]
     async fn test_read_file_success() {
         let dir = tempdir().unwrap();
-        let file_path = dir.path().join("test_read.txt");
+        let file_path_relative = "test_read.txt";
+        let file_path_absolute = dir.path().join(file_path_relative);
         let expected_content = "Hello, Volition!";
-        let mut file = File::create(&file_path).unwrap();
-        file.write_all(expected_content.as_bytes()).unwrap();
-        drop(file);
+        fs::write(&file_path_absolute, expected_content).unwrap();
 
-        let args = ReadFileArgs {
-            path: file_path.to_str().unwrap().to_string(),
-        };
-        let result = read_file(args).await;
+        let result = read_file(file_path_relative, dir.path()).await;
 
         assert!(result.is_ok());
         let content = result.unwrap();
@@ -148,12 +133,9 @@ mod tests {
     #[tokio::test]
     async fn test_read_file_not_found() {
         let dir = tempdir().unwrap();
-        let file_path = dir.path().join("non_existent_file.txt");
+        let file_path_relative = "non_existent_file.txt";
 
-        let args = ReadFileArgs {
-            path: file_path.to_str().unwrap().to_string(),
-        };
-        let result = read_file(args).await;
+        let result = read_file(file_path_relative, dir.path()).await;
 
         assert!(result.is_err());
         let error_string = result.err().unwrap().to_string();
@@ -163,11 +145,8 @@ mod tests {
     #[tokio::test]
     async fn test_read_file_is_directory() {
         let dir = tempdir().unwrap();
-
-        let args = ReadFileArgs {
-            path: dir.path().to_str().unwrap().to_string(),
-        };
-        let result = read_file(args).await;
+        // Try reading the directory itself as a file
+        let result = read_file(".", dir.path()).await; // Pass relative path "."
 
         assert!(result.is_err());
         let error_string = result.err().unwrap().to_string();
@@ -179,23 +158,14 @@ mod tests {
     #[tokio::test]
     async fn test_write_file_success_new() {
         let dir = tempdir().unwrap();
-        let config = create_dummy_config_for_dir(dir.path());
         let file_path_relative = "test_write_new.txt";
         let file_path_absolute = dir.path().join(file_path_relative);
         let content_to_write = "Writing a new file.";
 
-        let args = WriteFileArgs {
-            path: file_path_relative.to_string(),
-            content: content_to_write.to_string(),
-        };
-
-        let result = write_file(args, &config).await;
+        let result = write_file(file_path_relative, content_to_write, dir.path()).await;
 
         assert!(result.is_ok(), "write_file failed: {:?}", result.err());
-        assert!(
-            file_path_absolute.exists(),
-            "File was not created at absolute path"
-        );
+        assert!(file_path_absolute.exists(), "File was not created");
 
         let read_content = fs::read_to_string(&file_path_absolute).unwrap();
         assert_eq!(read_content, content_to_write);
@@ -208,7 +178,6 @@ mod tests {
     #[tokio::test]
     async fn test_write_file_success_overwrite() {
         let dir = tempdir().unwrap();
-        let config = create_dummy_config_for_dir(dir.path());
         let file_path_relative = "test_write_overwrite.txt";
         let file_path_absolute = dir.path().join(file_path_relative);
         let initial_content = "Initial content.";
@@ -216,12 +185,7 @@ mod tests {
 
         fs::write(&file_path_absolute, initial_content).unwrap();
 
-        let args = WriteFileArgs {
-            path: file_path_relative.to_string(),
-            content: content_to_write.to_string(),
-        };
-
-        let result = write_file(args, &config).await;
+        let result = write_file(file_path_relative, content_to_write, dir.path()).await;
 
         assert!(result.is_ok(), "write_file failed: {:?}", result.err());
         assert!(file_path_absolute.exists());
@@ -237,7 +201,6 @@ mod tests {
     #[tokio::test]
     async fn test_write_file_creates_parent_dirs() {
         let dir = tempdir().unwrap();
-        let config = create_dummy_config_for_dir(dir.path());
         let nested_dir_relative = Path::new("nested");
         let file_path_relative = nested_dir_relative.join("test_write_nested.txt");
         let nested_dir_absolute = dir.path().join(&nested_dir_relative);
@@ -246,22 +209,16 @@ mod tests {
 
         assert!(!nested_dir_absolute.exists());
 
-        let args = WriteFileArgs {
-            path: file_path_relative.to_str().unwrap().to_string(),
-            content: content_to_write.to_string(),
-        };
-
-        let result = write_file(args, &config).await;
+        let result = write_file(
+            file_path_relative.to_str().unwrap(),
+            content_to_write,
+            dir.path(),
+        )
+        .await;
 
         assert!(result.is_ok(), "write_file failed: {:?}", result.err());
-        assert!(
-            nested_dir_absolute.exists(),
-            "Nested directory was not created"
-        );
-        assert!(
-            file_path_absolute.exists(),
-            "File was not created in nested directory"
-        );
+        assert!(nested_dir_absolute.exists(), "Nested dir not created");
+        assert!(file_path_absolute.exists(), "File not created");
 
         let read_content = fs::read_to_string(&file_path_absolute).unwrap();
         assert_eq!(read_content, content_to_write);
@@ -271,5 +228,5 @@ mod tests {
         )));
     }
 
-    // TODO: Tests for writing outside project root (requires stdin/stdout mocking)
+    // TODO: Tests for writing outside working directory (requires stdin/stdout mocking)
 }

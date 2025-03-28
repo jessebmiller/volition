@@ -1,0 +1,45 @@
+# Cargo.toml for the volition-cli crate
+
+[package]
+name = "volition-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jesse B. Miller <jesse@jessebmiller.com>"]
+description = "An AI-powered Linux CLI assistant (CLI frontend)"
+
+# Ensure this is recognized as the main binary
+[[bin]]
+name = "volition"
+path = "src/main.rs"
+
+[dependencies]
+# Use workspace dependencies
+anyhow = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
+dirs = { workspace = true }
+dotenvy = { workspace = true }
+duct = { workspace = true }
+ignore = { workspace = true }
+lazy_static = { workspace = true }
+pulldown-cmark = { workspace = true }
+pulldown-cmark-to-cmark = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+syntect = { workspace = true }
+termimad = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+url = { workspace = true }
+
+# Add path dependency to the core library
+volition-agent-core = { path = "../volition-agent-core" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+httpmock = { workspace = true }

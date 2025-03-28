@@ -1,0 +1,29 @@
+[package]
+name = "volition-agent-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jesse B. Miller <jesse@jessebmiller.com>"]
+description = "Core library for the Volition AI agent"
+
+[lib]
+name = "volition_agent_core"
+path = "src/lib.rs"
+
+[dependencies]
+# Use workspace dependencies
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+
+# Added dependencies that were missed
+uuid = { workspace = true }
+url = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+# Add dev dependencies if needed for core tests later
+tempfile = { workspace = true } # For config tests moved from cli
