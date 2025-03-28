@@ -152,31 +152,29 @@ fn load_or_initialize_session(
 
 
 // --- Agent Execution ---
-// Uses Agent::run(goal: &str)
+// Uses Agent::run(messages: Vec<ChatMessage>)
 async fn run_agent_session(
     config: &RuntimeConfig,
     _client: &Client, // Keep client for potential future use
-    tool_provider: Arc<dyn ToolProvider>,
-    initial_goal: String, // Takes the goal string
+    tool_provider: Arc<dyn ToolProvider>, // Takes the provider Arc
+    messages: Vec<ChatMessage>, // Takes the full message history
     working_dir: &Path,
 ) -> Result<AgentOutput> { // Still returns AgentOutput
     // Agent::new requires Arc<dyn ToolProvider>, cloning it here is fine.
     let agent = Agent::new(config.clone(), Arc::clone(&tool_provider))
         .context("Failed to create agent instance")?;
 
-    info!("Starting agent run with goal: {}", initial_goal);
-    debug!("Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>", config); // Example debug
+    info!("Starting agent run with {} messages", messages.len());
+    debug!("Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>", config);
 
-    // Call the original run method which takes goal: &str
-    match agent.run(&initial_goal, working_dir).await {
+    // Call the primary run method which now takes the message history
+    match agent.run(messages, working_dir).await {
         Ok(agent_output) => {
             info!("Agent run finished successfully.");
-            println!("
-{}", "--- Agent Run Summary ---".bold());
+            println!("{}", "--- Agent Run Summary ---".bold());
 
             if !agent_output.applied_tool_results.is_empty() {
-                println!("
-{}:", "Tool Execution Results".cyan());
+                println!("{}:", "Tool Execution Results".cyan());
                 for result in &agent_output.applied_tool_results { // Borrow result
                     let status_color = match result.status {
                         volition_agent_core::ToolExecutionStatus::Success => "Success".green(),
@@ -191,8 +189,7 @@ async fn run_agent_session(
             }
 
             if let Some(final_desc) = &agent_output.final_state_description { // Borrow final_desc
-                println!("
-{}:", "Final AI Message".cyan());
+                println!("{}:", "Final AI Message".cyan());
                 if let Err(e) = print_formatted(final_desc) {
                     error!(
                         "Failed to render final AI message markdown: {}. Printing raw.",
@@ -205,8 +202,7 @@ async fn run_agent_session(
             } else {
                  warn!("Agent finished but provided no final description in output.");
             }
-            println!("-----------------------
-");
+            println!("-----------------------");
             Ok(agent_output) // Return the output
         }
         Err(e) => {
@@ -252,7 +248,7 @@ async fn main() -> Result<()> {
         .context("Failed to load configuration and find project root")?;
 
     let client = Client::builder()
-        .timeout(Duration::from_secs(120)) // Increased timeout slightly
+        .timeout(Duration::from_secs(120))
         .build()
         .context("Failed to build HTTP client")?;
 
@@ -264,8 +260,6 @@ async fn main() -> Result<()> {
     let mut messages = match load_or_initialize_session(&config, &project_root)? {
         Some(msgs) => msgs,
         None => {
-            // This case should ideally not happen with the current logic of load_or_initialize_session
-            // unless the user explicitly exits during a failed recovery, which isn't implemented yet.
              error!("Failed to load or initialize session messages.");
              return Err(anyhow!("Session initialization failed"));
         }
@@ -285,8 +279,7 @@ async fn main() -> Result<()> {
 
     // Main interaction loop
     loop {
-        println!("
-{}", "What is your request? (or type 'exit')".cyan());
+        println!("{}", "How can I help you?".cyan());
         print!("{} ", ">".green().bold());
         io::stdout().flush()?;
 
@@ -295,7 +288,7 @@ async fn main() -> Result<()> {
         let trimmed_input = user_input.trim();
 
         if trimmed_input.is_empty() || trimmed_input.to_lowercase() == "exit" {
-            break; // Exit the loop
+            break;
         }
 
         // Add user message to history
@@ -307,31 +300,26 @@ async fn main() -> Result<()> {
 
         // Save state *before* the agent run
         let recovery_path = project_root.join(RECOVERY_FILE_PATH);
-        match serde_json::to_string_pretty(&messages) { // Use pretty for readability
+        match serde_json::to_string_pretty(&messages) {
             Ok(state_json) => {
                 if let Err(e) = fs::write(&recovery_path, state_json) {
                     warn!("Failed to write recovery state file: {}", e);
-                    // Decide if we should abort or just warn? For now, warn and continue.
                 } else {
                     info!("Saved conversation state to {:?}", recovery_path);
                 }
             }
             Err(e) => {
-                // This is more serious, serialization failed.
                 error!("Failed to serialize conversation state: {}. Cannot guarantee recovery.", e);
-                // Maybe abort here? For now, log error and continue.
             }
         }
 
-        let current_goal = trimmed_input.to_string(); // Define goal from input
-
         // Now Arc::clone(&tool_provider) should work as it's cloning an Arc<dyn ToolProvider>
-        // Run the agent with the current user request as the goal
+        // Run the agent with the full message history
         match run_agent_session(
             &config,
             &client, // Pass client reference
             Arc::clone(&tool_provider), // Pass the cloned Arc<dyn ToolProvider>
-            current_goal,     // Pass the user's latest request string
+            messages.clone(), // Pass a clone of the current history
             &project_root,
         )
         .await // Don't forget await!
@@ -342,7 +330,6 @@ async fn main() -> Result<()> {
                      messages.push(ChatMessage {
                          role: "assistant".to_string(),
                          content: Some(final_desc),
-                         // TODO: Potentially add tool_calls from agent_output if available/needed
                          ..Default::default()
                      });
                  } else {
@@ -362,22 +349,17 @@ async fn main() -> Result<()> {
             Err(e) => {
                 // Agent run failed. Print error and let the loop continue.
                 // Do NOT remove the recovery file, it holds the state *before* the failed run.
-                println!("
-{}: {:?}
-", "Agent run encountered an error".red(), e);
+                println!("{}: {:?}", "Agent run encountered an error".red(), e);
                 // Remove the last user message we optimistically added, so they can retry
                 // or ask something else based on the previous state.
-                messages.pop(); // Remove the user message that led to the error
+                messages.pop();
                 info!("Removed last user message from history due to agent error.");
             }
         }
-        // Loop continues for the next user input
     }
 
     // Cleanup recovery file only on clean exit from the loop
     let _ = cleanup_session_state(&project_root);
-    println!("
-{}
-", "Goodbye!".cyan());
+    println!("{}", "Thanks!".cyan());
     Ok(())
 }

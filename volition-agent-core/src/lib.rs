@@ -97,22 +97,20 @@ impl Agent {
         })
     }
 
-    /// Runs the agent to achieve a given goal.
-    pub async fn run(&self, goal: &str, working_dir: &Path) -> Result<AgentOutput> {
-        info!(agent_goal = goal, working_dir = ?working_dir, "Starting agent run.");
+    /// Runs the agent based on the provided message history.
+    // Renamed back to run, but keeps the history functionality
+    pub async fn run(
+        &self,
+        mut messages: Vec<ChatMessage>, // Takes ownership and makes mutable
+        working_dir: &Path,
+    ) -> Result<AgentOutput> {
+        info!(num_initial_messages = messages.len(), working_dir = ?working_dir, "Starting agent run with history.");
 
-        let mut messages: Vec<ChatMessage> = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: Some(self.config.system_prompt.clone()),
-                ..Default::default()
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: Some(goal.to_string()),
-                ..Default::default()
-            },
-        ];
+        // Basic validation: Ensure we have some messages to work with.
+        if messages.is_empty() {
+            error!("Agent run started with empty message history.");
+            return Err(anyhow!("Cannot run agent with empty message history"));
+        }
 
         let mut iteration = 0;
         let mut collected_tool_results: Vec<ToolExecutionResult> = Vec::new();
@@ -141,7 +139,7 @@ impl Agent {
             let api_response = match api::get_chat_completion(
                 &self.http_client,
                 &self.config,
-                messages.clone(),
+                messages.clone(), // Still need to clone here for the API call
                 &tool_definitions,
             )
             .await
@@ -159,6 +157,7 @@ impl Agent {
             })?;
             let response_message = choice.message;
 
+            // Add the assistant's response (potentially with tool calls) to our history
             messages.push(response_message.clone());
 
             if let Some(tool_calls) = response_message.tool_calls {
@@ -181,24 +180,27 @@ impl Agent {
                                 "Error parsing arguments for tool '{}': {}. Arguments received: {}",
                                 tool_call.function.name, e, tool_call.function.arguments
                             );
+                            // Create a tool message with the parsing error
                             tool_outputs.push(ChatMessage {
                                 role: "tool".to_string(),
                                 content: Some(error_output.clone()),
                                 tool_call_id: Some(tool_call.id.clone()),
                                 ..Default::default()
                             });
+                            // Log the failure in collected results
                             collected_tool_results.push(ToolExecutionResult {
                                 tool_call_id: tool_call.id,
                                 tool_name: tool_call.function.name,
                                 input: serde_json::from_str(&tool_call.function.arguments)
-                                    .unwrap_or_default(),
+                                    .unwrap_or_else(|_| JsonValue::String("Invalid JSON".to_string())), // Handle invalid JSON input gracefully
                                 output: error_output,
                                 status: ToolExecutionStatus::Failure,
                             });
-                            continue;
+                            continue; // Move to the next tool call
                         }
                     };
 
+                    // Execute the tool
                     let execution_result = self
                         .tool_provider
                         .execute_tool(&tool_call.function.name, tool_input.clone(), working_dir)
@@ -221,6 +223,7 @@ impl Agent {
                         }
                     };
 
+                    // Create a tool message with the execution output/error
                     tool_outputs.push(ChatMessage {
                         role: "tool".to_string(),
                         content: Some(output_str.clone()),
@@ -228,27 +231,31 @@ impl Agent {
                         ..Default::default()
                     });
 
+                    // Log the result (success or failure)
                     collected_tool_results.push(ToolExecutionResult {
                         tool_call_id: tool_call.id,
                         tool_name: tool_call.function.name,
-                        input: serde_json::to_value(tool_input.arguments).unwrap_or_default(),
+                        // Convert arguments map back to JsonValue for storing
+                        input: serde_json::to_value(tool_input.arguments).unwrap_or(JsonValue::Null),
                         output: output_str,
                         status,
                     });
                 }
 
+                // Add all tool results to the message history
                 messages.extend(tool_outputs);
                 debug!("Added tool outputs to messages, continuing loop.");
-                continue;
+                continue; // Go back to the API with the updated history including tool results
             }
 
-            info!("Received final response from AI.");
-            let final_description = response_message.content;
+            // If there were no tool calls, the loop terminates.
+            info!("Received final response from AI (no tool calls requested).");
+            let final_description = response_message.content; // Extract final content
 
             let agent_output = AgentOutput {
                 applied_tool_results: collected_tool_results,
                 final_state_description: final_description,
-                ..Default::default()
+                // Note: suggested_summary is no longer part of AgentOutput
             };
 
             debug!(output = ?agent_output, "Agent run finished.");

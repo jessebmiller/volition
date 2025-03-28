@@ -229,7 +229,17 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     // --- Run Agent ---
     let working_dir = PathBuf::from(".");
     println!("Running agent...");
-    let agent_output_result = agent.run(goal, &working_dir).await;
+    // Create the initial message history for the new method signature
+    let initial_messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: Some(config.system_prompt.clone()),
+            ..Default::default()
+        },
+        ChatMessage { role: "user".to_string(), content: Some(goal.to_string()), ..Default::default() },
+    ];
+    // Call the renamed method
+    let agent_output_result = agent.run(initial_messages, &working_dir).await;
     println!("Agent run finished. Result: {:?}", agent_output_result);
 
     // --- Assertions ---
