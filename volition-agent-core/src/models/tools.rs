@@ -36,7 +36,7 @@ pub struct ToolDefinition {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ToolParametersDefinition {
     #[serde(rename = "type")]
-    pub param_type: String, // Typically "object"
+    pub param_type: String,
     pub properties: HashMap<String, ToolParameter>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required: Vec<String>,
@@ -49,9 +49,9 @@ pub struct ToolParameter {
     pub param_type: ToolParameterType,
     pub description: String,
     #[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
-    pub enum_values: Option<Vec<String>>, // For string type with specific allowed values
+    pub enum_values: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub items: Option<Box<ToolParameter>>, // For array type
+    pub items: Option<Box<ToolParameter>>,
 }
 
 /// Represents the type of a tool parameter.
@@ -60,10 +60,10 @@ pub struct ToolParameter {
 pub enum ToolParameterType {
     String,
     Integer,
-    Number, // For floats/doubles
+    Number,
     Boolean,
     Array,
-    Object, // Although less common for individual params, might be needed
+    Object,
 }
 
 /// Represents the input arguments provided for a tool execution at runtime.

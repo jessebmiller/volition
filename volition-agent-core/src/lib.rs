@@ -1,23 +1,21 @@
 // volition-agent-core/src/lib.rs
 pub mod api;
 pub mod config;
-// pub mod models; // Removed duplicate declaration
+// pub mod models; // Ensure this line is REMOVED
+pub mod tools;
 
 use anyhow::{anyhow, Context, Result};
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info, error};
 
-// Re-export core types
 pub use config::{load_runtime_config, ModelConfig, RuntimeConfig};
-// Updated re-export: ChatMessage is the primary message type now
 pub use models::chat::{ApiResponse, Choice, ChatMessage};
 pub use models::tools::{
     ToolCall, ToolDefinition, ToolFunction, ToolInput, ToolParameter, ToolParameterType,
     ToolParametersDefinition,
 };
 
-// --- Tool Provider Trait ---
 pub use async_trait::async_trait;
 
 #[async_trait]
@@ -25,8 +23,6 @@ pub trait ToolProvider: Send + Sync {
     fn get_tool_definitions(&self) -> Vec<ToolDefinition>;
     async fn execute_tool(&self, tool_name: &str, input: ToolInput, working_dir: &Path) -> Result<String>;
 }
-
-// --- Agent Output Structs ---
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AgentOutput {
@@ -49,8 +45,6 @@ pub enum ToolExecutionStatus {
     Success,
     Failure,
 }
-
-// --- Agent Implementation ---
 
 use reqwest::Client;
 use serde_json::Value as JsonValue;
@@ -195,7 +189,6 @@ impl Agent {
                 continue;
             }
 
-            // Final answer
             info!("Received final response from AI.");
             let final_description = response_message.content;
 
@@ -212,6 +205,7 @@ impl Agent {
 }
 
 // --- Modules ---
+// This should be the ONLY declaration of the models module
 pub mod models {
     pub mod chat;
     pub mod tools;

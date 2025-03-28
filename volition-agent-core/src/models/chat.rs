@@ -31,5 +31,4 @@ pub struct ApiResponse {
 }
 
 // Commented out unused structs:
-// pub struct ChatMessage { ... }
 // pub struct ToolCallResult { ... }

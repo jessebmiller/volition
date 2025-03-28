@@ -56,6 +56,7 @@ pub fn load_runtime_config() -> Result<RuntimeConfig> {
         return Err(anyhow!("API_KEY environment variable is set but empty."));
     }
 
+    // TODO confirm that we can run volition from any subfolder of a project and this will work the same
     let config_path = Path::new("./Volition.toml");
     if !config_path.exists() {
         return Err(anyhow!(

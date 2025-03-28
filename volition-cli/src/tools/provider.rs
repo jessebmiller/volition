@@ -3,7 +3,7 @@
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
-// use std::sync::Arc; // Removed unused import
+use serde_json::Value as JsonValue;
 
 use reqwest::Client;
 
@@ -11,15 +11,15 @@ use volition_agent_core::{
     async_trait, models::tools::*, ToolProvider,
 };
 
+// Import the CLI tool *wrapper* functions
 use super::{cargo, file, filesystem, git, search, shell, user_input};
 
 pub struct CliToolProvider {
-    // http_client is currently unused, consider removing if no tools need it
-    // Or pass it into execute_tool if needed per-call
     _http_client: Client,
 }
 
 impl CliToolProvider {
+    // Added back the constructor
     pub fn new(http_client: Client) -> Self {
         Self { _http_client: http_client }
     }
@@ -33,7 +33,6 @@ impl CliToolProvider {
             items: None,
         }
     }
-
     fn bool_param(description: &str) -> ToolParameter {
         ToolParameter {
             param_type: ToolParameterType::Boolean,
@@ -42,7 +41,6 @@ impl CliToolProvider {
             items: None,
         }
     }
-
     fn int_param(description: &str) -> ToolParameter {
         ToolParameter {
             param_type: ToolParameterType::Integer,
@@ -51,7 +49,6 @@ impl CliToolProvider {
             items: None,
         }
     }
-
     fn string_array_param(description: &str) -> ToolParameter {
         ToolParameter {
             param_type: ToolParameterType::Array,
@@ -66,132 +63,57 @@ impl CliToolProvider {
         }
     }
 }
+// --- End Parameter Definition Helpers ---
+
 
 #[async_trait]
 impl ToolProvider for CliToolProvider {
     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
-        vec![
-            // --- shell ---
+         vec![
             ToolDefinition {
                 name: "shell".to_string(),
                 description: "Run a shell command and get the output ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([(
-                        "command".to_string(),
-                        Self::string_param("The shell command to run "),
-                    )]),
-                    required: vec!["command".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("command".to_string(), Self::string_param("The shell command to run "))]), required: vec!["command".to_string()]},
             },
-            // --- read_file ---
             ToolDefinition {
                 name: "read_file".to_string(),
                 description: "Read the contents of a file ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([(
-                        "path".to_string(),
-                        Self::string_param("Path to the file to read "),
-                    )]),
-                    required: vec!["path".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("path".to_string(), Self::string_param("Path to the file to read "))]), required: vec!["path".to_string()]},
             },
-            // --- write_file ---
             ToolDefinition {
                 name: "write_file".to_string(),
                 description: "Write content to a file ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([
-                        ("path".to_string(), Self::string_param("Path to the file to write ")),
-                        ("content".to_string(), Self::string_param("Content to write to the file ")),
-                    ]),
-                    required: vec!["path".to_string(), "content".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("path".to_string(), Self::string_param("Path to the file to write ")), ("content".to_string(), Self::string_param("Content to write to the file "))]), required: vec!["path".to_string(), "content".to_string()]},
             },
-            // --- search_text ---
             ToolDefinition {
                 name: "search_text".to_string(),
                 description: "Search for text patterns in files, returning matching lines with context. Requires \'ripgrep\' (rg) to be installed. ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([
-                        ("pattern".to_string(), Self::string_param("Text or regex pattern to search for ")),
-                        ("path".to_string(), Self::string_param("Directory or file path to search in (defaults to current directory) ")),
-                        ("file_glob".to_string(), Self::string_param("Glob pattern to filter files (e.g., \'*.rs\', \'*.md\', defaults to \'*\') - Use forward slashes ('/') as path separators in globs, even on Windows. ")),
-                        ("case_sensitive".to_string(), Self::bool_param("Perform case-sensitive search (defaults to false) ")),
-                        ("context_lines".to_string(), Self::int_param("Number of context lines before and after each match (defaults to 1) ")),
-                        ("max_results".to_string(), Self::int_param("Maximum number of matching lines to return (defaults to 50) ")),
-                    ]),
-                    required: vec!["pattern".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("pattern".to_string(), Self::string_param("Text or regex pattern to search for ")), ("path".to_string(), Self::string_param("Directory or file path to search in (defaults to current directory) ")), ("file_glob".to_string(), Self::string_param("Glob pattern to filter files (e.g., \'*.rs\', \'*.md\', defaults to \'*\') - Use forward slashes ('/') as path separators in globs, even on Windows. ")), ("case_sensitive".to_string(), Self::bool_param("Perform case-sensitive search (defaults to false) ")), ("context_lines".to_string(), Self::int_param("Number of context lines before and after each match (defaults to 1) ")), ("max_results".to_string(), Self::int_param("Maximum number of matching lines to return (defaults to 50) "))]), required: vec!["pattern".to_string()]},
             },
-            // --- find_rust_definition ---
             ToolDefinition {
                 name: "find_rust_definition".to_string(),
                 description: "Find where a Rust symbol (function, struct, enum, trait, etc.) is defined in the codebase. Searches *.rs files. ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([
-                        ("symbol".to_string(), Self::string_param("Rust symbol name to search for (function, struct, enum, trait, macro, etc.) ")),
-                        ("path".to_string(), Self::string_param("Directory path to search in (defaults to current directory) ")),
-                    ]),
-                    required: vec!["symbol".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("symbol".to_string(), Self::string_param("Rust symbol name to search for (function, struct, enum, trait, macro, etc.) ")), ("path".to_string(), Self::string_param("Directory path to search in (defaults to current directory) "))]), required: vec!["symbol".to_string()]},
             },
-            // --- user_input ---
             ToolDefinition {
                 name: "user_input".to_string(),
                 description: "Ask the user for input when a choice needs to be made ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([
-                        ("prompt".to_string(), Self::string_param("The question or prompt to show the user ")),
-                        ("options".to_string(), Self::string_array_param("Optional list of specific options to present to the user ")),
-                    ]),
-                    required: vec!["prompt".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("prompt".to_string(), Self::string_param("The question or prompt to show the user ")), ("options".to_string(), Self::string_array_param("Optional list of specific options to present to the user "))]), required: vec!["prompt".to_string()]},
             },
-            // --- git_command ---
              ToolDefinition {
                 name: "git_command".to_string(),
                 description: "Run a safe git command. Denied commands: push, reset, rebase, checkout, branch -D, etc. ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([
-                        ("command".to_string(), Self::string_param("The git subcommand to run (e.g., \"status\", \"diff\", \"add\", \"commit\", \"log\") ")),
-                        ("args".to_string(), Self::string_array_param("Arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"]) ")),
-                    ]),
-                    required: vec!["command".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("command".to_string(), Self::string_param("The git subcommand to run (e.g., \"status\", \"diff\", \"add\", \"commit\", \"log\") ")), ("args".to_string(), Self::string_array_param("Arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"]) "))]), required: vec!["command".to_string()]},
             },
-            // --- cargo_command ---
              ToolDefinition {
                 name: "cargo_command".to_string(),
                 description: "Run a safe cargo command. Denied commands: publish, install, login, owner, etc. ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([
-                        ("command".to_string(), Self::string_param("The cargo subcommand to run (e.g., \"build\", \"test\", \"check\", \"fmt\", \"run\") ")),
-                        ("args".to_string(), Self::string_array_param("Arguments for the cargo subcommand (e.g., [\"--release\"], [\"my_test\", \"--\", \"--nocapture\"]) ")),
-                    ]),
-                    required: vec!["command".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("command".to_string(), Self::string_param("The cargo subcommand to run (e.g., \"build\", \"test\", \"check\", \"fmt\", \"run\") ")), ("args".to_string(), Self::string_array_param("Arguments for the cargo subcommand (e.g., [\"--release\"], [\"my_test\", \"--\", \"--nocapture\"]) "))]), required: vec!["command".to_string()]},
             },
-            // --- list_directory ---
              ToolDefinition {
                 name: "list_directory".to_string(),
                 description: "List files and directories at a given path, respecting .gitignore. Output is raw text, one path per line. ".to_string(),
-                parameters: ToolParametersDefinition {
-                    param_type: "object".to_string(),
-                    properties: HashMap::from([
-                        ("path".to_string(), Self::string_param("The directory path to explore. ")),
-                        ("depth".to_string(), Self::int_param("Maximum depth to recurse (1 lists immediate contents, 2 includes subdirs, etc.). Defaults to 1. Use 0 to list only the directory itself (if not hidden/ignored). ")),
-                        ("show_hidden".to_string(), Self::bool_param("Include hidden files/directories (starting with \'.\'). Defaults to false. ")),
-                    ]),
-                    required: vec!["path".to_string()],
-                },
+                parameters: ToolParametersDefinition {param_type: "object".to_string(), properties: HashMap::from([("path".to_string(), Self::string_param("The directory path to explore. ")), ("depth".to_string(), Self::int_param("Maximum depth to recurse (1 lists immediate contents, 2 includes subdirs, etc.). Defaults to 1. Use 0 to list only the directory itself (if not hidden/ignored). ")), ("show_hidden".to_string(), Self::bool_param("Include hidden files/directories (starting with \'.\'). Defaults to false. "))]), required: vec!["path".to_string()]},
             },
         ]
     }
@@ -226,7 +148,7 @@ impl ToolProvider for CliToolProvider {
                 let case_sensitive: Option<bool> = get_optional_arg(&args, "case_sensitive")?;
                 let context_lines: Option<u32> = get_optional_arg(&args, "context_lines")?;
                 let max_results: Option<usize> = get_optional_arg(&args, "max_results")?;
-                search::search_text(
+                search::run_search_text(
                     &pattern,
                     path.as_deref(),
                     file_glob.as_deref(),
@@ -239,7 +161,7 @@ impl ToolProvider for CliToolProvider {
             "find_rust_definition" => {
                 let symbol: String = get_required_arg(&args, "symbol")?;
                 let path: Option<String> = get_optional_arg(&args, "path")?;
-                search::find_rust_definition(
+                search::run_find_rust_definition(
                     &symbol,
                     path.as_deref(),
                     working_dir
@@ -272,7 +194,7 @@ impl ToolProvider for CliToolProvider {
                 let path: String = get_required_arg(&args, "path")?;
                 let depth: Option<usize> = get_optional_arg(&args, "depth")?;
                 let show_hidden: Option<bool> = get_optional_arg(&args, "show_hidden")?;
-                 filesystem::list_directory_contents(
+                 filesystem::run_list_directory_contents(
                     &path,
                     depth,
                     show_hidden.unwrap_or(false),
@@ -287,8 +209,7 @@ impl ToolProvider for CliToolProvider {
     }
 }
 
-use serde_json::Value as JsonValue;
-
+// --- Argument Extraction Helpers ---
 fn get_required_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
@@ -317,3 +238,4 @@ where
         None => Ok(None),
     }
 }
+// --- End Argument Extraction Helpers ---
