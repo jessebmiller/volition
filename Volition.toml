@@ -40,6 +40,8 @@ Best practices to follow:
   * Making structural changes to the codebase
   * Modifying core functionality
   * Introducing new dependencies (via `Cargo.toml`)
+
+This project keeps a kanban board in project/todo project/in-progress and project/done
 """
 
 # Selects the default model key from the [models] map below
