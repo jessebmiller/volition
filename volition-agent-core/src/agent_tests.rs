@@ -69,7 +69,8 @@ impl MockToolProvider {
             description: format!("Mock tool {}", name),
             parameters: ToolParametersDefinition {
                 param_type: "object".to_string(),
-                properties: HashMap::from([("arg".to_string(),
+                properties: HashMap::from([(
+                    "arg".to_string(),
                     ToolParameter {
                         param_type: ToolParameterType::String,
                         description: "An argument".to_string(),
