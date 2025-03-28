@@ -1,24 +1,20 @@
 // volition-agent-core/src/tools/git.rs
 
+use super::CommandOutput; // Import the new struct
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use tracing::{debug, info}; // Removed warn as deny list is removed
+use tracing::{debug, info};
 
-/// Executes a git command in a specified working directory.
-///
-/// Note: This does not perform safety checks (like denying push/reset).
-/// Callers should ensure the command/args are safe or implement checks separately.
 pub async fn execute_git_command(
     command_name: &str,
     command_args: &[String],
     working_dir: &Path,
-) -> Result<String> {
+) -> Result<CommandOutput> { // Updated return type
     let full_command_log = format!("git {} {}", command_name, command_args.join(" "));
     info!(
         "Executing git command: {} in {:?}",
-        full_command_log,
-        working_dir
+        full_command_log, working_dir
     );
 
     let output = Command::new("git")
@@ -34,21 +30,14 @@ pub async fn execute_git_command(
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let status = output.status.code().unwrap_or(-1);
 
-    debug!(
-        "git {} exit status: {}",
-        full_command_log,
-        status
-    );
+    debug!("git {} exit status: {}", full_command_log, status);
 
-    let result = format!(
-        "Command executed: git {} {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
-        command_name,
-        command_args.join(" "),
+    // Return the structured output
+    Ok(CommandOutput {
         status,
-        if stdout.is_empty() { "<no output>" } else { &stdout },
-        if stderr.is_empty() { "<no output>" } else { &stderr }
-    );
-    Ok(result)
+        stdout,
+        stderr,
+    })
 }
 
 #[cfg(test)]
@@ -60,13 +49,9 @@ mod tests {
     use tempfile::tempdir;
     use tokio;
 
-    // Helper to initialize a dummy git repo in a temp dir
     fn setup_git_repo() -> Result<PathBuf> {
         let dir = tempdir()?.into_path();
-        Command::new("git")
-            .current_dir(&dir)
-            .arg("init")
-            .output()?;
+        Command::new("git").current_dir(&dir).arg("init").output()?;
         Command::new("git")
             .current_dir(&dir)
             .args(&["config", "user.email", "test@example.com"])
@@ -96,9 +81,9 @@ mod tests {
         let result = execute_git_command("status", &[], &working_dir).await;
         assert!(result.is_ok(), "git status failed: {:?}", result.err());
         let output = result.unwrap();
-        println!("Output:\n{}", output);
-        assert!(output.contains("Status: 0"));
-        assert!(output.contains("nothing to commit, working tree clean"));
+        println!("Output: {:?}", output);
+        assert_eq!(output.status, 0);
+        assert!(output.stdout.contains("nothing to commit, working tree clean"));
     }
 
     #[tokio::test]
@@ -107,19 +92,20 @@ mod tests {
         let result = execute_git_command("log", &["-1".to_string()], &working_dir).await;
         assert!(result.is_ok(), "git log failed: {:?}", result.err());
         let output = result.unwrap();
-        println!("Output:\n{}", output);
-        assert!(output.contains("Status: 0"));
-        assert!(output.contains("Initial commit"));
+        println!("Output: {:?}", output);
+        assert_eq!(output.status, 0);
+        assert!(output.stdout.contains("Initial commit"));
     }
 
     #[tokio::test]
     async fn test_execute_git_diff_fail() {
         let working_dir = setup_git_repo().expect("Failed to setup git repo");
-        let result = execute_git_command("diff", &["nonexistentcommit".to_string()], &working_dir).await;
-         assert!(result.is_ok(), "Expected Ok result even on diff failure");
+        let result =
+            execute_git_command("diff", &["nonexistentcommit".to_string()], &working_dir).await;
+        assert!(result.is_ok()); // Command runs, git returns error status
         let output = result.unwrap();
-        println!("Output:\n{}", output);
-        assert!(output.contains("Status: 128")); // Git diff often exits with 128 on error
-        assert!(output.contains("fatal: ambiguous argument"));
+        println!("Output: {:?}", output);
+        assert_ne!(output.status, 0);
+        assert!(output.stderr.contains("fatal: ambiguous argument"));
     }
 }

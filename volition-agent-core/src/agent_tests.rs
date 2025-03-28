@@ -42,7 +42,7 @@ impl MockToolProvider {
                         description: "An argument".to_string(),
                         enum_values: None,
                         items: None,
-                    }
+                    },
                 )]),
                 required: vec![],
             },
@@ -72,20 +72,24 @@ impl ToolProvider for MockToolProvider {
 
 const TEST_ENDPOINT_PATH: &str = "/test/completions";
 
+// Updated test helper: Removed project_root
 fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
     let mock_endpoint = format!("{}{}", mock_server_base_url, TEST_ENDPOINT_PATH);
     let mut models = HashMap::new();
-    models.insert("test-model-key".to_string(), ModelConfig {
-        model_name: "test-model".to_string(),
-        endpoint: mock_endpoint,
-        parameters: toml::Value::Table(Default::default()),
-    });
+    models.insert(
+        "test-model-key".to_string(),
+        ModelConfig {
+            model_name: "test-model".to_string(),
+            endpoint: mock_endpoint,
+            parameters: toml::Value::Table(Default::default()),
+        },
+    );
     RuntimeConfig {
         system_prompt: "Test System Prompt".to_string(),
         selected_model: "test-model-key".to_string(),
         models,
         api_key: "test-api-key".to_string(),
-        project_root: PathBuf::from("."),
+        // project_root: PathBuf::from("."), // Removed field
     }
 }
 
@@ -138,7 +142,7 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
             "index": 0,
             "message": {
                 "role": "assistant",
-                "content": null, // AI might return null content
+                "content": null,
                 "tool_calls": [{
                     "id": tool_call_id,
                     "type": "function",
@@ -151,12 +155,14 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
             "finish_reason": "tool_calls"
         }]
     });
-    let api_mock_1 = server.mock_async(|when, then| {
-        when.method(POST)
-            .path(TEST_ENDPOINT_PATH)
-            .json_body(expected_body_1.clone()); 
-        then.status(200).json_body(mock_response_1);
-    }).await;
+    let api_mock_1 = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path(TEST_ENDPOINT_PATH)
+                .json_body(expected_body_1.clone());
+            then.status(200).json_body(mock_response_1);
+        })
+        .await;
 
     // --- Mock 2 Setup (Request with Tool Result) ---
     let final_answer = "The weather today is sunny.";
@@ -172,13 +178,11 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
             "finish_reason": "stop"
         }]
     });
-    // Adjust expectation: Assistant message won't have `content: null` due to serialization
     let expected_messages_2 = json!([
         { "role": "system", "content": config.system_prompt },
         { "role": "user", "content": goal },
-        { // Assistant message requesting tool call (content field is skipped by serde)
+        {
             "role": "assistant",
-            // "content": null, <-- This field is skipped
             "tool_calls": [{
                 "id": tool_call_id,
                 "type": "function",
@@ -188,7 +192,7 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
                 }
             }]
         },
-        { // Tool result message
+        {
             "role": "tool",
             "content": tool_output_content,
             "tool_call_id": tool_call_id
@@ -201,12 +205,14 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
             { "type": "function", "function": tool_defs[0] }
         ]
     });
-     let api_mock_2 = server.mock_async(|when, then| {
-        when.method(POST)
-            .path(TEST_ENDPOINT_PATH)
-            .json_body(expected_body_2.clone()); 
-        then.status(200).json_body(mock_response_2);
-    }).await;
+    let api_mock_2 = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path(TEST_ENDPOINT_PATH)
+                .json_body(expected_body_2.clone());
+            then.status(200).json_body(mock_response_2);
+        })
+        .await;
 
     // --- Run Agent ---
     let working_dir = PathBuf::from(".");
@@ -220,14 +226,18 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     println!("Checking mock 2 hits...");
     api_mock_2.assert_hits(1);
 
-    assert!(agent_output_result.is_ok(), "Agent run failed: {:?}", agent_output_result.err());
+    assert!(
+        agent_output_result.is_ok(),
+        "Agent run failed: {:?}",
+        agent_output_result.err()
+    );
     let agent_output = agent_output_result.unwrap();
 
     let calls = mock_provider.call_log.lock().unwrap();
     assert_eq!(calls.len(), 1);
-    // ... rest of assertions ...
     assert_eq!(calls[0].0, tool_name);
     assert_eq!(calls[0].1, tool_args.to_string());
+
     assert!(agent_output.suggested_summary.is_some());
     assert_eq!(agent_output.applied_tool_results.len(), 1);
     let tool_result = &agent_output.applied_tool_results[0];
@@ -236,8 +246,10 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     assert_eq!(tool_result.input, tool_args);
     assert_eq!(tool_result.output, tool_output_content);
     assert_eq!(tool_result.status, ToolExecutionStatus::Success);
-    assert_eq!(agent_output.final_state_description, Some(final_answer.to_string()));
-
+    assert_eq!(
+        agent_output.final_state_description,
+        Some(final_answer.to_string())
+    );
 
     Ok(())
 }

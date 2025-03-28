@@ -1,18 +1,17 @@
 // volition-agent-core/src/tools/shell.rs
 
+use super::CommandOutput;
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use tracing::{debug, warn};
 
-// #[cfg(test)] // Removed mockall related attributes
-// use mockall::automock;
+// Removed mockall attributes and use
 
-// #[cfg_attr(test, automock)] // Removed mockall related attributes
 pub async fn execute_shell_command(
     command: &str,
     working_dir: &Path,
-) -> Result<String> {
+) -> Result<CommandOutput> {
     debug!("Executing shell command: {} in {:?}", command, working_dir);
 
     let shell_executable = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
@@ -46,17 +45,11 @@ pub async fn execute_shell_command(
         stderr.lines().take(3).collect::<Vec<_>>().join("\n")
     );
 
-    let result = format!(
-        "Command executed: {} {} {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
-        shell_executable,
-        shell_arg,
-        command,
+    Ok(CommandOutput {
         status,
-        if stdout.is_empty() { "<no output>" } else { &stdout },
-        if stderr.is_empty() { "<no output>" } else { &stderr }
-    );
-
-    Ok(result)
+        stdout,
+        stderr,
+    })
 }
 
 #[cfg(test)]
@@ -77,9 +70,10 @@ mod tests {
         let result = execute_shell_command(command, &working_dir).await;
         assert!(result.is_ok(), "Command failed: {:?}", result.err());
         let output = result.unwrap();
-        println!("Output:\n{}", output);
-        assert!(output.contains("Status: 0"));
-        assert!(output.contains("\nStdout:\nHello Core Shell"));
+        println!("Output: {:?}", output);
+        assert_eq!(output.status, 0);
+        assert_eq!(output.stdout.trim(), "Hello Core Shell");
+        assert!(output.stderr.is_empty() || output.stderr == "<no output>");
     }
 
     #[tokio::test]
@@ -89,8 +83,9 @@ mod tests {
         let result = execute_shell_command(command, &working_dir).await;
         assert!(result.is_ok());
         let output = result.unwrap();
-        println!("Output:\n{}", output);
-        assert!(!output.contains("Status: 0"));
-        assert!(output.contains("not found") || output.contains("is not recognized"));
+        println!("Output: {:?}", output);
+        assert_ne!(output.status, 0);
+        assert!(output.stdout.is_empty() || output.stdout == "<no output>");
+        assert!(output.stderr.contains("not found") || output.stderr.contains("is not recognized"));
     }
 }

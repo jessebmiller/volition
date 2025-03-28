@@ -1,7 +1,7 @@
 // volition-agent-core/src/lib.rs
 pub mod api;
 pub mod config;
-// pub mod models; // REMOVED DUPLICATE
+// pub mod models; // REMOVED
 pub mod tools;
 
 #[cfg(test)]
@@ -29,6 +29,9 @@ pub trait ToolProvider: Send + Sync {
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AgentOutput {
+    // TODO: Implement proper summary generation instead of using the goal.
+    //       This might involve a final call to the AI asking it to summarize,
+    //       or extracting key info from the final AI message if appropriate.
     pub suggested_summary: Option<String>,
     pub applied_tool_results: Vec<ToolExecutionResult>,
     pub final_state_description: Option<String>,
@@ -221,7 +224,7 @@ impl Agent {
             let final_description = response_message.content;
 
             let agent_output = AgentOutput {
-                suggested_summary: Some(goal.to_string()),
+                suggested_summary: Some(goal.to_string()), // Placeholder summary
                 applied_tool_results: collected_tool_results,
                 final_state_description: final_description,
             };
@@ -233,7 +236,7 @@ impl Agent {
 }
 
 // --- Modules ---
-// This is the ONLY declaration of the models module
+// This is the ONLY definition for models module
 pub mod models {
     pub mod chat;
     pub mod tools;

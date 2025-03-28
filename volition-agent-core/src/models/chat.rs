@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Represents a message in the chat history sequence sent to/from the AI.
 /// Can represent system, user, assistant, or tool messages.
-#[derive(Serialize, Deserialize, Debug, Clone, Default)] // Renamed from ResponseMessage
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ChatMessage {
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -19,7 +19,7 @@ pub struct ChatMessage {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Choice {
     pub index: u32,
-    pub message: ChatMessage, // Updated field type
+    pub message: ChatMessage,
     pub finish_reason: String,
 }
 
@@ -30,5 +30,4 @@ pub struct ApiResponse {
     pub choices: Vec<Choice>,
 }
 
-// Commented out unused structs:
-// pub struct ToolCallResult { ... }
+// Removed unused ChatMessage (original simple one) and ToolCallResult structs.

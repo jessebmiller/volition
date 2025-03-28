@@ -77,18 +77,18 @@ pub async fn search_text(
 
     debug!("Executing search command via shell: {}", full_cmd);
 
-    let result = execute_shell_command(&full_cmd, working_dir).await?;
+    let cmd_output = execute_shell_command(&full_cmd, working_dir).await?;
 
-    let no_stdout = result.contains("\nStdout:\n<no output>");
-    let no_match_status = result.contains("\nStatus: 1\n");
+    let no_stdout = cmd_output.stdout == "<no output>" || cmd_output.stdout.trim().is_empty();
+    let no_match_status = cmd_output.status == 1;
 
-    if no_stdout || no_match_status {
+    if no_match_status || no_stdout {
         Ok(format!(
             "No matches found for pattern: '{}' in path: '{}' matching glob: '{}'",
             pattern, path_arg, glob_arg
         ))
     } else {
-        Ok(result)
+        Ok(cmd_output.format_for_ai(&full_cmd))
     }
 }
 
@@ -102,7 +102,7 @@ pub async fn find_rust_definition(
 
     let directory_or_file_arg = search_path.unwrap_or(".");
     let is_dir = working_dir.join(directory_or_file_arg).is_dir();
-
+    
     info!(
         "Finding Rust definition for symbol: {} in path: {} (is_dir: {})",
         symbol, directory_or_file_arg, is_dir
@@ -119,27 +119,27 @@ pub async fn find_rust_definition(
     command_parts.push("--trim".to_string());
     if is_dir {
         command_parts.push("--glob".to_string());
-        command_parts.push(file_pattern.to_string());
+        command_parts.push(file_pattern.to_string()); 
     }
     command_parts.push("--ignore-case".to_string());
     command_parts.push("--max-count=10".to_string());
     command_parts.push("-e".to_string());
-    command_parts.push(format!("'{}'", pattern.replace('\'', "'\\''")));
+    command_parts.push(format!("'{}'", pattern.replace('\'', "'\\''"))); 
     command_parts.push(directory_or_file_arg.to_string());
 
     let full_cmd = command_parts.join(" ");
 
     debug!("Executing find rust definition command via shell: {}", full_cmd);
 
-    let result = execute_shell_command(&full_cmd, working_dir).await?;
+    let cmd_output = execute_shell_command(&full_cmd, working_dir).await?;
 
-    let no_stdout = result.contains("\nStdout:\n<no output>");
-    let no_match_status = result.contains("\nStatus: 1\n");
+    let no_stdout = cmd_output.stdout == "<no output>" || cmd_output.stdout.trim().is_empty();
+    let no_match_status = cmd_output.status == 1;
 
-    if no_stdout || no_match_status {
+    if no_match_status || no_stdout {
         Ok(format!("No Rust definition found for symbol: {}", symbol))
     } else {
-        Ok(result)
+        Ok(cmd_output.format_for_ai(&full_cmd))
     }
 }
 
@@ -164,19 +164,20 @@ mod tests {
     async fn test_search_text_no_matches() {
         let pattern = "pattern_that_will_not_match_in_a_million_years";
         let working_dir = test_working_dir();
-        fs::write(working_dir.join("dummy.txt"), "content").unwrap();
+        fs::write(working_dir.join("dummy.txt"), "content").unwrap(); 
         let result = search_text(pattern, None, None, None, None, None, &working_dir).await;
         assert!(result.is_ok());
-        let output = result.unwrap();
-        println!("search_text_no_matches output:\n{}", output);
-        assert!(output.contains("No matches found"), "Output should indicate no matches were found");
-        assert!(!output.contains("\nStatus: 1\n"));
+        let output_str = result.unwrap();
+        // Print the actual output when debugging
+        println!("search_text_no_matches output:\n{}", output_str);
+        assert!(output_str.contains("No matches found"), "Output should indicate no matches were found");
+        assert!(!output_str.contains("\nStatus: 1\n")); 
     }
 
      #[tokio::test]
      #[ignore = "Relies on external rg command and shell execution details"]
     async fn test_find_rust_definition_found_in_test_file() -> Result<()> {
-        let symbol = "find_this_test_fn_abc";
+        let symbol = "find_this_test_fn_abc"; 
         let working_dir = test_working_dir();
         let test_file_name = "test_src_find_def.rs";
         let test_file_path = working_dir.join(test_file_name);
@@ -184,15 +185,33 @@ mod tests {
         fs::write(&test_file_path, file_content)?;
 
         let result = find_rust_definition(symbol, None, &working_dir).await;
-
+        
         assert!(result.is_ok(), "find_rust_definition failed: {:?}", result.err());
-        let output = result.unwrap();
-        println!("find_rust_definition output:\n{}", output);
-
+        let output_str = result.unwrap();
+        // Print the command string and output for debugging
+        // (Need to reconstruct command string here similar to how the function does)
+        let escaped_symbol = regex::escape(symbol);
+        let pattern = format!(
+            r"(?:pub\s+)?(?:unsafe\s+)?(?:async\s+)?(fn|struct|enum|trait|const|static|type|mod|impl|macro_rules!)\s+{}\\b",
+            escaped_symbol
+        );
+        let mut command_parts = vec!["rg".to_string()];
+        command_parts.push("--trim".to_string());
+        command_parts.push("--glob".to_string());
+        command_parts.push("*.rs".to_string()); 
+        command_parts.push("--ignore-case".to_string());
+        command_parts.push("--max-count=10".to_string());
+        command_parts.push("-e".to_string());
+        command_parts.push(format!("'{}'", pattern.replace('\'', "'\\''"))); 
+        command_parts.push(".".to_string()); // Searching current dir in test
+        let full_cmd = command_parts.join(" ");
+        println!("Command executed in test: {}", full_cmd);
+        println!("find_rust_definition output:\n{}", output_str);
+        
         let expected_line = format!("pub fn {}()", symbol);
-        assert!(output.contains(&expected_line), "Output did not contain function signature");
-        assert!(output.contains("\nStdout:\n"), "Output did not contain Stdout section");
-        assert!(!output.contains("No Rust definition found"), "Output incorrectly stated no definition found");
+        assert!(output_str.contains(&expected_line), "Output did not contain function signature");
+        assert!(output_str.contains("\nStdout:\n"), "Output did not contain Stdout section");
+        assert!(!output_str.contains("No Rust definition found"), "Output incorrectly stated no definition found");
         Ok(())
     }
 }

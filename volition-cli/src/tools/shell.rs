@@ -5,12 +5,11 @@ use std::io::{self, Write};
 use std::path::Path;
 use tracing::warn;
 
-// Import the core execution function
+// Import the core execution function and the output struct
 use volition_agent_core::tools::shell::execute_shell_command as execute_shell_command_core;
+use volition_agent_core::tools::CommandOutput;
 
-/// Wrapper for the shell tool execution used by CliToolProvider.
-/// Includes CLI-specific confirmation prompt.
-pub async fn run_shell_command(command: &str, working_dir: &Path) -> Result<String> {
+pub async fn run_shell_command(command: &str, working_dir: &Path) -> Result<String> { // Returns String
     // --- Mandatory Confirmation ---
     print!(
         "{}\n{}\n{}{} ",
@@ -31,7 +30,6 @@ pub async fn run_shell_command(command: &str, working_dir: &Path) -> Result<Stri
     if user_choice.trim().to_lowercase() != "y" {
         warn!("User denied execution of shell command: {}", command);
         println!("{}", "Shell command execution denied.".red());
-        // Return Ok with message
         return Ok(format!(
             "Shell command execution denied by user: {}",
             command
@@ -40,6 +38,14 @@ pub async fn run_shell_command(command: &str, working_dir: &Path) -> Result<Stri
     // --- End Confirmation ---
 
     println!("{} {}", "Running:".blue().bold(), command);
+    
     // Call the core library implementation
-    execute_shell_command_core(command, working_dir).await
+    let cmd_output: CommandOutput = execute_shell_command_core(command, working_dir).await?;
+
+    // Format the structured output into a string
+    // Determine the shell executable string used by the core function for formatting
+    let shell_executable = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
+    let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+    let command_str_for_ai = format!("{} {} {}", shell_executable, shell_arg, command);
+    Ok(cmd_output.format_for_ai(&command_str_for_ai))
 }

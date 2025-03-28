@@ -6,15 +6,14 @@ mod tools;
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 use std::{
-    env, // Added env
+    env,
     fs,
     io::{self, Write},
-    path::{Path, PathBuf}, // Added PathBuf
+    path::{Path, PathBuf},
 };
 use tokio::time::Duration;
 
 use volition_agent_core::{
-    // Updated config import
     config::{parse_and_validate_config, RuntimeConfig},
     models::chat::ChatMessage,
     ToolProvider,
@@ -32,22 +31,19 @@ use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
 const CONFIG_FILENAME: &str = "Volition.toml";
-const RECOVERY_FILE_PATH: &str = ".conversation_state.json"; // Relative to project root
+const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
 
-// --- Configuration Loading (Moved from Core) ---
+// --- Configuration Loading ---
 
-/// Finds the project root by searching for CONFIG_FILENAME upwards from current dir.
 fn find_project_root() -> Result<PathBuf> {
     let current_dir = env::current_dir().context("Failed to get current directory")?;
     let mut current = current_dir.as_path();
-
     loop {
         let config_path = current.join(CONFIG_FILENAME);
         if config_path.exists() && config_path.is_file() {
             info!("Found configuration file at: {:?}", config_path);
             return Ok(current.to_path_buf());
         }
-
         match current.parent() {
             Some(parent) => current = parent,
             None => {
@@ -60,29 +56,20 @@ fn find_project_root() -> Result<PathBuf> {
     }
 }
 
-/// Loads configuration from file and environment.
 fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
-    // 1. Find project root
     let project_root = find_project_root()?;
     let config_path = project_root.join(CONFIG_FILENAME);
-
-    // 2. Read config file content
     let config_toml_content = fs::read_to_string(&config_path).with_context(|| {
         format!("Failed to read project config file: {:?}", config_path)
     })?;
-
-    // 3. Read API key from environment
     let api_key = env::var("API_KEY")
         .context("Failed to read API_KEY environment variable. Please ensure it is set.")?;
-
-    // 4. Call core parsing and validation function
     let runtime_config = parse_and_validate_config(&config_toml_content, api_key)
         .context("Failed to parse or validate configuration content")?;
-
     Ok((runtime_config, project_root))
 }
 
-// --- Session Management (Mostly Unchanged) ---
+// --- Session Management ---
 
 fn print_welcome_message() {
     println!("\n{}", "Volition - AI Assistant".cyan().bold());
@@ -93,10 +80,8 @@ fn print_welcome_message() {
     println!();
 }
 
-/// Returns Ok(Some((messages, goal))) or Ok(None) if user exits.
-/// Recovery file path is now relative to project_root.
 fn load_or_initialize_session(
-    config: &RuntimeConfig, // Still needed for system prompt
+    config: &RuntimeConfig,
     project_root: &Path,
 ) -> Result<Option<(Vec<ChatMessage>, String)>> {
     let recovery_path = project_root.join(RECOVERY_FILE_PATH);
@@ -161,15 +146,18 @@ fn load_or_initialize_session(
             ..Default::default()
         }]);
     } else {
-        println!("{}", "What is the main goal for this resumed session?".cyan());
+        println!(
+            "{}",
+            "What is the main goal for this resumed session?".cyan()
+        );
         print!("{} ", ">".green().bold());
         io::stdout().flush()?;
         let mut goal_input = String::new();
         io::stdin().read_line(&mut goal_input)?;
         let trimmed_input = goal_input.trim();
         if trimmed_input.is_empty() {
-             println!("{}", "Goal cannot be empty. Exiting.".red());
-             return Ok(None);
+            println!("{}", "Goal cannot be empty. Exiting.".red());
+            return Ok(None);
         }
         initial_goal = Some(trimmed_input.to_string());
     }
@@ -190,14 +178,12 @@ async fn run_agent_session(
     tool_provider: Arc<dyn ToolProvider>,
     _initial_messages: Vec<ChatMessage>,
     initial_goal: String,
-    working_dir: &Path, // Pass working_dir explicitly
+    working_dir: &Path,
 ) -> Result<()> {
-    // Agent::new takes the RuntimeConfig directly
     let agent = Agent::new(config.clone(), Arc::clone(&tool_provider))
         .context("Failed to create agent instance")?;
 
     info!("Starting agent run with goal: {}", initial_goal);
-    // working_dir is now passed as an argument
 
     match agent.run(&initial_goal, working_dir).await {
         Ok(agent_output) => {
@@ -225,16 +211,16 @@ async fn run_agent_session(
             }
 
             if let Some(final_desc) = agent_output.final_state_description {
-                 println!("\n{}:", "Final AI Message".cyan());
-                 if let Err(e) = print_formatted(&final_desc) {
+                println!("\n{}:", "Final AI Message".cyan());
+                if let Err(e) = print_formatted(&final_desc) {
                     error!(
                         "Failed to render final AI message markdown: {}. Printing raw.",
                         e
                     );
                     println!("{}", final_desc);
-                 } else {
+                } else {
                     println!();
-                 }
+                }
             }
             println!("-----------------------\n");
         }
@@ -245,13 +231,11 @@ async fn run_agent_session(
             return Err(e);
         }
     }
-    // Cleanup is now relative to project_root
     cleanup_session_state(working_dir)
 }
 
 // --- Cleanup ---
 
-/// Cleans up the session state recovery file relative to project_root.
 fn cleanup_session_state(project_root: &Path) -> Result<()> {
     let recovery_path = project_root.join(RECOVERY_FILE_PATH);
     if recovery_path.exists() {
@@ -280,7 +264,6 @@ async fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    // Load Config (CLI responsibility)
     let (config, project_root) = load_cli_config()
         .context("Failed to load configuration and find project root")?;
 
@@ -289,11 +272,11 @@ async fn main() -> Result<()> {
         .build()
         .context("Failed to build HTTP client")?;
 
-    let tool_provider = Arc::new(CliToolProvider::new(client.clone()));
+    // CliToolProvider::new no longer takes client
+    let tool_provider = Arc::new(CliToolProvider::new());
 
     print_welcome_message();
 
-    // Pass project_root to session loading
     match load_or_initialize_session(&config, &project_root)? {
         Some((initial_messages, initial_goal)) => {
             if let Err(_e) = run_agent_session(
@@ -302,7 +285,7 @@ async fn main() -> Result<()> {
                 tool_provider,
                 initial_messages,
                 initial_goal,
-                &project_root, // Pass project_root as working_dir
+                &project_root,
             )
             .await
             {

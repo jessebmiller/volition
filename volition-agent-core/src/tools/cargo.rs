@@ -1,5 +1,6 @@
 // volition-agent-core/src/tools/cargo.rs
 
+use super::CommandOutput; // Import the new struct
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -9,7 +10,7 @@ pub async fn execute_cargo_command(
     command_name: &str,
     command_args: &[String],
     working_dir: &Path,
-) -> Result<String> {
+) -> Result<CommandOutput> { // Updated return type
     let full_command_log = format!("cargo {} {}", command_name, command_args.join(" "));
     info!(
         "Executing cargo command: {} in {:?}",
@@ -30,28 +31,20 @@ pub async fn execute_cargo_command(
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let status = output.status.code().unwrap_or(-1);
 
-    debug!(
-        "cargo {} exit status: {}",
-        full_command_log,
-        status
-    );
+    debug!("cargo {} exit status: {}", full_command_log, status);
 
-    let result = format!(
-        "Command executed: cargo {} {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
-        command_name,
-        command_args.join(" "),
+    // Return the structured output
+    Ok(CommandOutput {
         status,
-        if stdout.is_empty() { "<no output>" } else { &stdout },
-        if stderr.is_empty() { "<no output>" } else { &stderr }
-    );
-
-    Ok(result)
+        stdout,
+        stderr,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use tempfile::tempdir;
     use tokio;
 
@@ -68,36 +61,42 @@ mod tests {
     async fn test_execute_cargo_check() {
         let working_dir = test_working_dir();
         if working_dir != Path::new(".") {
-            std::fs::write(working_dir.join("Cargo.toml"), "[package]\nname = \"test_crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n").unwrap();
-             std::fs::create_dir(working_dir.join("src")).unwrap();
-             std::fs::write(working_dir.join("src/lib.rs"), "pub fn hello() {}").unwrap();
+            std::fs::write(
+                working_dir.join("Cargo.toml"),
+                "[package]\nname = \"test_crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            )
+            .unwrap();
+            std::fs::create_dir(working_dir.join("src")).unwrap();
+            std::fs::write(working_dir.join("src/lib.rs"), "pub fn hello() {}").unwrap();
         }
 
         let result = execute_cargo_command("check", &[], &working_dir).await;
         assert!(result.is_ok(), "cargo check failed: {:?}", result.err());
         let output = result.unwrap();
-        println!("Output:\n{}", output);
-        assert!(output.contains("Status: 0"));
-        assert!(output.contains("Checking test_crate") || output.contains("Checking volition"));
-        // Updated assertion to match actual output format
-        assert!(output.contains("Finished `dev` profile"));
+        println!("Output: {:?}", output);
+        assert_eq!(output.status, 0);
+        assert!(output.stderr.contains("Checking test_crate") || output.stderr.contains("Checking volition"));
+        assert!(output.stderr.contains("Finished `dev` profile"));
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_execute_cargo_build_fail_no_src() {
         let working_dir = test_working_dir();
         if working_dir != Path::new(".") {
-            std::fs::write(working_dir.join("Cargo.toml"), "[package]\nname = \"test_crate_fail\"\nversion = \"0.1.0\"\nedition = \"2021\"\n").unwrap();
+            std::fs::write(
+                working_dir.join("Cargo.toml"),
+                "[package]\nname = \"test_crate_fail\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            )
+            .unwrap();
         }
 
         if working_dir != Path::new(".") {
             let result = execute_cargo_command("build", &[], &working_dir).await;
-            assert!(result.is_ok());
+            assert!(result.is_ok()); // Command ran, but failed
             let output = result.unwrap();
-            println!("Output:\n{}", output);
-            assert!(output.contains("Status: 101"));
-            // Updated assertion to match actual error
-            assert!(output.contains("no targets specified in the manifest"));
+            println!("Output: {:?}", output);
+            assert_ne!(output.status, 0);
+            assert!(output.stderr.contains("no targets specified in the manifest"));
         }
     }
 }

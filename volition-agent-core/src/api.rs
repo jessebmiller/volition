@@ -212,8 +212,8 @@ mod tests {
     };
     use serde_json::json;
     use std::collections::HashMap;
-    use std::path::PathBuf;
-    use std::time::Duration; // Keep Duration for test constants
+    // use std::path::PathBuf; // Removed unused import
+    // use std::time::Duration; // Removed unused import
     use toml;
 
     use httpmock::prelude::*;
@@ -250,6 +250,7 @@ mod tests {
         }
     }
 
+    // Updated test helper: Removed project_root
     fn create_test_runtime_config(selected_key: &str, model_config: ModelConfig) -> RuntimeConfig {
         let mut models = HashMap::new();
         models.insert(selected_key.to_string(), model_config);
@@ -258,11 +259,11 @@ mod tests {
             selected_model: selected_key.to_string(),
             models,
             api_key: "default-test-api-key".to_string(),
-            project_root: PathBuf::from("/fake/path"),
+            // project_root: PathBuf::from("/fake/path"), // Removed field
         }
     }
 
-    const TEST_MAX_RETRIES: u32 = 5; // Still used for assertion count
+    const TEST_MAX_RETRIES: u32 = 5;
 
     // --- Tests for build_openai_request ---
     #[test]
@@ -381,6 +382,7 @@ mod tests {
         let mut models = HashMap::new();
         models.insert("model_a".to_string(), model_config_a);
         models.insert("model_b".to_string(), model_config_b.clone());
+        // Updated dummy config creation
         let dummy_model_config = ModelConfig {
             model_name: "".into(),
             endpoint: "".into(),
@@ -428,7 +430,6 @@ mod tests {
     }
 
     #[tokio::test]
-    // Ignore this test due to long execution time caused by retry delays
     #[ignore = "Waits for full retry duration (~30s+)"]
     async fn test_get_chat_completion_retry_and_fail() {
         let server = MockServer::start_async().await;
