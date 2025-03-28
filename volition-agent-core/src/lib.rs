@@ -323,7 +323,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> { // Add 'static bound for Arc
                             });
                             collected_tool_results.push(ToolExecutionResult {
                                 tool_call_id: tool_call.id,
-                                tool_name: tool_name, // Use the cloned name
+                                tool_name, // Use the shorthand form
                                 input: serde_json::from_str(&tool_call.function.arguments)
                                     .unwrap_or_else(|_| {
                                         JsonValue::String("Invalid JSON".to_string())
