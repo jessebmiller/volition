@@ -33,8 +33,12 @@ impl UserInteraction for MockUI {
 }
 
 impl MockUI {
+    #[allow(dead_code)] // Keep for future tests requiring specific user responses
     fn add_response(&self, response: &str) {
-        self.ask_responses.lock().unwrap().push(response.to_string());
+        self.ask_responses
+            .lock()
+            .unwrap()
+            .push(response.to_string());
     }
 }
 
@@ -65,8 +69,7 @@ impl MockToolProvider {
             description: format!("Mock tool {}", name),
             parameters: ToolParametersDefinition {
                 param_type: "object".to_string(),
-                properties: HashMap::from([(
-                    "arg".to_string(),
+                properties: HashMap::from([("arg".to_string(),
                     ToolParameter {
                         param_type: ToolParameterType::String,
                         description: "An argument".to_string(),
@@ -140,7 +143,7 @@ async fn test_agent_initialization() {
     let config = create_test_config("http://unused");
     let mock_provider = Arc::new(MockToolProvider::new(vec![], HashMap::new()));
     let mock_ui = Arc::new(MockUI::default()); // Create mock UI
-    // Pass mock_ui and TEST_ITERATION_LIMIT
+                                               // Pass mock_ui and TEST_ITERATION_LIMIT
     let agent_result = Agent::new(config, mock_provider, mock_ui, TEST_ITERATION_LIMIT);
     assert!(agent_result.is_ok());
 }
@@ -162,7 +165,12 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
 
     let config = create_test_config(&mock_base_url);
     // Pass mock_ui and TEST_ITERATION_LIMIT
-    let agent = Agent::new(config.clone(), mock_provider.clone(), mock_ui, TEST_ITERATION_LIMIT)?;
+    let agent = Agent::new(
+        config.clone(),
+        mock_provider.clone(),
+        mock_ui,
+        TEST_ITERATION_LIMIT,
+    )?;
 
     let goal = "What is the weather?";
     let tool_call_id = "call_123";
