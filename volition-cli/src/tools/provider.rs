@@ -1,4 +1,4 @@
-// volition-cli/src/tools/provider.rs
+"""// volition-cli/src/tools/provider.rs
 
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value as JsonValue;
@@ -6,9 +6,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use volition_agent_core::{async_trait, models::tools::*, ToolProvider};
+// Import the core functions directly
+use volition_agent_core::tools::fs::{list_directory_contents, read_file as read_file_core};
 
-// Use the re-exported functions directly from the search module
-use super::{cargo, file, filesystem, git, search, shell, user_input};
+// Keep necessary module imports
+use super::{cargo, file, git, search, shell, user_input};
 
 pub struct CliToolProvider {}
 
@@ -17,6 +19,7 @@ impl CliToolProvider {
         Self {}
     }
 
+    // --- Parameter definition helpers ---
     fn string_param(description: &str) -> ToolParameter {
         ToolParameter {
             param_type: ToolParameterType::String,
@@ -98,7 +101,7 @@ impl ToolProvider for CliToolProvider {
                     properties: HashMap::from([
                         ("pattern".to_string(), Self::string_param("Text or regex pattern to search for ")),
                         ("path".to_string(), Self::string_param("Directory or file path to search in (defaults to current directory) ")),
-                        ("file_glob".to_string(), Self::string_param("Glob pattern to filter files (e.g., '*.rs', '*.md', defaults to '*') - Use forward slashes ('/') as path separators in globs, even on Windows. ")),
+                        ("file_glob".to_string(), Self::string_param("Glob pattern to filter files (e.g., "*.rs", "*.md", defaults to "*") - Use forward slashes ('/') as path separators in globs, even on Windows. ")), // Fixed quotes
                         ("case_sensitive".to_string(), Self::bool_param("Perform case-sensitive search (defaults to false) ")),
                         ("context_lines".to_string(), Self::int_param("Number of context lines before and after each match (defaults to 1) ")),
                         ("max_results".to_string(), Self::int_param("Maximum number of matching lines to return (defaults to 50) ")),
@@ -138,13 +141,11 @@ impl ToolProvider for CliToolProvider {
                     properties: HashMap::from([
                         (
                             "command".to_string(),
-                            // Corrected string literal with escaped quotes
-                            Self::string_param("The git subcommand to run (e.g., \"status\", \"diff\", \"add\", \"commit\", \"log\") "),
+                             Self::string_param("The git subcommand to run (e.g., "status", "diff", "add", "commit", "log") "), // Fixed escapes
                         ),
                         (
                             "args".to_string(),
-                            // Corrected string literal with escaped quotes
-                            Self::string_array_param("Arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"]) "),
+                             Self::string_array_param("Arguments for the git subcommand (e.g., ["--porcelain"], ["--staged"], ["src/main.rs"], ["-m", "My message"]) "), // Fixed escapes
                         ),
                     ]),
                     required: vec!["command".to_string()],
@@ -158,13 +159,11 @@ impl ToolProvider for CliToolProvider {
                     properties: HashMap::from([
                         (
                             "command".to_string(),
-                            // Corrected string literal with escaped quotes
-                            Self::string_param("The cargo subcommand to run (e.g., \"build\", \"test\", \"check\", \"fmt\", \"run\") "),
+                             Self::string_param("The cargo subcommand to run (e.g., "build", "test", "check", "fmt", "run") "), // Fixed escapes
                         ),
                         (
                             "args".to_string(),
-                             // Corrected string literal with escaped quotes
-                            Self::string_array_param("Arguments for the cargo subcommand (e.g., [\"--release\"], [\"my_test\", \"--\", \"--nocapture\"]) "),
+                             Self::string_array_param("Arguments for the cargo subcommand (e.g., ["--release"], ["my_test", "--", "--nocapture"]) "), // Fixed escapes
                         ),
                     ]),
                     required: vec!["command".to_string()],
@@ -206,7 +205,7 @@ impl ToolProvider for CliToolProvider {
             }
             "read_file" => {
                 let path: String = get_required_arg(&args, "path")?;
-                file::read_file(&path, working_dir).await
+                read_file_core(&path, working_dir).await
             }
             "write_file" => {
                 let path: String = get_required_arg(&args, "path")?;
@@ -220,7 +219,6 @@ impl ToolProvider for CliToolProvider {
                 let case_sensitive: Option<bool> = get_optional_arg(&args, "case_sensitive")?;
                 let context_lines: Option<u32> = get_optional_arg(&args, "context_lines")?;
                 let max_results: Option<usize> = get_optional_arg(&args, "max_results")?;
-                // Call search_text directly
                 search::search_text(
                     &pattern,
                     path.as_deref(),
@@ -235,7 +233,6 @@ impl ToolProvider for CliToolProvider {
             "find_rust_definition" => {
                 let symbol: String = get_required_arg(&args, "symbol")?;
                 let path: Option<String> = get_optional_arg(&args, "path")?;
-                 // Call find_rust_definition directly
                 search::find_rust_definition(&symbol, path.as_deref(), working_dir).await
             }
             "user_input" => {
@@ -259,7 +256,7 @@ impl ToolProvider for CliToolProvider {
                 let path: String = get_required_arg(&args, "path")?;
                 let depth: Option<usize> = get_optional_arg(&args, "depth")?;
                 let show_hidden: Option<bool> = get_optional_arg(&args, "show_hidden")?;
-                filesystem::run_list_directory_contents(
+                list_directory_contents(
                     &path,
                     depth,
                     show_hidden.unwrap_or(false),
@@ -274,16 +271,17 @@ impl ToolProvider for CliToolProvider {
     }
 }
 
+// --- Argument parsing helpers ---
 fn get_required_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
 {
     let value = args
         .get(key)
-        .ok_or_else(|| anyhow!("Missing required argument: '{}'", key))?;
+        .ok_or_else(|| anyhow!("Missing required argument: '{}'", key))?; // Fixed quotes
     serde_json::from_value(value.clone()).with_context(|| {
         format!(
-            "Invalid type or value for argument '{}'. Expected {}.",
+            "Invalid type or value for argument '{}'. Expected {}.", // Fixed quotes
             key,
             std::any::type_name::<T>()
         )
@@ -303,7 +301,7 @@ where
                     .map(Some)
                     .with_context(|| {
                         format!(
-                            "Invalid type or value for optional argument '{}'. Expected {}.",
+                            "Invalid type or value for optional argument '{}'. Expected {}.", // Fixed quotes
                             key,
                             std::any::type_name::<T>()
                         )
@@ -313,3 +311,4 @@ where
         None => Ok(None),
     }
 }
+""

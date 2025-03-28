@@ -5,12 +5,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
-use volition_agent_core::tools::fs::{read_file as read_file_core, write_file as write_file_core};
-
-/// Wrapper for read_file (no CLI-specific logic needed).
-pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String> {
-    read_file_core(relative_path, working_dir).await
-}
+use volition_agent_core::tools::fs::write_file as write_file_core;
 
 /// Wrapper for write_file, includes CLI-specific confirmation for writes outside working_dir.
 pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) -> Result<String> {
