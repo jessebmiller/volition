@@ -3,13 +3,12 @@
 use super::shell::execute_shell_command;
 use anyhow::{Result};
 use std::path::Path;
-use std::process::{Command, Stdio};
+// use std::process::{Command, Stdio}; // Removed unused imports
 use tracing::{debug, info};
 
 #[cfg(not(test))]
 fn check_ripgrep_installed() -> Result<()> {
     use std::process::Command;
-    // ... (implementation unchanged)
     let command_name = "rg";
     let check_command = if cfg!(target_os = "windows") {
         format!("Get-Command {}", command_name)
@@ -44,17 +43,19 @@ pub async fn search_text(
     max_results: Option<usize>,
     working_dir: &Path,
 ) -> Result<String> {
-    // ... (implementation unchanged)
     check_ripgrep_installed()?;
+
     let path_arg = search_path.unwrap_or(".");
     let glob_arg = file_glob.unwrap_or("*");
     let ignore_case_flag = !case_sensitive.unwrap_or(false);
     let context_arg = context_lines.unwrap_or(1);
     let max_lines = max_results.unwrap_or(50);
+
     info!(
         "Searching for pattern: '{}' in path: '{}' (glob: '{}', context: {}, ignore_case: {}) -> max {} lines",
         pattern, path_arg, glob_arg, context_arg, ignore_case_flag, max_lines
     );
+
     let context_str = context_arg.to_string();
     let mut rg_cmd_vec = vec![
         "rg", "--pretty", "--trim", "--context", &context_str, "--glob", glob_arg,
@@ -62,23 +63,31 @@ pub async fn search_text(
     if ignore_case_flag { rg_cmd_vec.push("--ignore-case"); }
     rg_cmd_vec.push(pattern);
     rg_cmd_vec.push(path_arg);
+
     let mut rg_cmd_parts = Vec::new();
     for arg in rg_cmd_vec.iter() {
         if *arg == pattern || *arg == path_arg {
              rg_cmd_parts.push(arg.to_string());
         } else {
-            // Quote args except pattern and path
             rg_cmd_parts.push(format!("'{}'", arg.replace('\'', "'\\''")));
         }
     }
     let rg_cmd_base = rg_cmd_parts.join(" ");
+
     let full_cmd = format!("{} | head -n {}", rg_cmd_base, max_lines);
+
     debug!("Executing search command via shell: {}", full_cmd);
+
     let result = execute_shell_command(&full_cmd, working_dir).await?;
+
     let no_stdout = result.contains("\nStdout:\n<no output>");
     let no_match_status = result.contains("\nStatus: 1\n"); 
+
     if no_stdout || no_match_status {
-        Ok(format!("No matches found for pattern: '{}' in path: '{}' matching glob: '{}'", pattern, path_arg, glob_arg))
+        Ok(format!(
+            "No matches found for pattern: '{}' in path: '{}' matching glob: '{}'",
+            pattern, path_arg, glob_arg
+        ))
     } else {
         Ok(result)
     }
@@ -95,7 +104,10 @@ pub async fn find_rust_definition(
     let directory_or_file_arg = search_path.unwrap_or(".");
     let is_dir = working_dir.join(directory_or_file_arg).is_dir();
     
-    info!("Finding Rust definition for symbol: {} in path: {} (is_dir: {})", symbol, directory_or_file_arg, is_dir);
+    info!(
+        "Finding Rust definition for symbol: {} in path: {} (is_dir: {})",
+        symbol, directory_or_file_arg, is_dir
+    );
 
     let file_pattern = "*.rs";
     let escaped_symbol = regex::escape(symbol);
@@ -104,18 +116,15 @@ pub async fn find_rust_definition(
         escaped_symbol
     );
 
-    // Build command string for execute_shell_command
     let mut command_parts = vec!["rg".to_string()];
     command_parts.push("--trim".to_string());
     if is_dir {
         command_parts.push("--glob".to_string());
-        // Don't quote the glob pattern itself when passing via shell
         command_parts.push(file_pattern.to_string()); 
     }
     command_parts.push("--ignore-case".to_string());
     command_parts.push("--max-count=10".to_string());
     command_parts.push("-e".to_string());
-    // Pass regex pattern carefully quoted for shell
     command_parts.push(format!("'{}'", pattern.replace('\'', "'\\''"))); 
     command_parts.push(directory_or_file_arg.to_string());
 
@@ -167,14 +176,13 @@ mod tests {
 
      #[tokio::test]
     async fn test_find_rust_definition_found_in_test_file() -> Result<()> {
-        let symbol = "find_this_test_fn_xyz"; 
+        let symbol = "find_this_test_fn_abc"; 
         let working_dir = test_working_dir();
         let test_file_name = "test_src_find_def.rs";
         let test_file_path = working_dir.join(test_file_name);
         let file_content = format!("\n  // Some comment\npub fn {}() {{\n    println!(\"Found!\");\n}}\n", symbol);
         fs::write(&test_file_path, file_content)?;
 
-        // Search in the directory containing the file
         let result = find_rust_definition(symbol, None, &working_dir).await;
         
         assert!(result.is_ok(), "find_rust_definition failed: {:?}", result.err());
