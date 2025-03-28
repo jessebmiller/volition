@@ -3,18 +3,19 @@ mod models;
 mod rendering;
 mod tools;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use colored::*;
 use std::{
+    env, // Added env
     fs,
     io::{self, Write},
-    path::Path,
+    path::{Path, PathBuf}, // Added PathBuf
 };
 use tokio::time::Duration;
 
 use volition_agent_core::{
-    config::{load_runtime_config, RuntimeConfig},
-    // Updated import: ResponseMessage -> ChatMessage
+    // Updated config import
+    config::{parse_and_validate_config, RuntimeConfig},
     models::chat::ChatMessage,
     ToolProvider,
     Agent,
@@ -30,7 +31,58 @@ use std::sync::Arc;
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
-const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
+const CONFIG_FILENAME: &str = "Volition.toml";
+const RECOVERY_FILE_PATH: &str = ".conversation_state.json"; // Relative to project root
+
+// --- Configuration Loading (Moved from Core) ---
+
+/// Finds the project root by searching for CONFIG_FILENAME upwards from current dir.
+fn find_project_root() -> Result<PathBuf> {
+    let current_dir = env::current_dir().context("Failed to get current directory")?;
+    let mut current = current_dir.as_path();
+
+    loop {
+        let config_path = current.join(CONFIG_FILENAME);
+        if config_path.exists() && config_path.is_file() {
+            info!("Found configuration file at: {:?}", config_path);
+            return Ok(current.to_path_buf());
+        }
+
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => {
+                return Err(anyhow!(
+                    "Could not find '{}' in current directory or any parent directory.",
+                    CONFIG_FILENAME
+                ));
+            }
+        }
+    }
+}
+
+/// Loads configuration from file and environment.
+fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
+    // 1. Find project root
+    let project_root = find_project_root()?;
+    let config_path = project_root.join(CONFIG_FILENAME);
+
+    // 2. Read config file content
+    let config_toml_content = fs::read_to_string(&config_path).with_context(|| {
+        format!("Failed to read project config file: {:?}", config_path)
+    })?;
+
+    // 3. Read API key from environment
+    let api_key = env::var("API_KEY")
+        .context("Failed to read API_KEY environment variable. Please ensure it is set.")?;
+
+    // 4. Call core parsing and validation function
+    let runtime_config = parse_and_validate_config(&config_toml_content, api_key)
+        .context("Failed to parse or validate configuration content")?;
+
+    Ok((runtime_config, project_root))
+}
+
+// --- Session Management (Mostly Unchanged) ---
 
 fn print_welcome_message() {
     println!("\n{}", "Volition - AI Assistant".cyan().bold());
@@ -42,20 +94,17 @@ fn print_welcome_message() {
 }
 
 /// Returns Ok(Some((messages, goal))) or Ok(None) if user exits.
+/// Recovery file path is now relative to project_root.
 fn load_or_initialize_session(
-    config: &RuntimeConfig,
-    // Updated type: ResponseMessage -> ChatMessage
+    config: &RuntimeConfig, // Still needed for system prompt
+    project_root: &Path,
 ) -> Result<Option<(Vec<ChatMessage>, String)>> {
-    let recovery_path = Path::new(RECOVERY_FILE_PATH);
-    // Updated type: ResponseMessage -> ChatMessage
+    let recovery_path = project_root.join(RECOVERY_FILE_PATH);
     let mut messages_option: Option<Vec<ChatMessage>> = None;
     let initial_goal: Option<String>;
 
     if recovery_path.exists() {
-        info!(
-            "Found existing conversation state file: {}",
-            RECOVERY_FILE_PATH
-        );
+        info!("Found existing session state file: {:?}", recovery_path);
         print!(
             "{}",
             "An incomplete session state was found. Resume? (Y/n): "
@@ -67,31 +116,30 @@ fn load_or_initialize_session(
         io::stdin().read_line(&mut user_choice)?;
 
         if user_choice.trim().to_lowercase() != "n" {
-            match fs::read_to_string(recovery_path) {
+            match fs::read_to_string(&recovery_path) {
                 Ok(state_json) => match serde_json::from_str(&state_json) {
-                    // Updated type: ResponseMessage -> ChatMessage
                     Ok(loaded_messages) => {
                         messages_option = Some(loaded_messages);
                         info!("Successfully resumed session from state file.");
                         println!("{}", "Resuming previous session...".cyan());
-                        let _ = fs::remove_file(recovery_path);
+                        let _ = fs::remove_file(&recovery_path);
                     }
                     Err(e) => {
                         error!("Failed to deserialize state file: {}. Starting fresh.", e);
                         println!("{}", "Error reading state file. Starting fresh.".red());
-                        let _ = fs::remove_file(recovery_path);
+                        let _ = fs::remove_file(&recovery_path);
                     }
                 },
                 Err(e) => {
                     error!("Failed to read state file: {}. Starting fresh.", e);
                     println!("{}", "Error reading state file. Starting fresh.".red());
-                    let _ = fs::remove_file(recovery_path);
+                    let _ = fs::remove_file(&recovery_path);
                 }
             }
         } else {
             info!("User chose not to resume. Starting fresh.");
             println!("{}", "Starting a fresh session.".cyan());
-            let _ = fs::remove_file(recovery_path);
+            let _ = fs::remove_file(&recovery_path);
         }
     }
 
@@ -107,7 +155,6 @@ fn load_or_initialize_session(
             return Ok(None);
         }
         initial_goal = Some(trimmed_input.to_string());
-        // Use ChatMessage
         messages_option = Some(vec![ChatMessage {
             role: "system".to_string(),
             content: Some(config.system_prompt.clone()),
@@ -135,18 +182,22 @@ fn load_or_initialize_session(
     }
 }
 
+// --- Agent Execution ---
+
 async fn run_agent_session(
     config: &RuntimeConfig,
     _client: &Client,
     tool_provider: Arc<dyn ToolProvider>,
-    _initial_messages: Vec<ChatMessage>, // Updated type
+    _initial_messages: Vec<ChatMessage>,
     initial_goal: String,
+    working_dir: &Path, // Pass working_dir explicitly
 ) -> Result<()> {
+    // Agent::new takes the RuntimeConfig directly
     let agent = Agent::new(config.clone(), Arc::clone(&tool_provider))
         .context("Failed to create agent instance")?;
 
     info!("Starting agent run with goal: {}", initial_goal);
-    let working_dir = &config.project_root;
+    // working_dir is now passed as an argument
 
     match agent.run(&initial_goal, working_dir).await {
         Ok(agent_output) => {
@@ -176,7 +227,10 @@ async fn run_agent_session(
             if let Some(final_desc) = agent_output.final_state_description {
                  println!("\n{}:", "Final AI Message".cyan());
                  if let Err(e) = print_formatted(&final_desc) {
-                    error!("Failed to render final AI message markdown: {}. Printing raw.", e);
+                    error!(
+                        "Failed to render final AI message markdown: {}. Printing raw.",
+                        e
+                    );
                     println!("{}", final_desc);
                  } else {
                     println!();
@@ -191,13 +245,17 @@ async fn run_agent_session(
             return Err(e);
         }
     }
-    cleanup_session_state()
+    // Cleanup is now relative to project_root
+    cleanup_session_state(working_dir)
 }
 
-fn cleanup_session_state() -> Result<()> {
-    let recovery_path = Path::new(RECOVERY_FILE_PATH);
+// --- Cleanup ---
+
+/// Cleans up the session state recovery file relative to project_root.
+fn cleanup_session_state(project_root: &Path) -> Result<()> {
+    let recovery_path = project_root.join(RECOVERY_FILE_PATH);
     if recovery_path.exists() {
-        if let Err(e) = fs::remove_file(recovery_path) {
+        if let Err(e) = fs::remove_file(&recovery_path) {
             warn!("Failed to remove recovery state file on exit: {}", e);
         } else {
             info!("Removed recovery state file on clean exit.");
@@ -205,6 +263,8 @@ fn cleanup_session_state() -> Result<()> {
     }
     Ok(())
 }
+
+// --- Main Application Entry Point ---
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -220,8 +280,9 @@ async fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let config = load_runtime_config()
-        .context("Failed to load configuration from Volition.toml and environment")?;
+    // Load Config (CLI responsibility)
+    let (config, project_root) = load_cli_config()
+        .context("Failed to load configuration and find project root")?;
 
     let client = Client::builder()
         .timeout(Duration::from_secs(60))
@@ -232,7 +293,8 @@ async fn main() -> Result<()> {
 
     print_welcome_message();
 
-    match load_or_initialize_session(&config)? {
+    // Pass project_root to session loading
+    match load_or_initialize_session(&config, &project_root)? {
         Some((initial_messages, initial_goal)) => {
             if let Err(_e) = run_agent_session(
                 &config,
@@ -240,6 +302,7 @@ async fn main() -> Result<()> {
                 tool_provider,
                 initial_messages,
                 initial_goal,
+                &project_root, // Pass project_root as working_dir
             )
             .await
             {

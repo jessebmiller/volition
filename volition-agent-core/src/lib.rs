@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info, error};
 
-pub use config::{load_runtime_config, ModelConfig, RuntimeConfig};
+pub use config::{parse_and_validate_config, ModelConfig, RuntimeConfig};
 pub use models::chat::{ApiResponse, Choice, ChatMessage};
 pub use models::tools::{
     ToolCall, ToolDefinition, ToolFunction, ToolInput, ToolParameter, ToolParameterType,
@@ -66,7 +66,11 @@ impl Agent {
         let http_client = Client::builder()
             .build()
             .context("Failed to build HTTP client for Agent")?;
-        Ok(Self { config, tool_provider, http_client })
+        Ok(Self {
+            config,
+            tool_provider,
+            http_client,
+        })
     }
 
     pub async fn run(&self, goal: &str, working_dir: &Path) -> Result<AgentOutput> {
@@ -91,21 +95,32 @@ impl Agent {
         loop {
             if iteration >= MAX_ITERATIONS {
                 error!("Agent reached maximum iteration limit ({})", MAX_ITERATIONS);
-                return Err(anyhow!("Agent stopped after reaching maximum iterations ({})", MAX_ITERATIONS));
+                return Err(anyhow!(
+                    "Agent stopped after reaching maximum iterations ({})",
+                    MAX_ITERATIONS
+                ));
             }
             iteration += 1;
             info!(iteration = iteration, "Starting agent iteration.");
 
             let tool_definitions = self.tool_provider.get_tool_definitions();
-            debug!(num_tools = tool_definitions.len(), "Got tool definitions from provider.");
+            debug!(
+                num_tools = tool_definitions.len(),
+                "Got tool definitions from provider."
+            );
 
-            debug!(num_messages = messages.len(), "Calling get_chat_completion.");
+            debug!(
+                num_messages = messages.len(),
+                "Calling get_chat_completion."
+            );
             let api_response = match api::get_chat_completion(
                 &self.http_client,
                 &self.config,
                 messages.clone(),
                 &tool_definitions,
-            ).await {
+            )
+            .await
+            {
                 Ok(resp) => resp,
                 Err(e) => {
                     error!(error = ?e, "API call failed during agent run.");
@@ -132,11 +147,15 @@ impl Agent {
                         serde_json::from_str(&tool_call.function.arguments);
 
                     let tool_input = match input_result {
-                        Ok(args_map) => ToolInput { arguments: args_map },
+                        Ok(args_map) => ToolInput {
+                            arguments: args_map,
+                        },
                         Err(e) => {
                             error!(tool_call_id = %tool_call.id, tool_name = %tool_call.function.name, error = ?e, "Failed to parse tool arguments.");
-                            let error_output = format!("Error parsing arguments for tool '{}': {}. Arguments received: {}",
-                                tool_call.function.name, e, tool_call.function.arguments);
+                            let error_output = format!(
+                                "Error parsing arguments for tool '{}': {}. Arguments received: {}",
+                                tool_call.function.name, e, tool_call.function.arguments
+                            );
                             tool_outputs.push(ChatMessage {
                                 role: "tool".to_string(),
                                 content: Some(error_output.clone()),
@@ -146,7 +165,8 @@ impl Agent {
                             collected_tool_results.push(ToolExecutionResult {
                                 tool_call_id: tool_call.id,
                                 tool_name: tool_call.function.name,
-                                input: serde_json::from_str(&tool_call.function.arguments).unwrap_or_default(),
+                                input: serde_json::from_str(&tool_call.function.arguments)
+                                    .unwrap_or_default(),
                                 output: error_output,
                                 status: ToolExecutionStatus::Failure,
                             });
@@ -154,11 +174,10 @@ impl Agent {
                         }
                     };
 
-                    let execution_result = self.tool_provider.execute_tool(
-                        &tool_call.function.name,
-                        tool_input.clone(),
-                        working_dir
-                    ).await;
+                    let execution_result = self
+                        .tool_provider
+                        .execute_tool(&tool_call.function.name, tool_input.clone(), working_dir)
+                        .await;
 
                     let (output_str, status) = match execution_result {
                         Ok(output) => {
@@ -167,7 +186,13 @@ impl Agent {
                         }
                         Err(e) => {
                             error!(tool_call_id = %tool_call.id, tool_name = %tool_call.function.name, error = ?e, "Tool execution failed.");
-                            (format!("Error executing tool '{}': {}", tool_call.function.name, e), ToolExecutionStatus::Failure)
+                            (
+                                format!(
+                                    "Error executing tool '{}': {}",
+                                    tool_call.function.name, e
+                                ),
+                                ToolExecutionStatus::Failure,
+                            )
                         }
                     };
 
@@ -208,7 +233,7 @@ impl Agent {
 }
 
 // --- Modules ---
-// This is the ONLY declaration
+// This is the ONLY declaration of the models module
 pub mod models {
     pub mod chat;
     pub mod tools;
