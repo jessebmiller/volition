@@ -8,12 +8,11 @@ use colored::*;
 use std::{
     env,
     fs,
-    io::{self, Write}, // Add io::Write
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 use tokio::time::Duration;
 
-// Import the core trait and async_trait
 use volition_agent_core::{
     async_trait,
     config::RuntimeConfig,
@@ -21,7 +20,7 @@ use volition_agent_core::{
     Agent,
     AgentOutput,
     ToolProvider,
-    UserInteraction, // Import the trait
+    UserInteraction,
 };
 
 use crate::models::cli::Cli;
@@ -37,7 +36,6 @@ use tracing_subscriber::FmtSubscriber;
 const CONFIG_FILENAME: &str = "Volition.toml";
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
 
-// --- Add CliUserInteraction Struct and Implementation ---
 /// Simple struct to handle CLI user interactions.
 struct CliUserInteraction;
 
@@ -46,9 +44,7 @@ impl UserInteraction for CliUserInteraction {
     /// Asks the user a question via the command line.
     /// The prompt should ideally include formatting like "[Y/n]".
     async fn ask(&self, prompt: String, _options: Vec<String>) -> Result<String> {
-        // Print the prompt without a newline, using yellow bold like other prompts
         print!("{}", prompt.yellow().bold());
-        // Ensure the prompt is displayed immediately
         io::stdout().flush().context("Failed to flush stdout")?;
 
         let mut buffer = String::new();
@@ -56,13 +52,9 @@ impl UserInteraction for CliUserInteraction {
             .read_line(&mut buffer)
             .context("Failed to read line from stdin")?;
 
-        // Return the trimmed input
         Ok(buffer.trim().to_string())
     }
 }
-// --- End CliUserInteraction ---
-
-// --- Configuration Loading ---
 
 fn find_project_root() -> Result<PathBuf> {
     let current_dir = env::current_dir().context("Failed to get current directory")?;
@@ -99,8 +91,6 @@ fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
     Ok((runtime_config, project_root))
 }
 
-// --- Session Management ---
-
 fn print_welcome_message() {
     println!(
         "
@@ -125,7 +115,7 @@ fn load_or_initialize_session(
         info!("Found existing session state file: {:?}", recovery_path);
         print!(
             "{}",
-            "An incomplete session state was found. Resume? [Y/n]: " // Updated prompt format
+            "An incomplete session state was found. Resume? [Y/n]: "
                 .yellow()
                 .bold()
         );
@@ -169,23 +159,20 @@ fn load_or_initialize_session(
     Ok(messages_option)
 }
 
-// --- Agent Execution ---
-// Modify signature to accept max_iterations and ui_handler
 async fn run_agent_session(
     config: &RuntimeConfig,
     _client: &Client,
     tool_provider: Arc<dyn ToolProvider>,
     messages: Vec<ChatMessage>,
     working_dir: &Path,
-    max_iterations: usize,               // Add max_iterations
-    ui_handler: Arc<CliUserInteraction>, // Add ui_handler
+    max_iterations: usize,
+    ui_handler: Arc<CliUserInteraction>,
 ) -> Result<AgentOutput> {
-    // Pass max_iterations and ui_handler to Agent::new
     let agent = Agent::new(
         config.clone(),
         Arc::clone(&tool_provider),
-        ui_handler,     // Pass the handler Arc
-        max_iterations, // Pass the iteration limit
+        ui_handler,
+        max_iterations,
     )
     .context("Failed to create agent instance")?;
 
@@ -239,8 +226,6 @@ async fn run_agent_session(
     }
 }
 
-// --- Cleanup ---
-
 fn cleanup_session_state(project_root: &Path) -> Result<()> {
     let recovery_path = project_root.join(RECOVERY_FILE_PATH);
     if recovery_path.exists() {
@@ -252,8 +237,6 @@ fn cleanup_session_state(project_root: &Path) -> Result<()> {
     }
     Ok(())
 }
-
-// --- Main Application Entry Point ---
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -285,7 +268,6 @@ async fn main() -> Result<()> {
 
     let tool_provider: Arc<dyn ToolProvider> = Arc::new(CliToolProvider::new());
 
-    // --- Determine Max Iterations ---
     const DEFAULT_MAX_ITERATIONS: usize = 20;
     let max_iterations =
         env::var("VOLITION_MAX_ITERATIONS")
@@ -299,7 +281,7 @@ async fn main() -> Result<()> {
                     "Failed to parse iteration limit from environment variable. Using default."
                 );
                 e
-            }).ok() // Convert Result to Option, discarding the error after logging
+            }).ok()
             })
             .unwrap_or(DEFAULT_MAX_ITERATIONS);
 
@@ -319,11 +301,8 @@ async fn main() -> Result<()> {
         },
         "Agent iteration limit set."
     );
-    // --- End Determine Max Iterations ---
 
-    // --- Create UI Handler ---
     let ui_handler = Arc::new(CliUserInteraction);
-    // --- End Create UI Handler ---
 
     let mut messages = match load_or_initialize_session(&config, &project_root)? {
         Some(msgs) => msgs,
@@ -380,15 +359,14 @@ async fn main() -> Result<()> {
             }
         }
 
-        // Pass max_iterations and ui_handler to the session runner
         match run_agent_session(
             &config,
             &client,
             Arc::clone(&tool_provider),
             messages.clone(),
             &project_root,
-            max_iterations,          // Pass the limit
-            Arc::clone(&ui_handler), // Pass the UI handler Arc
+            max_iterations,
+            Arc::clone(&ui_handler),
         )
         .await
         {

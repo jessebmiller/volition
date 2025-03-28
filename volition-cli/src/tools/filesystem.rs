@@ -1,14 +1,11 @@
 // volition-cli/src/tools/filesystem.rs
 
-// This file now acts as a wrapper or re-exporter if needed.
-// The core logic is in volition_agent_core::tools::fs.
-
 use anyhow::Result;
 use std::path::Path;
 
-// Re-export the core function
 pub use volition_agent_core::tools::fs::list_directory_contents;
 
+// TODO: is this wrapper needed any more?
 /// Wrapper for list_directory_contents (no CLI-specific logic added).
 pub fn run_list_directory_contents(
     relative_path: &str,

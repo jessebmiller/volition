@@ -1,7 +1,7 @@
 // volition-agent-core/src/tools/search.rs
 
 use super::shell::execute_shell_command;
-use super::CommandOutput; // Import CommandOutput
+use super::CommandOutput;
 use anyhow::Result;
 use std::path::Path;
 use tracing::{debug, info};
@@ -98,7 +98,7 @@ pub async fn search_text(
     let cmd_output: CommandOutput = execute_shell_command(&full_cmd, working_dir).await?;
 
     let no_match_status = cmd_output.status == 1;
-    let no_stdout = cmd_output.stdout.trim().is_empty(); // Check trimmed stdout
+    let no_stdout = cmd_output.stdout.trim().is_empty();
 
     if no_match_status || no_stdout {
         Ok(format!(
@@ -106,7 +106,6 @@ pub async fn search_text(
             pattern, path_arg, glob_arg
         ))
     } else {
-        // Return raw stdout on success
         Ok(cmd_output.stdout.trim().to_string())
     }
 }
@@ -157,12 +156,11 @@ pub async fn find_rust_definition(
     let cmd_output: CommandOutput = execute_shell_command(&full_cmd, working_dir).await?;
 
     let no_match_status = cmd_output.status == 1;
-    let no_stdout = cmd_output.stdout.trim().is_empty(); // Check trimmed stdout
+    let no_stdout = cmd_output.stdout.trim().is_empty();
 
     if no_match_status || no_stdout {
         Ok(format!("No Rust definition found for symbol: {}", symbol))
     } else {
-        // Return raw stdout on success
         Ok(cmd_output.stdout.trim().to_string())
     }
 }
@@ -193,7 +191,6 @@ mod tests {
         assert!(result.is_ok());
         let output_str = result.unwrap();
         println!("search_text_no_matches output:\n{}", output_str);
-        // Check for the specific "No matches found" message
         assert!(
             output_str.contains("No matches found"),
             "Output should indicate no matches were found"
@@ -220,16 +217,14 @@ mod tests {
             "find_rust_definition failed: {:?}",
             result.err()
         );
-        let output_str = result.unwrap(); // This is now the raw stdout string
+        let output_str = result.unwrap();
         println!("find_rust_definition output:\n{}", output_str);
 
         let expected_line = format!("pub fn {}()", symbol);
-        // Check the raw output contains the line
         assert!(
             output_str.contains(&expected_line),
             "Output did not contain function signature"
         );
-        // Check it doesn't contain the failure message
         assert!(
             !output_str.contains("No Rust definition found"),
             "Output incorrectly stated no definition found"

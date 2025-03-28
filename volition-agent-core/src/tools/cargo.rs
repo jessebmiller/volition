@@ -1,6 +1,6 @@
 // volition-agent-core/src/tools/cargo.rs
 
-use super::CommandOutput; // Import the new struct
+use super::CommandOutput;
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -11,7 +11,6 @@ pub async fn execute_cargo_command(
     command_args: &[String],
     working_dir: &Path,
 ) -> Result<CommandOutput> {
-    // Updated return type
     let full_command_log = format!("cargo {} {}", command_name, command_args.join(" "));
     info!(
         "Executing cargo command: {} in {:?}",
@@ -33,7 +32,6 @@ pub async fn execute_cargo_command(
 
     debug!("cargo {} exit status: {}", full_command_log, status);
 
-    // Return the structured output
     Ok(CommandOutput {
         status,
         stdout,
@@ -95,7 +93,7 @@ mod tests {
 
         if working_dir != Path::new(".") {
             let result = execute_cargo_command("build", &[], &working_dir).await;
-            assert!(result.is_ok()); // Command ran, but failed
+            assert!(result.is_ok());
             let output = result.unwrap();
             println!("Output: {:?}", output);
             assert_ne!(output.status, 0);

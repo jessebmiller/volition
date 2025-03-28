@@ -8,7 +8,6 @@ use volition_agent_core::tools::cargo::execute_cargo_command as execute_cargo_co
 use volition_agent_core::tools::CommandOutput;
 
 fn get_denied_cargo_commands() -> HashSet<String> {
-    // ... (deny list unchanged)
     let mut denied = HashSet::new();
     denied.insert("login".to_string());
     denied.insert("logout".to_string());
@@ -40,7 +39,6 @@ pub async fn run_cargo_command(
     let cmd_output: CommandOutput =
         execute_cargo_command_core(command_name, command_args, working_dir).await?;
 
-    // Manually format the output string here
     let command_str = format!("cargo {} {}", command_name, command_args.join(" "));
     Ok(format!(
         "Command executed: {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",

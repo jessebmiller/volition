@@ -27,7 +27,6 @@ pub fn get_user_input(prompt: &str, options: Option<Vec<String>>) -> Result<Stri
 
 #[cfg(test)]
 mod tests {
-    // use super::*; // Unused import
 
     #[test]
     fn test_get_user_input_signature() {

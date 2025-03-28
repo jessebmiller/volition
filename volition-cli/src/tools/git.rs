@@ -8,7 +8,6 @@ use volition_agent_core::tools::git::execute_git_command as execute_git_command_
 use volition_agent_core::tools::CommandOutput;
 
 fn is_git_command_denied(command_name: &str, args: &[String]) -> bool {
-    // ... (deny list unchanged)
     let denied_commands: HashSet<&str> = [
         "push", "reset", "rebase", "checkout", "merge", "clone", "remote", "fetch", "pull",
     ]
@@ -44,7 +43,6 @@ pub async fn run_git_command(
     let cmd_output: CommandOutput =
         execute_git_command_core(command_name, command_args, working_dir).await?;
 
-    // Manually format the output string here
     let command_str = format!("git {} {}", command_name, command_args.join(" "));
     Ok(format!(
         "Command executed: {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",

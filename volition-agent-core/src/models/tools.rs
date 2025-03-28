@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
-// --- Structs for AI Tool Interaction ---
-
 /// Represents a tool call requested by the AI model within a [`ChatMessage`](super::chat::ChatMessage).
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ToolCall {
@@ -32,8 +30,6 @@ pub struct ToolFunction {
     /// The [`Agent`](crate::Agent) parses this string into a [`ToolInput`].
     pub arguments: String,
 }
-
-// --- Generic Structs for Tool Definition and Input (Core Library) ---
 
 /// Defines the schema for a tool that can be presented to the AI.
 ///
@@ -84,10 +80,10 @@ pub struct ToolParameter {
 pub enum ToolParameterType {
     String,
     Integer,
-    Number, // Represents JSON number (float or integer)
+    Number,
     Boolean,
     Array,
-    Object, // Represents a nested JSON object
+    Object,
 }
 
 /// Represents the input arguments provided for a tool execution at runtime.

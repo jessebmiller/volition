@@ -5,7 +5,6 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
-// Import core functions
 use volition_agent_core::tools::fs::{read_file as read_file_core, write_file as write_file_core};
 
 /// Wrapper for read_file (no CLI-specific logic needed).
@@ -18,7 +17,6 @@ pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) 
     let target_path_relative = PathBuf::from(relative_path);
     let absolute_target_path = working_dir.join(&target_path_relative);
 
-    // Check if path is within working directory (sandbox)
     // Note: This check uses simple path prefixing. More robust checks might be needed
     // depending on security requirements (e.g., handling symlinks).
     let is_within_project = absolute_target_path.starts_with(working_dir);
@@ -34,7 +32,6 @@ pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) 
             relative_path
         );
 
-        // --- Confirmation Logic ---
         print!(
             "{}\n{}{} ",
             format!(
@@ -65,9 +62,7 @@ pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) 
             "User approved write outside working directory: {}",
             relative_path
         );
-        // --- End Confirmation ---
     }
 
-    // If check passes or user confirms, call the core implementation
     write_file_core(relative_path, content, working_dir).await
 }

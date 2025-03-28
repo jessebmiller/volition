@@ -1,6 +1,6 @@
 // volition-agent-core/src/tools/git.rs
 
-use super::CommandOutput; // Import the new struct
+use super::CommandOutput;
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -11,7 +11,6 @@ pub async fn execute_git_command(
     command_args: &[String],
     working_dir: &Path,
 ) -> Result<CommandOutput> {
-    // Updated return type
     let full_command_log = format!("git {} {}", command_name, command_args.join(" "));
     info!(
         "Executing git command: {} in {:?}",
@@ -33,7 +32,6 @@ pub async fn execute_git_command(
 
     debug!("git {} exit status: {}", full_command_log, status);
 
-    // Return the structured output
     Ok(CommandOutput {
         status,
         stdout,
@@ -105,7 +103,7 @@ mod tests {
         let working_dir = setup_git_repo().expect("Failed to setup git repo");
         let result =
             execute_git_command("diff", &["nonexistentcommit".to_string()], &working_dir).await;
-        assert!(result.is_ok()); // Command runs, git returns error status
+        assert!(result.is_ok());
         let output = result.unwrap();
         println!("Output: {:?}", output);
         assert_ne!(output.status, 0);

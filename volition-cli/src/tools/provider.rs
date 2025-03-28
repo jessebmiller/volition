@@ -5,27 +5,17 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::Path;
 
-// use reqwest::Client; // Removed unused import
-
 use volition_agent_core::{async_trait, models::tools::*, ToolProvider};
 
-// Import the CLI tool *wrapper* functions
 use super::{cargo, file, filesystem, git, search, shell, user_input};
 
-pub struct CliToolProvider {
-    // No fields needed currently.
-    // TODO: Consider adding back http_client if any CLI tool wrappers
-    //       (e.g., for web search, hypothetical future tool) require it.
-    // _http_client: Client,
-}
+pub struct CliToolProvider {}
 
 impl CliToolProvider {
-    // Updated constructor - no client needed for now
-    pub fn new(/* http_client: Client */) -> Self {
-        Self { /* _http_client: http_client */ }
+    pub fn new() -> Self {
+        Self {}
     }
 
-    // --- Parameter Definition Helpers ---
     fn string_param(description: &str) -> ToolParameter {
         ToolParameter {
             param_type: ToolParameterType::String,
@@ -64,7 +54,6 @@ impl CliToolProvider {
         }
     }
 }
-// --- End Parameter Definition Helpers ---
 
 #[async_trait]
 impl ToolProvider for CliToolProvider {
@@ -282,8 +271,6 @@ impl ToolProvider for CliToolProvider {
         );
         let args = input.arguments;
 
-        // Call the appropriate CLI wrapper function which includes safety checks / interaction
-        // These wrappers then call the core tool implementations
         match tool_name {
             "shell" => {
                 let command: String = get_required_arg(&args, "command")?;
@@ -357,7 +344,6 @@ impl ToolProvider for CliToolProvider {
     }
 }
 
-// --- Argument Extraction Helpers ---
 fn get_required_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
@@ -397,4 +383,3 @@ where
         None => Ok(None),
     }
 }
-// --- End Argument Extraction Helpers ---

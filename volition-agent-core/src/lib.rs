@@ -90,16 +90,16 @@ pub struct Agent<UI: UserInteraction> {
     tool_provider: Arc<dyn ToolProvider>,
     http_client: Client,
     ui_handler: Arc<UI>,
-    initial_max_iterations: usize, // Add field to store the limit
+    initial_max_iterations: usize,
 }
 
-impl<UI: UserInteraction + 'static> Agent<UI> { // Add 'static bound for Arc
+impl<UI: UserInteraction + 'static> Agent<UI> {
     /// Creates a new `Agent` instance.
     pub fn new(
         config: RuntimeConfig,
         tool_provider: Arc<dyn ToolProvider>,
-        ui_handler: Arc<UI>,      // Add parameter
-        max_iterations: usize, // Add parameter for max iterations
+        ui_handler: Arc<UI>,
+        max_iterations: usize,
     ) -> Result<Self> {
         let http_client = Client::builder()
             .build()
@@ -109,14 +109,14 @@ impl<UI: UserInteraction + 'static> Agent<UI> { // Add 'static bound for Arc
             tool_provider,
             http_client,
             ui_handler,
-            initial_max_iterations: max_iterations, // Store the provided limit
+            initial_max_iterations: max_iterations,
         })
     }
 
     /// Runs the agent based on the provided message history.
     pub async fn run(
         &self,
-        mut messages: Vec<ChatMessage>, // Takes ownership and makes mutable
+        mut messages: Vec<ChatMessage>,
         working_dir: &Path,
     ) -> Result<AgentOutput> {
 
@@ -152,7 +152,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> { // Add 'static bound for Arc
                     (The initial limit is configured when the agent starts)",
                 );
 
-                // Provide options for clarity, though the handler might interpret directly TODO: consider alternatives
                 let options = vec!["Yes".to_string(), "No".to_string()];
 
                 match self.ui_handler.ask(prompt, options).await {
@@ -161,12 +160,11 @@ impl<UI: UserInteraction + 'static> Agent<UI> { // Add 'static bound for Arc
                         if response_lower.is_empty() || response_lower == "yes" || response_lower == "y" {
                             info!(additional = additional_iterations, new_limit = current_iteration_limit + additional_iterations, "User chose to continue agent run.");
                             current_iteration_limit += additional_iterations;
-                            // Allow loop to continue with the increased limit
                         } else {
                             info!("User chose to stop agent run at iteration limit.");
                             return Err(anyhow!(
                                 "Agent stopped by user after reaching iteration limit ({})",
-                                iteration // Report the limit that was actually hit
+                                iteration
                             ));
                         }
                     }
@@ -363,8 +361,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> { // Add 'static bound for Arc
     }
 }
 
-// --- Modules ---
-// Ensure the models module definition is present if required
 pub mod models {
     pub mod chat;
     pub mod tools;

@@ -9,7 +9,6 @@ use volition_agent_core::tools::shell::execute_shell_command as execute_shell_co
 use volition_agent_core::tools::CommandOutput;
 
 pub async fn run_shell_command(command: &str, working_dir: &Path) -> Result<String> {
-    // --- Mandatory Confirmation ---
     print!(
         "{}\n{}\n{}{} ",
         "WARNING: This tool can execute arbitrary code!"
@@ -34,13 +33,11 @@ pub async fn run_shell_command(command: &str, working_dir: &Path) -> Result<Stri
             command
         ));
     }
-    // --- End Confirmation ---
 
     println!("{} {}", "Running:".blue().bold(), command);
 
     let cmd_output: CommandOutput = execute_shell_command_core(command, working_dir).await?;
 
-    // Manually format the output string here
     let shell_executable = if cfg!(target_os = "windows") {
         "cmd"
     } else {

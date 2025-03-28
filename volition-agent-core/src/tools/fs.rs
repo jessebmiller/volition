@@ -6,8 +6,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
-// --- Read File ---
-
 pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String> {
     let absolute_path = working_dir.join(relative_path);
     info!("Reading file (absolute): {:?}", absolute_path);
@@ -16,8 +14,6 @@ pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String
     info!("Read {} bytes from file", content.len());
     Ok(content)
 }
-
-// --- Write File ---
 
 pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) -> Result<String> {
     let target_path_relative = PathBuf::from(relative_path);
@@ -43,8 +39,6 @@ pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) 
 
     Ok(format!("Successfully wrote to file: {}", relative_path))
 }
-
-// --- List Directory ---
 
 pub fn list_directory_contents(
     relative_path: &str,
@@ -124,11 +118,9 @@ pub fn list_directory_contents(
 mod tests {
     use super::*;
     use std::fs::{self, File};
-    // use std::io::Write; // Unused import
     use tempfile::tempdir;
     use tokio;
 
-    // --- read_file tests ---
     #[tokio::test]
     async fn test_fs_read_file_success() {
         let dir = tempdir().unwrap();
@@ -149,7 +141,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // --- write_file tests ---
     #[tokio::test]
     async fn test_fs_write_file_success_new() {
         let dir = tempdir().unwrap();
@@ -177,7 +168,6 @@ mod tests {
         assert_eq!(read_content, content_to_write);
     }
 
-    // --- list_directory_contents tests ---
     fn sort_lines(text: &str) -> Vec<&str> {
         let mut lines: Vec<&str> = text.lines().collect();
         lines.sort();
