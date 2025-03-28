@@ -3,7 +3,6 @@
 use super::shell::execute_shell_command;
 use anyhow::{Result};
 use std::path::Path;
-// use std::process::{Command, Stdio}; // Removed unused imports
 use tracing::{debug, info};
 
 #[cfg(not(test))]
@@ -175,6 +174,8 @@ mod tests {
     }
 
      #[tokio::test]
+     // Ignore this test as it relies on rg being installed and specific shell/rg behavior
+     #[ignore = "Relies on external rg command and shell execution details"]
     async fn test_find_rust_definition_found_in_test_file() -> Result<()> {
         let symbol = "find_this_test_fn_abc"; 
         let working_dir = test_working_dir();
