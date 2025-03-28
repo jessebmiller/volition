@@ -10,12 +10,12 @@ pub async fn execute_cargo_command(
     command_name: &str,
     command_args: &[String],
     working_dir: &Path,
-) -> Result<CommandOutput> { // Updated return type
+) -> Result<CommandOutput> {
+    // Updated return type
     let full_command_log = format!("cargo {} {}", command_name, command_args.join(" "));
     info!(
         "Executing cargo command: {} in {:?}",
-        full_command_log,
-        working_dir
+        full_command_log, working_dir
     );
 
     let output = Command::new("cargo")
@@ -75,7 +75,10 @@ mod tests {
         let output = result.unwrap();
         println!("Output: {:?}", output);
         assert_eq!(output.status, 0);
-        assert!(output.stderr.contains("Checking test_crate") || output.stderr.contains("Checking volition"));
+        assert!(
+            output.stderr.contains("Checking test_crate")
+                || output.stderr.contains("Checking volition")
+        );
         assert!(output.stderr.contains("Finished `dev` profile"));
     }
 
@@ -96,7 +99,9 @@ mod tests {
             let output = result.unwrap();
             println!("Output: {:?}", output);
             assert_ne!(output.status, 0);
-            assert!(output.stderr.contains("no targets specified in the manifest"));
+            assert!(output
+                .stderr
+                .contains("no targets specified in the manifest"));
         }
     }
 }

@@ -37,7 +37,7 @@ pub async fn run_cargo_command(
         ));
     }
 
-    let cmd_output: CommandOutput = 
+    let cmd_output: CommandOutput =
         execute_cargo_command_core(command_name, command_args, working_dir).await?;
 
     // Manually format the output string here
@@ -46,7 +46,15 @@ pub async fn run_cargo_command(
         "Command executed: {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
         command_str,
         cmd_output.status,
-        if cmd_output.stdout.is_empty() { "<no output>" } else { &cmd_output.stdout },
-        if cmd_output.stderr.is_empty() { "<no output>" } else { &cmd_output.stderr }
+        if cmd_output.stdout.is_empty() {
+            "<no output>"
+        } else {
+            &cmd_output.stdout
+        },
+        if cmd_output.stderr.is_empty() {
+            "<no output>"
+        } else {
+            &cmd_output.stderr
+        }
     ))
 }

@@ -13,10 +13,10 @@ mod agent_tests;
 use anyhow::{anyhow, Context, Result};
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{debug, info, error};
+use tracing::{debug, error, info};
 
 pub use config::{ModelConfig, RuntimeConfig};
-pub use models::chat::{ApiResponse, Choice, ChatMessage};
+pub use models::chat::{ApiResponse, ChatMessage, Choice};
 pub use models::tools::{
     ToolCall, ToolDefinition, ToolFunction, ToolInput, ToolParameter, ToolParameterType,
     ToolParametersDefinition,
@@ -30,7 +30,12 @@ pub trait ToolProvider: Send + Sync {
     /// Returns the definitions of all tools available.
     fn get_tool_definitions(&self) -> Vec<ToolDefinition>;
     /// Executes the tool with the given name and input arguments.
-    async fn execute_tool(&self, tool_name: &str, input: ToolInput, working_dir: &Path) -> Result<String>;
+    async fn execute_tool(
+        &self,
+        tool_name: &str,
+        input: ToolInput,
+        working_dir: &Path,
+    ) -> Result<String>;
 }
 
 /// Represents the final output of an [`Agent::run`] execution.

@@ -1,11 +1,11 @@
 // volition-agent-core/src/tools/mod.rs
 
 //! Contains implementations for standard, non-interactive tools.
-//! 
+//!
 //! These functions provide the core logic for interacting with external commands
 //! (shell, git, cargo), the filesystem, and performing searches.
 //! They are designed as reusable building blocks for `ToolProvider` implementations.
-//! 
+//!
 //! **Important:** These functions generally do *not* include safety checks
 //! (like command argument validation, file path sandboxing) or user interaction
 //! (like confirmation prompts). Callers, typically `ToolProvider` implementations,

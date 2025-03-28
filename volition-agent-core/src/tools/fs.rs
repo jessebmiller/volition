@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
-// --- Read File --- 
+// --- Read File ---
 
 pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String> {
     let absolute_path = working_dir.join(relative_path);
@@ -17,13 +17,9 @@ pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String
     Ok(content)
 }
 
-// --- Write File --- 
+// --- Write File ---
 
-pub async fn write_file(
-    relative_path: &str,
-    content: &str,
-    working_dir: &Path,
-) -> Result<String> {
+pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) -> Result<String> {
     let target_path_relative = PathBuf::from(relative_path);
     let absolute_target_path = working_dir.join(&target_path_relative);
 
@@ -48,7 +44,7 @@ pub async fn write_file(
     Ok(format!("Successfully wrote to file: {}", relative_path))
 }
 
-// --- List Directory --- 
+// --- List Directory ---
 
 pub fn list_directory_contents(
     relative_path: &str,
@@ -66,10 +62,7 @@ pub fn list_directory_contents(
     }
     debug!(
         "Listing directory contents for {:?} (relative path: {}), depth: {:?}, hidden: {}",
-        start_path,
-        relative_path,
-        max_depth,
-        show_hidden
+        start_path, relative_path, max_depth, show_hidden
     );
 
     let mut output = String::new();
@@ -111,7 +104,7 @@ pub fn list_directory_contents(
                     }
                     Err(_) => {
                         output.push_str(&entry.path().display().to_string());
-                         if entry.file_type().is_some_and(|ft| ft.is_dir()) {
+                        if entry.file_type().is_some_and(|ft| ft.is_dir()) {
                             output.push('/');
                         }
                         output.push('\n');
@@ -203,7 +196,7 @@ mod tests {
         Ok(())
     }
 
-     #[test]
+    #[test]
     fn test_fs_list_depth() -> Result<()> {
         let dir = tempdir()?;
         let wd = dir.path();

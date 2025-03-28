@@ -37,18 +37,34 @@ pub async fn run_shell_command(command: &str, working_dir: &Path) -> Result<Stri
     // --- End Confirmation ---
 
     println!("{} {}", "Running:".blue().bold(), command);
-    
+
     let cmd_output: CommandOutput = execute_shell_command_core(command, working_dir).await?;
 
     // Manually format the output string here
-    let shell_executable = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
-    let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+    let shell_executable = if cfg!(target_os = "windows") {
+        "cmd"
+    } else {
+        "sh"
+    };
+    let shell_arg = if cfg!(target_os = "windows") {
+        "/C"
+    } else {
+        "-c"
+    };
     let command_str_for_ai = format!("{} {} {}", shell_executable, shell_arg, command);
     Ok(format!(
         "Command executed: {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
         command_str_for_ai,
         cmd_output.status,
-        if cmd_output.stdout.is_empty() { "<no output>" } else { &cmd_output.stdout },
-        if cmd_output.stderr.is_empty() { "<no output>" } else { &cmd_output.stderr }
+        if cmd_output.stdout.is_empty() {
+            "<no output>"
+        } else {
+            &cmd_output.stdout
+        },
+        if cmd_output.stderr.is_empty() {
+            "<no output>"
+        } else {
+            &cmd_output.stderr
+        }
     ))
 }

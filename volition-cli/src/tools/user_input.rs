@@ -8,7 +8,7 @@ pub fn get_user_input(prompt: &str, options: Option<Vec<String>>) -> Result<Stri
 
     if let Some(ref options_vec) = options {
         if !options_vec.is_empty() {
-             for (idx, option) in options_vec.iter().enumerate() {
+            for (idx, option) in options_vec.iter().enumerate() {
                 println!("  {}. {}", idx + 1, option);
             }
             println!();

@@ -76,10 +76,7 @@ impl RuntimeConfig {
     /// * Any model definition is missing `model_name` or `endpoint`.
     /// * Any model endpoint URL is invalid.
     /// * Any model `parameters` field is not a TOML table.
-    pub fn from_toml_str(
-        config_toml_content: &str,
-        api_key: String,
-    ) -> Result<RuntimeConfig> {
+    pub fn from_toml_str(config_toml_content: &str, api_key: String) -> Result<RuntimeConfig> {
         if api_key.is_empty() {
             return Err(anyhow!("Provided API key is empty."));
         }
@@ -104,13 +101,13 @@ impl RuntimeConfig {
             ));
         }
         if config.models.is_empty() {
-            return Err(anyhow!(
-                "The [models] section in config content is empty."
-            ));
+            return Err(anyhow!("The [models] section in config content is empty."));
         }
 
         // Check selected model exists
-        config.selected_model_config().context("Validation failed for selected model")?;
+        config
+            .selected_model_config()
+            .context("Validation failed for selected model")?;
 
         for (key, model) in &config.models {
             if model.model_name.trim().is_empty() {
@@ -128,12 +125,14 @@ impl RuntimeConfig {
             Url::parse(&model.endpoint).with_context(|| {
                 format!(
                     "Invalid URL format for endpoint ('{}') in model definition '{}'.",
-                    model.endpoint,
-                    key
+                    model.endpoint, key
                 )
             })?;
-            if !model.parameters.is_table() && !model.parameters.is_str() && model.parameters.as_str() != Some("{}") {
-                 return Err(anyhow!(
+            if !model.parameters.is_table()
+                && !model.parameters.is_str()
+                && model.parameters.as_str() != Some("{}")
+            {
+                return Err(anyhow!(
                     "Model definition '{}' has invalid 'parameters'. Expected a TOML table.",
                     key
                 ));
@@ -170,7 +169,8 @@ mod tests {
             model_name = "llama3"
             endpoint = "http://localhost:11434/api"
             parameters = { top_p = 0.9 }
-        "#.to_string()
+        "#
+        .to_string()
     }
 
     fn create_dummy_runtime_config(
@@ -202,7 +202,8 @@ mod tests {
 
     #[test]
     fn test_selected_model_config_failure() {
-        let config = create_dummy_runtime_config("nonexistent", HashMap::new(), "dummy".to_string());
+        let config =
+            create_dummy_runtime_config("nonexistent", HashMap::new(), "dummy".to_string());
         let selected = config.selected_model_config();
         assert!(selected.is_err());
         let err_msg = selected.err().unwrap().to_string();
@@ -226,7 +227,11 @@ mod tests {
         let content = valid_config_content();
         let result = RuntimeConfig::from_toml_str(&content, "".to_string());
         assert!(result.is_err());
-        assert!(result.err().unwrap().to_string().contains("Provided API key is empty"));
+        assert!(result
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("Provided API key is empty"));
     }
 
     #[test]
@@ -234,7 +239,11 @@ mod tests {
         let content = "this is not valid toml";
         let result = RuntimeConfig::from_toml_str(content, "dummy_key".to_string());
         assert!(result.is_err());
-        assert!(result.err().unwrap().to_string().contains("Failed to parse configuration TOML content"));
+        assert!(result
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("Failed to parse configuration TOML content"));
     }
 
     #[test]
@@ -251,7 +260,7 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         println!("test_from_toml_str_missing_selected_key Error: {}", err_msg);
-        assert!(err_msg.contains("Validation failed for selected model")); 
+        assert!(err_msg.contains("Validation failed for selected model"));
     }
 
     #[test]

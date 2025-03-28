@@ -10,7 +10,8 @@ pub async fn execute_git_command(
     command_name: &str,
     command_args: &[String],
     working_dir: &Path,
-) -> Result<CommandOutput> { // Updated return type
+) -> Result<CommandOutput> {
+    // Updated return type
     let full_command_log = format!("git {} {}", command_name, command_args.join(" "));
     info!(
         "Executing git command: {} in {:?}",
@@ -83,7 +84,9 @@ mod tests {
         let output = result.unwrap();
         println!("Output: {:?}", output);
         assert_eq!(output.status, 0);
-        assert!(output.stdout.contains("nothing to commit, working tree clean"));
+        assert!(output
+            .stdout
+            .contains("nothing to commit, working tree clean"));
     }
 
     #[tokio::test]

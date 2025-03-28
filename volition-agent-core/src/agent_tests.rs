@@ -2,9 +2,9 @@
 #![cfg(test)]
 
 use super::*;
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use httpmock::prelude::*;
@@ -21,7 +21,10 @@ struct MockToolProvider {
 }
 
 impl MockToolProvider {
-    fn new(definitions: Vec<ToolDefinition>, outputs: HashMap<String, Result<String, String>>) -> Self {
+    fn new(
+        definitions: Vec<ToolDefinition>,
+        outputs: HashMap<String, Result<String, String>>,
+    ) -> Self {
         Self {
             call_log: Arc::new(Mutex::new(Vec::new())),
             outputs,
@@ -56,14 +59,25 @@ impl ToolProvider for MockToolProvider {
         self.definitions.clone()
     }
 
-    async fn execute_tool(&self, tool_name: &str, input: ToolInput, _working_dir: &Path) -> Result<String> {
+    async fn execute_tool(
+        &self,
+        tool_name: &str,
+        input: ToolInput,
+        _working_dir: &Path,
+    ) -> Result<String> {
         let input_json = serde_json::to_string(&input.arguments).unwrap_or_default();
-        self.call_log.lock().unwrap().push((tool_name.to_string(), input_json));
+        self.call_log
+            .lock()
+            .unwrap()
+            .push((tool_name.to_string(), input_json));
 
         match self.outputs.get(tool_name) {
             Some(Ok(output)) => Ok(output.clone()),
             Some(Err(e)) => Err(anyhow!("{}", e.clone())),
-            None => Err(anyhow!("MockToolProvider: No output defined for tool '{}'", tool_name)),
+            None => Err(anyhow!(
+                "MockToolProvider: No output defined for tool '{}'",
+                tool_name
+            )),
         }
     }
 }
@@ -237,7 +251,7 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     assert_eq!(calls[0].1, tool_args.to_string());
 
     // Removed assertion for suggested_summary
-    // assert!(agent_output.suggested_summary.is_some()); 
+    // assert!(agent_output.suggested_summary.is_some());
     assert_eq!(agent_output.applied_tool_results.len(), 1);
     let tool_result = &agent_output.applied_tool_results[0];
     assert_eq!(tool_result.tool_call_id, tool_call_id);

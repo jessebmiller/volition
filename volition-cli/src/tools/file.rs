@@ -6,10 +6,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 // Import core functions
-use volition_agent_core::tools::fs::{
-    read_file as read_file_core,
-    write_file as write_file_core,
-};
+use volition_agent_core::tools::fs::{read_file as read_file_core, write_file as write_file_core};
 
 /// Wrapper for read_file (no CLI-specific logic needed).
 pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String> {
@@ -17,11 +14,7 @@ pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String
 }
 
 /// Wrapper for write_file, includes CLI-specific confirmation for writes outside working_dir.
-pub async fn write_file(
-    relative_path: &str,
-    content: &str,
-    working_dir: &Path,
-) -> Result<String> {
+pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) -> Result<String> {
     let target_path_relative = PathBuf::from(relative_path);
     let absolute_target_path = working_dir.join(&target_path_relative);
 
@@ -61,11 +54,17 @@ pub async fn write_file(
             .context("Failed to read user input")?;
 
         if user_choice.trim().to_lowercase() != "y" {
-            warn!("User denied write to outside working directory: {}", relative_path);
+            warn!(
+                "User denied write to outside working directory: {}",
+                relative_path
+            );
             println!("{}", "File write denied.".red());
             return Ok(format!("File write denied by user: {}", relative_path));
         }
-        info!("User approved write outside working directory: {}", relative_path);
+        info!(
+            "User approved write outside working directory: {}",
+            relative_path
+        );
         // --- End Confirmation ---
     }
 

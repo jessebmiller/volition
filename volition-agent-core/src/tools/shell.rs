@@ -33,14 +33,19 @@ use tracing::{debug, warn};
 ///
 /// A `Result` containing a [`CommandOutput`] struct with the status, stdout, and stderr,
 /// or an error if the process failed to spawn.
-pub async fn execute_shell_command(
-    command: &str,
-    working_dir: &Path,
-) -> Result<CommandOutput> {
+pub async fn execute_shell_command(command: &str, working_dir: &Path) -> Result<CommandOutput> {
     debug!("Executing shell command: {} in {:?}", command, working_dir);
 
-    let shell_executable = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
-    let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+    let shell_executable = if cfg!(target_os = "windows") {
+        "cmd"
+    } else {
+        "sh"
+    };
+    let shell_arg = if cfg!(target_os = "windows") {
+        "/C"
+    } else {
+        "-c"
+    };
 
     let output_result = Command::new(shell_executable)
         .current_dir(working_dir)

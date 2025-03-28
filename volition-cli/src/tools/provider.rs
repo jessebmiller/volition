@@ -7,9 +7,7 @@ use std::path::Path;
 
 // use reqwest::Client; // Removed unused import
 
-use volition_agent_core::{
-    async_trait, models::tools::*, ToolProvider,
-};
+use volition_agent_core::{async_trait, models::tools::*, ToolProvider};
 
 // Import the CLI tool *wrapper* functions
 use super::{cargo, file, filesystem, git, search, shell, user_input};
