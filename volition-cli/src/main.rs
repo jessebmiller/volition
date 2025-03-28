@@ -12,24 +12,22 @@ use std::{
 };
 use tokio::time::Duration;
 
-// Use types from the core library
 use volition_agent_core::{
-    // api::chat_with_api, // No longer called directly
     config::{load_runtime_config, RuntimeConfig},
-    models::chat::ResponseMessage,
+    // Updated import: ResponseMessage -> ChatMessage
+    models::chat::ChatMessage,
     ToolProvider,
     Agent,
-    // AgentOutput, // Only used within Agent::run result
 };
 
 use crate::models::cli::Cli;
 use crate::rendering::print_formatted;
-use crate::tools::CliToolProvider; // Import only the provider
+use crate::tools::CliToolProvider;
 
 use clap::Parser;
 use reqwest::Client;
 use std::sync::Arc;
-use tracing::{error, info, warn, Level}; // Removed unused debug
+use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
@@ -46,10 +44,12 @@ fn print_welcome_message() {
 /// Returns Ok(Some((messages, goal))) or Ok(None) if user exits.
 fn load_or_initialize_session(
     config: &RuntimeConfig,
-) -> Result<Option<(Vec<ResponseMessage>, String)>> {
+    // Updated type: ResponseMessage -> ChatMessage
+) -> Result<Option<(Vec<ChatMessage>, String)>> {
     let recovery_path = Path::new(RECOVERY_FILE_PATH);
-    let mut messages_option: Option<Vec<ResponseMessage>> = None;
-    let initial_goal: Option<String>; // Assign directly
+    // Updated type: ResponseMessage -> ChatMessage
+    let mut messages_option: Option<Vec<ChatMessage>> = None;
+    let initial_goal: Option<String>;
 
     if recovery_path.exists() {
         info!(
@@ -69,6 +69,7 @@ fn load_or_initialize_session(
         if user_choice.trim().to_lowercase() != "n" {
             match fs::read_to_string(recovery_path) {
                 Ok(state_json) => match serde_json::from_str(&state_json) {
+                    // Updated type: ResponseMessage -> ChatMessage
                     Ok(loaded_messages) => {
                         messages_option = Some(loaded_messages);
                         info!("Successfully resumed session from state file.");
@@ -77,19 +78,13 @@ fn load_or_initialize_session(
                     }
                     Err(e) => {
                         error!("Failed to deserialize state file: {}. Starting fresh.", e);
-                        println!(
-                            "{}",
-                            "Error reading state file. Starting a fresh session.".red()
-                        );
+                        println!("{}", "Error reading state file. Starting fresh.".red());
                         let _ = fs::remove_file(recovery_path);
                     }
                 },
                 Err(e) => {
                     error!("Failed to read state file: {}. Starting fresh.", e);
-                    println!(
-                        "{}",
-                        "Error reading state file. Starting a fresh session.".red()
-                    );
+                    println!("{}", "Error reading state file. Starting fresh.".red());
                     let _ = fs::remove_file(recovery_path);
                 }
             }
@@ -112,14 +107,13 @@ fn load_or_initialize_session(
             return Ok(None);
         }
         initial_goal = Some(trimmed_input.to_string());
-        messages_option = Some(vec![ResponseMessage {
+        // Use ChatMessage
+        messages_option = Some(vec![ChatMessage {
             role: "system".to_string(),
             content: Some(config.system_prompt.clone()),
-            tool_calls: None,
-            tool_call_id: None,
+            ..Default::default()
         }]);
     } else {
-        // If resuming, ask for goal
         println!("{}", "What is the main goal for this resumed session?".cyan());
         print!("{} ", ">".green().bold());
         io::stdout().flush()?;
@@ -143,9 +137,9 @@ fn load_or_initialize_session(
 
 async fn run_agent_session(
     config: &RuntimeConfig,
-    _client: &Client, // Mark as unused
+    _client: &Client,
     tool_provider: Arc<dyn ToolProvider>,
-    _initial_messages: Vec<ResponseMessage>, // Mark as unused
+    _initial_messages: Vec<ChatMessage>, // Updated type
     initial_goal: String,
 ) -> Result<()> {
     let agent = Agent::new(config.clone(), Arc::clone(&tool_provider))
@@ -234,14 +228,12 @@ async fn main() -> Result<()> {
         .build()
         .context("Failed to build HTTP client")?;
 
-    // Pass client clone to provider
     let tool_provider = Arc::new(CliToolProvider::new(client.clone()));
 
     print_welcome_message();
 
     match load_or_initialize_session(&config)? {
         Some((initial_messages, initial_goal)) => {
-            // Mark error as unused if not handling it specifically here
             if let Err(_e) = run_agent_session(
                 &config,
                 &client,

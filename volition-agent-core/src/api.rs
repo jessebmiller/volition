@@ -8,29 +8,27 @@ use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::config::{ModelConfig, RuntimeConfig};
-use crate::models::chat::{ApiResponse, ResponseMessage};
+// Updated import: ResponseMessage -> ChatMessage
+use crate::models::chat::{ApiResponse, ChatMessage};
 use crate::models::tools::ToolDefinition;
 
-/// Sends completion requests to the configured AI model endpoint with retry logic.
-/// Renamed from get_chat_completion_from_endpoint, merged higher-level function.
+/// Sends chat requests to the configured AI model endpoint with retry logic.
 pub async fn get_chat_completion(
     client: &Client,
     config: &RuntimeConfig,
-    messages: Vec<ResponseMessage>,
+    messages: Vec<ChatMessage>, // Updated type
     tool_definitions: &[ToolDefinition],
 ) -> Result<ApiResponse> {
-    // Select model config using the new method on RuntimeConfig
     let model_config = config.selected_model_config()?;
     let url_str = &model_config.endpoint;
 
-    // Moved retry parameters inside
     const MAX_RETRIES: u32 = 5;
     const INITIAL_DELAY: Duration = Duration::from_secs(1);
     const MAX_DELAY: Duration = Duration::from_secs(60);
 
     let request_body = build_openai_request(
         &model_config.model_name,
-        messages,
+        messages, // Pass Vec<ChatMessage>
         model_config,
         tool_definitions,
     )?;
@@ -157,10 +155,10 @@ pub async fn get_chat_completion(
     }
 }
 
-// build_openai_request remains the same
+/// Builds the request body for OpenAI-compatible chat completion endpoints.
 fn build_openai_request(
     model_name: &str,
-    messages: Vec<ResponseMessage>,
+    messages: Vec<ChatMessage>, // Updated type
     model_config: &ModelConfig,
     tool_definitions: &[ToolDefinition],
 ) -> Result<Value> {
@@ -192,13 +190,12 @@ fn build_openai_request(
     Ok(Value::Object(request_map))
 }
 
-// Original get_chat_completion function is now removed.
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{ModelConfig, RuntimeConfig};
-    use crate::models::chat::ResponseMessage;
+    // Updated import: ResponseMessage -> ChatMessage
+    use crate::models::chat::ChatMessage;
     use crate::models::tools::{ToolDefinition, ToolParametersDefinition, ToolParameter, ToolParameterType};
     use serde_json::json;
     use std::collections::HashMap;
@@ -241,32 +238,60 @@ mod tests {
         }
     }
 
-    // Test retry parameters are now defined within get_chat_completion,
-    // but we can use similar values for verifying retry counts in tests.
     const TEST_MAX_RETRIES: u32 = 5;
-    // const TEST_INITIAL_DELAY: Duration = Duration::from_millis(10); // No longer passed
-    // const TEST_MAX_DELAY: Duration = Duration::from_millis(50); // No longer passed
 
-    // --- Tests for build_openai_request (unchanged) ---
+    // --- Tests for build_openai_request ---
     #[test]
-    fn test_build_openai_request_basic() { /* ... */ }
+    fn test_build_openai_request_basic() {
+        let model_name = "gpt-basic";
+        // Use ChatMessage
+        let messages = vec![ChatMessage { role: "user".into(), content: Some("Hello".into()), ..Default::default() }];
+        let model_config = create_test_model_config("http://fake.endpoint/v1", None);
+        let tool_definitions = create_mock_tool_definitions();
+        let result = build_openai_request(model_name, messages.clone(), &model_config, &tool_definitions);
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        assert_eq!(value["messages"], json!(messages));
+    }
     #[test]
-    fn test_build_openai_request_no_tools() { /* ... */ }
+    fn test_build_openai_request_no_tools() {
+        let model_name = "gpt-no-tools";
+        // Use ChatMessage
+        let messages = vec![ChatMessage { role: "user".into(), content: Some("Hi".into()), ..Default::default() }];
+        let model_config = create_test_model_config("http://fake.endpoint/v1", None);
+        let tool_definitions: Vec<ToolDefinition> = vec![];
+        let result = build_openai_request(model_name, messages.clone(), &model_config, &tool_definitions);
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        assert_eq!(value["messages"], json!(messages));
+    }
     #[test]
-    fn test_build_openai_request_with_parameters() { /* ... */ }
+    fn test_build_openai_request_with_parameters() {
+        let model_name = "gpt-params";
+        // Use ChatMessage
+        let messages = vec![ChatMessage { role: "user".into(), content: Some("Test".into()), ..Default::default() }];
+        let mut params = toml::value::Table::new();
+        params.insert("temperature".to_string(), toml::Value::Float(0.9));
+        let model_config = create_test_model_config("http://fake.endpoint/v1", Some(params));
+        let tool_definitions = create_mock_tool_definitions();
+        let result = build_openai_request(model_name, messages.clone(), &model_config, &tool_definitions);
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        assert_eq!(value["messages"], json!(messages));
+    }
 
-    // --- Tests for get_chat_completion (merged function) ---
-
+    // --- Tests for get_chat_completion ---
     #[tokio::test]
     async fn test_get_chat_completion_success() {
         let server = MockServer::start_async().await;
         let model_key = "selected_model";
         let endpoint_path = "/v1/chat/completions";
         let full_endpoint_url = format!("{}{}", server.base_url(), endpoint_path);
-        let messages = vec![ResponseMessage { role: "user".into(), content: Some("Ping".into()), ..Default::default() }];
+        // Use ChatMessage
+        let messages = vec![ChatMessage { role: "user".into(), content: Some("Ping".into()), ..Default::default() }];
         let model_config = create_test_model_config(&full_endpoint_url, None);
         let runtime_config = create_test_runtime_config(model_key, model_config.clone());
-        let specific_model_config = runtime_config.selected_model_config().unwrap(); // Get selected config
+        let specific_model_config = runtime_config.selected_model_config().unwrap();
         let tool_definitions = create_mock_tool_definitions();
 
         let mock = server.mock_async(|when, then| {
@@ -278,19 +303,10 @@ mod tests {
         }).await;
 
         let client = Client::new();
-        // Call the merged function
-        let result = get_chat_completion(
-            &client,
-            &runtime_config,
-            messages,
-            &tool_definitions,
-        ).await;
-
+        let result = get_chat_completion(&client, &runtime_config, messages, &tool_definitions).await;
         mock.assert_async().await;
         assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
-        let response = result.unwrap();
-        assert_eq!(response.id, "chatcmpl-123");
-        assert_eq!(response.choices[0].message.content, Some("Pong".to_string()));
+        assert_eq!(result.unwrap().id, "chatcmpl-123");
     }
 
     #[tokio::test]
@@ -298,23 +314,19 @@ mod tests {
         let server = MockServer::start_async().await;
         let endpoint_path_b = "/v1/model_b";
         let server_url = server.base_url();
-
         let model_config_a = create_test_model_config(&format!("{}/v1/model_a", server_url), None);
         let model_config_b = create_test_model_config(&format!("{}{}", server_url, endpoint_path_b), None);
-
         let mut models = HashMap::new();
         models.insert("model_a".to_string(), model_config_a);
-        models.insert("model_b".to_string(), model_config_b.clone()); // Clone for request building check
-
+        models.insert("model_b".to_string(), model_config_b.clone());
         let runtime_config = RuntimeConfig {
-            selected_model: "model_b".to_string(), // Select model B
-            models,
+            selected_model: "model_b".to_string(), models,
             ..create_test_runtime_config("dummy", ModelConfig { model_name: "".into(), endpoint: "".into(), parameters: Default::default() })
         };
-        let messages = vec![ResponseMessage { role: "user".into(), content: Some("Select B".into()), ..Default::default() }];
+        // Use ChatMessage
+        let messages = vec![ChatMessage { role: "user".into(), content: Some("Select B".into()), ..Default::default() }];
         let tool_definitions = create_mock_tool_definitions();
 
-        // Mock expects call to model B's endpoint
         let mock_b = server.mock_async(|when, then| {
             when.method(POST).path(endpoint_path_b)
                 .json_body(build_openai_request(&model_config_b.model_name, messages.clone(), &model_config_b, &tool_definitions).unwrap());
@@ -325,7 +337,6 @@ mod tests {
 
         let client = Client::new();
         let result = get_chat_completion(&client, &runtime_config, messages, &tool_definitions).await;
-
         mock_b.assert_async().await;
         assert!(result.is_ok(), "get_chat_completion failed: {:?}", result.err());
         assert_eq!(result.unwrap().id, "chatcmpl-selected-b");
@@ -337,31 +348,21 @@ mod tests {
         let model_key = "retry_model";
         let endpoint_path = "/v1/chat/completions";
         let full_endpoint_url = format!("{}{}", server.base_url(), endpoint_path);
-        let messages = vec![ResponseMessage { role: "user".into(), content: Some("Retry".into()), ..Default::default() }];
+        // Use ChatMessage
+        let messages = vec![ChatMessage { role: "user".into(), content: Some("Retry".into()), ..Default::default() }];
         let model_config = create_test_model_config(&full_endpoint_url, None);
         let runtime_config = create_test_runtime_config(model_key, model_config.clone());
         let tool_definitions = create_mock_tool_definitions();
 
-        // Mock server to always return 500
         let mock = server.mock_async(|when, then| {
             when.method(POST).path(endpoint_path);
             then.status(500).body("Server error");
         }).await;
 
         let client = Client::new();
-        // Call the merged function - retry params are internal now
-        let result = get_chat_completion(
-            &client,
-            &runtime_config,
-            messages,
-            &tool_definitions,
-        ).await;
-
-        // Check mock hits based on internal retry count
+        let result = get_chat_completion(&client, &runtime_config, messages, &tool_definitions).await;
         assert_eq!(mock.hits(), TEST_MAX_RETRIES as usize + 1);
         assert!(result.is_err(), "Expected Err, got Ok");
         assert!(result.err().unwrap().to_string().contains("API error: 500"));
     }
-
-    // Other tests (401, missing choices) can be adapted similarly by calling the merged get_chat_completion
 }

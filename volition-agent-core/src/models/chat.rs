@@ -1,42 +1,35 @@
+// volition-agent-core/src/models/chat.rs
 use super::tools::ToolCall;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Represents a message in the chat history sequence sent to/from the AI.
+/// Can represent system, user, assistant, or tool messages.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)] // Renamed from ResponseMessage
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ResponseMessage {
-    pub role: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub tool_call_id: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ToolCallResult {
-    pub tool_call_id: String,
-    pub output: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
+/// Represents one of the choices returned by the AI API.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Choice {
     pub index: u32,
-    pub message: ResponseMessage,
+    pub message: ChatMessage, // Updated field type
     pub finish_reason: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/// Represents the overall structure of the AI API response.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApiResponse {
     pub id: String,
     pub choices: Vec<Choice>,
 }
 
-// Gemini-specific structs and parsing removed.
+// Commented out unused structs:
+// pub struct ChatMessage { ... }
+// pub struct ToolCallResult { ... }
