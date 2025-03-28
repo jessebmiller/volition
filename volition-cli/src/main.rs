@@ -6,8 +6,7 @@ mod tools;
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 use std::{
-    env,
-    fs,
+    env, fs,
     io::{self, Write},
     path::{Path, PathBuf},
 };
@@ -16,9 +15,9 @@ use tokio::time::Duration;
 use volition_agent_core::{
     config::RuntimeConfig,
     models::chat::ChatMessage, // Keep this
-    AgentOutput,              // Import AgentOutput
-    ToolProvider,
     Agent,
+    AgentOutput, // Import AgentOutput
+    ToolProvider,
 };
 
 use crate::models::cli::Cli;
@@ -29,7 +28,7 @@ use clap::Parser;
 use reqwest::Client;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn, Level}; // Added debug
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::FmtSubscriber; // Keep this import
 
 const CONFIG_FILENAME: &str = "Volition.toml";
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
@@ -60,9 +59,8 @@ fn find_project_root() -> Result<PathBuf> {
 fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
     let project_root = find_project_root()?;
     let config_path = project_root.join(CONFIG_FILENAME);
-    let config_toml_content = fs::read_to_string(&config_path).with_context(|| {
-        format!("Failed to read project config file: {:?}", config_path)
-    })?;
+    let config_toml_content = fs::read_to_string(&config_path)
+        .with_context(|| format!("Failed to read project config file: {:?}", config_path))?;
     let api_key = env::var("API_KEY")
         .context("Failed to read API_KEY environment variable. Please ensure it is set.")?;
 
@@ -75,8 +73,7 @@ fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
 // --- Session Management ---
 
 fn print_welcome_message() {
-    println!("
-{}", "Volition - AI Assistant".cyan().bold());
+    println!("\n{}", "Volition - AI Assistant".cyan().bold());
     println!(
         "{}",
         "Type 'exit' or press Enter on an empty line to quit.".cyan()
@@ -150,22 +147,25 @@ fn load_or_initialize_session(
     Ok(messages_option)
 }
 
-
 // --- Agent Execution ---
 // Uses Agent::run(messages: Vec<ChatMessage>)
 async fn run_agent_session(
     config: &RuntimeConfig,
-    _client: &Client, // Keep client for potential future use
+    _client: &Client,                     // Keep client for potential future use
     tool_provider: Arc<dyn ToolProvider>, // Takes the provider Arc
-    messages: Vec<ChatMessage>, // Takes the full message history
+    messages: Vec<ChatMessage>,           // Takes the full message history
     working_dir: &Path,
-) -> Result<AgentOutput> { // Still returns AgentOutput
+) -> Result<AgentOutput> {
+    // Still returns AgentOutput
     // Agent::new requires Arc<dyn ToolProvider>, cloning it here is fine.
     let agent = Agent::new(config.clone(), Arc::clone(&tool_provider))
         .context("Failed to create agent instance")?;
 
     info!("Starting agent run with {} messages", messages.len());
-    debug!("Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>", config);
+    debug!(
+        "Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>",
+        config
+    );
 
     // Call the primary run method which now takes the message history
     match agent.run(messages, working_dir).await {
@@ -175,7 +175,8 @@ async fn run_agent_session(
 
             if !agent_output.applied_tool_results.is_empty() {
                 println!("{}:", "Tool Execution Results".cyan());
-                for result in &agent_output.applied_tool_results { // Borrow result
+                for result in &agent_output.applied_tool_results {
+                    // Borrow result
                     let status_color = match result.status {
                         volition_agent_core::ToolExecutionStatus::Success => "Success".green(),
                         volition_agent_core::ToolExecutionStatus::Failure => "Failure".red(),
@@ -188,7 +189,8 @@ async fn run_agent_session(
                 }
             }
 
-            if let Some(final_desc) = &agent_output.final_state_description { // Borrow final_desc
+            if let Some(final_desc) = &agent_output.final_state_description {
+                // Borrow final_desc
                 println!("{}:", "Final AI Message".cyan());
                 if let Err(e) = print_formatted(final_desc) {
                     error!(
@@ -200,7 +202,7 @@ async fn run_agent_session(
                     println!(); // Add newline after successful markdown rendering
                 }
             } else {
-                 warn!("Agent finished but provided no final description in output.");
+                warn!("Agent finished but provided no final description in output.");
             }
             println!("-----------------------");
             Ok(agent_output) // Return the output
@@ -240,12 +242,18 @@ async fn main() -> Result<()> {
         2 => Level::DEBUG,
         _ => Level::TRACE,
     };
-    // Consider adding file logging sink later if needed
-    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+
+    // Configure tracing subscriber
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(level)
+        .with_target(false) // Don't include module path
+        .with_timer(tracing_subscriber::fmt::time::Uptime::default())
+        .finish();
+
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let (config, project_root) = load_cli_config()
-        .context("Failed to load configuration and find project root")?;
+    let (config, project_root) =
+        load_cli_config().context("Failed to load configuration and find project root")?;
 
     let client = Client::builder()
         .timeout(Duration::from_secs(120))
@@ -255,24 +263,23 @@ async fn main() -> Result<()> {
     // Create Arc<dyn ToolProvider> explicitly here
     let tool_provider: Arc<dyn ToolProvider> = Arc::new(CliToolProvider::new());
 
-
     // Load existing session or initialize a new one
     let mut messages = match load_or_initialize_session(&config, &project_root)? {
         Some(msgs) => msgs,
         None => {
-             error!("Failed to load or initialize session messages.");
-             return Err(anyhow!("Session initialization failed"));
+            error!("Failed to load or initialize session messages.");
+            return Err(anyhow!("Session initialization failed"));
         }
     };
 
     // Ensure messages always starts with the system prompt if somehow empty after loading/init
     if messages.is_empty() || messages[0].role != "system" {
-         warn!("Messages list was empty or missing system prompt after init. Re-initializing.");
-         messages = vec![ChatMessage {
-             role: "system".to_string(),
-             content: Some(config.system_prompt.clone()),
-             ..Default::default()
-         }];
+        warn!("Messages list was empty or missing system prompt after init. Re-initializing.");
+        messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: Some(config.system_prompt.clone()),
+            ..Default::default()
+        }];
     }
 
     print_welcome_message();
@@ -309,7 +316,10 @@ async fn main() -> Result<()> {
                 }
             }
             Err(e) => {
-                error!("Failed to serialize conversation state: {}. Cannot guarantee recovery.", e);
+                error!(
+                    "Failed to serialize conversation state: {}. Cannot guarantee recovery.",
+                    e
+                );
             }
         }
 
@@ -349,7 +359,7 @@ async fn main() -> Result<()> {
             Err(e) => {
                 // Agent run failed. Print error and let the loop continue.
                 // Do NOT remove the recovery file, it holds the state *before* the failed run.
-                println!("{}: {:?}", "Agent run encountered an error".red(), e);
+                println!("{}: {:?}\n", "Agent run encountered an error".red(), e); // Added newline for separation
                 // Remove the last user message we optimistically added, so they can retry
                 // or ask something else based on the previous state.
                 messages.pop();
