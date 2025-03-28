@@ -2,10 +2,10 @@
 
 pub mod cargo;
 pub mod file;
-pub mod filesystem;
+// pub mod filesystem; // Removed - file.rs likely handles this now
 pub mod git;
+pub mod provider;
 pub mod search;
 pub mod shell;
 pub mod user_input;
-pub mod provider;
 pub use provider::CliToolProvider;
