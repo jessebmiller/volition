@@ -4,11 +4,11 @@ use std::collections::HashSet;
 use std::path::Path;
 use tracing::warn;
 
-// Import the core execution function and the output struct
 use volition_agent_core::tools::cargo::execute_cargo_command as execute_cargo_command_core;
 use volition_agent_core::tools::CommandOutput;
 
 fn get_denied_cargo_commands() -> HashSet<String> {
+    // ... (deny list unchanged)
     let mut denied = HashSet::new();
     denied.insert("login".to_string());
     denied.insert("logout".to_string());
@@ -23,7 +23,7 @@ pub async fn run_cargo_command(
     command_name: &str,
     command_args: &[String],
     working_dir: &Path,
-) -> Result<String> { // Returns String for ToolProvider
+) -> Result<String> {
     let denied_commands = get_denied_cargo_commands();
 
     if denied_commands.contains(command_name) {
@@ -37,11 +37,16 @@ pub async fn run_cargo_command(
         ));
     }
 
-    // Call the core library implementation
     let cmd_output: CommandOutput = 
         execute_cargo_command_core(command_name, command_args, working_dir).await?;
 
-    // Format the structured output into a string for the AI/ToolProvider
+    // Manually format the output string here
     let command_str = format!("cargo {} {}", command_name, command_args.join(" "));
-    Ok(cmd_output.format_for_ai(&command_str))
+    Ok(format!(
+        "Command executed: {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
+        command_str,
+        cmd_output.status,
+        if cmd_output.stdout.is_empty() { "<no output>" } else { &cmd_output.stdout },
+        if cmd_output.stderr.is_empty() { "<no output>" } else { &cmd_output.stderr }
+    ))
 }

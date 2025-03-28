@@ -1,6 +1,7 @@
 // volition-agent-core/src/tools/search.rs
 
 use super::shell::execute_shell_command;
+use super::CommandOutput; // Import CommandOutput
 use anyhow::{Result};
 use std::path::Path;
 use tracing::{debug, info};
@@ -33,6 +34,7 @@ fn check_ripgrep_installed() -> Result<()> {
 }
 
 /// Searches for a text pattern using ripgrep.
+/// Returns the raw stdout on success, or a specific "No matches found" message.
 pub async fn search_text(
     pattern: &str,
     search_path: Option<&str>,
@@ -77,10 +79,10 @@ pub async fn search_text(
 
     debug!("Executing search command via shell: {}", full_cmd);
 
-    let cmd_output = execute_shell_command(&full_cmd, working_dir).await?;
+    let cmd_output: CommandOutput = execute_shell_command(&full_cmd, working_dir).await?;
 
-    let no_stdout = cmd_output.stdout == "<no output>" || cmd_output.stdout.trim().is_empty();
     let no_match_status = cmd_output.status == 1;
+    let no_stdout = cmd_output.stdout.trim().is_empty(); // Check trimmed stdout
 
     if no_match_status || no_stdout {
         Ok(format!(
@@ -88,11 +90,13 @@ pub async fn search_text(
             pattern, path_arg, glob_arg
         ))
     } else {
-        Ok(cmd_output.format_for_ai(&full_cmd))
+        // Return raw stdout on success
+        Ok(cmd_output.stdout.trim().to_string())
     }
 }
 
 /// Finds potential Rust definition sites using ripgrep.
+/// Returns the raw stdout on success, or a specific "No definition found" message.
 pub async fn find_rust_definition(
     symbol: &str,
     search_path: Option<&str>,
@@ -131,15 +135,16 @@ pub async fn find_rust_definition(
 
     debug!("Executing find rust definition command via shell: {}", full_cmd);
 
-    let cmd_output = execute_shell_command(&full_cmd, working_dir).await?;
+    let cmd_output: CommandOutput = execute_shell_command(&full_cmd, working_dir).await?;
 
-    let no_stdout = cmd_output.stdout == "<no output>" || cmd_output.stdout.trim().is_empty();
     let no_match_status = cmd_output.status == 1;
+    let no_stdout = cmd_output.stdout.trim().is_empty(); // Check trimmed stdout
 
     if no_match_status || no_stdout {
         Ok(format!("No Rust definition found for symbol: {}", symbol))
     } else {
-        Ok(cmd_output.format_for_ai(&full_cmd))
+        // Return raw stdout on success
+        Ok(cmd_output.stdout.trim().to_string())
     }
 }
 
@@ -168,10 +173,9 @@ mod tests {
         let result = search_text(pattern, None, None, None, None, None, &working_dir).await;
         assert!(result.is_ok());
         let output_str = result.unwrap();
-        // Print the actual output when debugging
         println!("search_text_no_matches output:\n{}", output_str);
+        // Check for the specific "No matches found" message
         assert!(output_str.contains("No matches found"), "Output should indicate no matches were found");
-        assert!(!output_str.contains("\nStatus: 1\n")); 
     }
 
      #[tokio::test]
@@ -187,30 +191,13 @@ mod tests {
         let result = find_rust_definition(symbol, None, &working_dir).await;
         
         assert!(result.is_ok(), "find_rust_definition failed: {:?}", result.err());
-        let output_str = result.unwrap();
-        // Print the command string and output for debugging
-        // (Need to reconstruct command string here similar to how the function does)
-        let escaped_symbol = regex::escape(symbol);
-        let pattern = format!(
-            r"(?:pub\s+)?(?:unsafe\s+)?(?:async\s+)?(fn|struct|enum|trait|const|static|type|mod|impl|macro_rules!)\s+{}\\b",
-            escaped_symbol
-        );
-        let mut command_parts = vec!["rg".to_string()];
-        command_parts.push("--trim".to_string());
-        command_parts.push("--glob".to_string());
-        command_parts.push("*.rs".to_string()); 
-        command_parts.push("--ignore-case".to_string());
-        command_parts.push("--max-count=10".to_string());
-        command_parts.push("-e".to_string());
-        command_parts.push(format!("'{}'", pattern.replace('\'', "'\\''"))); 
-        command_parts.push(".".to_string()); // Searching current dir in test
-        let full_cmd = command_parts.join(" ");
-        println!("Command executed in test: {}", full_cmd);
+        let output_str = result.unwrap(); // This is now the raw stdout string
         println!("find_rust_definition output:\n{}", output_str);
         
         let expected_line = format!("pub fn {}()", symbol);
+        // Check the raw output contains the line
         assert!(output_str.contains(&expected_line), "Output did not contain function signature");
-        assert!(output_str.contains("\nStdout:\n"), "Output did not contain Stdout section");
+        // Check it doesn't contain the failure message
         assert!(!output_str.contains("No Rust definition found"), "Output incorrectly stated no definition found");
         Ok(())
     }

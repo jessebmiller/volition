@@ -23,6 +23,7 @@ pub struct ModelConfig {
 }
 
 impl RuntimeConfig {
+    /// Returns a reference to the currently selected ModelConfig.
     pub fn selected_model_config(&self) -> Result<&ModelConfig> {
         self.models.get(&self.selected_model).ok_or_else(|| {
             anyhow!(
@@ -31,75 +32,79 @@ impl RuntimeConfig {
             )
         })
     }
+
+    /// Parses TOML configuration content and validates it against the provided API key.
+    /// Renamed from parse_and_validate_config.
+    pub fn from_toml_str(
+        config_toml_content: &str,
+        api_key: String,
+    ) -> Result<RuntimeConfig> {
+        if api_key.is_empty() {
+            return Err(anyhow!("Provided API key is empty."));
+        }
+
+        let partial_config: RuntimeConfigPartial = toml::from_str(config_toml_content)
+            .context("Failed to parse configuration TOML content. Check TOML syntax.")?;
+
+        let config = RuntimeConfig {
+            system_prompt: partial_config.system_prompt,
+            selected_model: partial_config.selected_model,
+            models: partial_config.models,
+            api_key,
+        };
+
+        // --- Validation ---
+        if config.system_prompt.trim().is_empty() {
+            return Err(anyhow!("'system_prompt' in config content is empty."));
+        }
+        if config.selected_model.trim().is_empty() {
+            return Err(anyhow!(
+                "Top-level 'selected_model' key in config content is empty."
+            ));
+        }
+        if config.models.is_empty() {
+            return Err(anyhow!(
+                "The [models] section in config content is empty."
+            ));
+        }
+
+        config.selected_model_config().context("Validation failed for selected model")?;
+
+        for (key, model) in &config.models {
+            if model.model_name.trim().is_empty() {
+                return Err(anyhow!(
+                    "Model definition '{}' has an empty 'model_name'.",
+                    key
+                ));
+            }
+            if model.endpoint.trim().is_empty() {
+                return Err(anyhow!(
+                    "Model definition '{}' has an empty 'endpoint'.",
+                    key
+                ));
+            }
+            Url::parse(&model.endpoint).with_context(|| {
+                format!(
+                    "Invalid URL format for endpoint ('{}') in model definition '{}'.",
+                    model.endpoint,
+                    key
+                )
+            })?;
+            if !model.parameters.is_table() && !model.parameters.is_str() && model.parameters.as_str() != Some("{}") {
+                 return Err(anyhow!(
+                    "Model definition '{}' has invalid 'parameters'. Expected a TOML table.",
+                    key
+                ));
+            }
+        }
+
+        tracing::info!("Successfully parsed and validated configuration content.");
+        Ok(config)
+    }
 }
 
-pub fn parse_and_validate_config(
-    config_toml_content: &str,
-    api_key: String,
-) -> Result<RuntimeConfig> {
-    if api_key.is_empty() {
-        return Err(anyhow!("Provided API key is empty."));
-    }
-
-    let partial_config: RuntimeConfigPartial = toml::from_str(config_toml_content)
-        .context("Failed to parse configuration TOML content. Check TOML syntax.")?;
-
-    let config = RuntimeConfig {
-        system_prompt: partial_config.system_prompt,
-        selected_model: partial_config.selected_model,
-        models: partial_config.models,
-        api_key,
-    };
-
-    // --- Validation ---
-    if config.system_prompt.trim().is_empty() {
-        return Err(anyhow!("'system_prompt' in config content is empty."));
-    }
-    if config.selected_model.trim().is_empty() {
-        return Err(anyhow!(
-            "Top-level 'selected_model' key in config content is empty."
-        ));
-    }
-    if config.models.is_empty() {
-        return Err(anyhow!(
-            "The [models] section in config content is empty."
-        ));
-    }
-
-    // Check selected model exists
-    config.selected_model_config().context("Validation failed for selected model")?;
-
-    for (key, model) in &config.models {
-        if model.model_name.trim().is_empty() {
-            return Err(anyhow!(
-                "Model definition '{}' has an empty 'model_name'.",
-                key
-            ));
-        }
-        if model.endpoint.trim().is_empty() {
-            return Err(anyhow!(
-                "Model definition '{}' has an empty 'endpoint'.",
-                key
-            ));
-        }
-        Url::parse(&model.endpoint).with_context(|| {
-            format!(
-                "Invalid URL format for endpoint ('{}') in model definition '{}'.",
-                model.endpoint,
-                key
-            )
-        })?;
-        if !model.parameters.is_table() && !model.parameters.is_str() && model.parameters.as_str() != Some("{}") {
-             return Err(anyhow!(
-                "Model definition '{}' has invalid 'parameters'. Expected a TOML table.",
-                key
-            ));
-        }
-    }
-
-    tracing::info!("Successfully parsed and validated configuration content.");
-    Ok(config)
-}
+// This free function is removed, logic moved to RuntimeConfig::from_toml_str
+// pub fn parse_and_validate_config(...) -> Result<RuntimeConfig> { ... }
 
 #[derive(Deserialize)]
 struct RuntimeConfigPartial {
@@ -165,11 +170,12 @@ mod tests {
         assert!(err_msg.contains("Selected model key 'nonexistent' not found in models map."));
     }
 
+    // Updated tests to call RuntimeConfig::from_toml_str
     #[test]
-    fn test_parse_validate_success() {
+    fn test_from_toml_str_success() {
         let content = valid_config_content();
         let api_key = "test_api_key_123".to_string();
-        let result = parse_and_validate_config(&content, api_key.clone());
+        let result = RuntimeConfig::from_toml_str(&content, api_key.clone());
         assert!(result.is_ok(), "Parse/validate failed: {:?}", result.err());
         let config = result.unwrap();
         assert_eq!(config.api_key, api_key);
@@ -177,23 +183,23 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_validate_empty_api_key() {
+    fn test_from_toml_str_empty_api_key() {
         let content = valid_config_content();
-        let result = parse_and_validate_config(&content, "".to_string());
+        let result = RuntimeConfig::from_toml_str(&content, "".to_string());
         assert!(result.is_err());
         assert!(result.err().unwrap().to_string().contains("Provided API key is empty"));
     }
 
     #[test]
-    fn test_parse_validate_invalid_toml() {
+    fn test_from_toml_str_invalid_toml() {
         let content = "this is not valid toml";
-        let result = parse_and_validate_config(content, "dummy_key".to_string());
+        let result = RuntimeConfig::from_toml_str(content, "dummy_key".to_string());
         assert!(result.is_err());
         assert!(result.err().unwrap().to_string().contains("Failed to parse configuration TOML content"));
     }
 
     #[test]
-    fn test_parse_validate_missing_selected_key() {
+    fn test_from_toml_str_missing_selected_key() {
         let content = r#"
             system_prompt = "Valid"
             selected_model = "nonexistent"
@@ -202,16 +208,16 @@ mod tests {
             endpoint = "http://example.com"
             parameters = {}
         "#;
-        let result = parse_and_validate_config(content, "dummy_key".to_string());
+        let result = RuntimeConfig::from_toml_str(content, "dummy_key".to_string());
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
-        println!("test_parse_validate_missing_selected_key Error: {}", err_msg);
-        // Check the context message added by .context()
+        println!("test_from_toml_str_missing_selected_key Error: {}", err_msg);
         assert!(err_msg.contains("Validation failed for selected model")); 
+        assert!(err_msg.contains("Selected model key 'nonexistent' not found")); 
     }
 
     #[test]
-    fn test_parse_validate_empty_system_prompt() {
+    fn test_from_toml_str_empty_system_prompt() {
         let content = r#"
             system_prompt = "" 
             selected_model = "gpt4"
@@ -220,15 +226,15 @@ mod tests {
             endpoint = "http://example.com"
             parameters = {}
         "#;
-        let result = parse_and_validate_config(content, "dummy_key".to_string());
+        let result = RuntimeConfig::from_toml_str(content, "dummy_key".to_string());
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
-        println!("test_parse_validate_empty_system_prompt Error: {}", err_msg);
+        println!("test_from_toml_str_empty_system_prompt Error: {}", err_msg);
         assert!(err_msg.contains("'system_prompt' in config content is empty."));
     }
 
     #[test]
-    fn test_parse_validate_invalid_endpoint() {
+    fn test_from_toml_str_invalid_endpoint() {
         let content = r#"
             system_prompt = "Valid"
             selected_model = "gpt4"
@@ -237,11 +243,10 @@ mod tests {
             endpoint = "invalid url"
             parameters = {}
         "#;
-        let result = parse_and_validate_config(content, "dummy_key".to_string());
+        let result = RuntimeConfig::from_toml_str(content, "dummy_key".to_string());
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
-        println!("test_parse_validate_invalid_endpoint Error: {}", err_msg);
-        // Check context message added by with_context
+        println!("test_from_toml_str_invalid_endpoint Error: {}", err_msg);
         assert!(err_msg.contains("Invalid URL format for endpoint ('invalid url')"));
     }
 }

@@ -1,6 +1,15 @@
 // volition-agent-core/src/tools/mod.rs
 
-// Modules for standard, non-interactive tool implementations
+//! Contains implementations for standard, non-interactive tools.
+//! These functions provide the core logic for interacting with external commands
+//! or the filesystem. They are designed as reusable building blocks for
+//! `ToolProvider` implementations.
+//! 
+//! **Important:** These functions generally do *not* include safety checks
+//! (like command argument validation, file path sandboxing) or user interaction
+//! (like confirmation prompts). Callers, typically `ToolProvider` implementations,
+//! are responsible for adding necessary safety layers before invoking these core functions.
+
 pub mod cargo;
 pub mod fs;
 pub mod git;
@@ -24,15 +33,5 @@ impl CommandOutput {
         self.status == 0
     }
 
-    /// Formats the output similar to how `execute_shell_command` used to.
-    /// This can be used by providers or wrappers to create the final string for the AI.
-    pub fn format_for_ai(&self, command_str: &str) -> String {
-        format!(
-            "Command executed: {}\nStatus: {}\nStdout:\n{}\nStderr:\n{}",
-            command_str,
-            self.status,
-            if self.stdout.is_empty() { "<no output>" } else { &self.stdout },
-            if self.stderr.is_empty() { "<no output>" } else { &self.stderr }
-        )
-    }
+    // Formatting is now responsibility of the caller (e.g., ToolProvider impl)
 }
