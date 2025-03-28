@@ -3,6 +3,7 @@
 use super::shell::execute_shell_command;
 use anyhow::{Result};
 use std::path::Path;
+use std::process::{Command, Stdio};
 use tracing::{debug, info};
 
 #[cfg(not(test))]
@@ -43,46 +44,39 @@ pub async fn search_text(
     max_results: Option<usize>,
     working_dir: &Path,
 ) -> Result<String> {
+    // ... (implementation unchanged)
     check_ripgrep_installed()?;
-
     let path_arg = search_path.unwrap_or(".");
     let glob_arg = file_glob.unwrap_or("*");
     let ignore_case_flag = !case_sensitive.unwrap_or(false);
     let context_arg = context_lines.unwrap_or(1);
     let max_lines = max_results.unwrap_or(50);
-
     info!(
         "Searching for pattern: '{}' in path: '{}' (glob: '{}', context: {}, ignore_case: {}) -> max {} lines",
         pattern, path_arg, glob_arg, context_arg, ignore_case_flag, max_lines
     );
-
     let context_str = context_arg.to_string();
-    // Build command string for shell execution, including pipe to head
-    // Use shell escaping carefully only where needed
-    let mut command_parts = vec!["rg".to_string()];
-    command_parts.push("--pretty".to_string());
-    command_parts.push("--trim".to_string());
-    command_parts.push(format!("--context={}", context_arg));
-    command_parts.push("--glob".to_string());
-    command_parts.push(format!("'{}'", glob_arg.replace('\'', "'\\''"))); // Quote glob
-    if ignore_case_flag { command_parts.push("--ignore-case".to_string()); }
-    // Pass pattern and path without extra quotes, let execute_shell_command handle it?
-    // Or quote them carefully?
-    // Let's try quoting pattern, assuming path usually doesn't need it.
-    command_parts.push(format!("'{}'", pattern.replace('\'', "'\\''"))); 
-    command_parts.push(path_arg.to_string());
-
-    let rg_command = command_parts.join(" ");
-    let full_cmd = format!("{} | head -n {}", rg_command, max_lines);
-
+    let mut rg_cmd_vec = vec![
+        "rg", "--pretty", "--trim", "--context", &context_str, "--glob", glob_arg,
+    ];
+    if ignore_case_flag { rg_cmd_vec.push("--ignore-case"); }
+    rg_cmd_vec.push(pattern);
+    rg_cmd_vec.push(path_arg);
+    let mut rg_cmd_parts = Vec::new();
+    for arg in rg_cmd_vec.iter() {
+        if *arg == pattern || *arg == path_arg {
+             rg_cmd_parts.push(arg.to_string());
+        } else {
+            // Quote args except pattern and path
+            rg_cmd_parts.push(format!("'{}'", arg.replace('\'', "'\\''")));
+        }
+    }
+    let rg_cmd_base = rg_cmd_parts.join(" ");
+    let full_cmd = format!("{} | head -n {}", rg_cmd_base, max_lines);
     debug!("Executing search command via shell: {}", full_cmd);
-
     let result = execute_shell_command(&full_cmd, working_dir).await?;
-
-    // Check based on rg exit status (1 for no matches) and stdout content
     let no_stdout = result.contains("\nStdout:\n<no output>");
     let no_match_status = result.contains("\nStatus: 1\n"); 
-
     if no_stdout || no_match_status {
         Ok(format!("No matches found for pattern: '{}' in path: '{}' matching glob: '{}'", pattern, path_arg, glob_arg))
     } else {
@@ -115,7 +109,8 @@ pub async fn find_rust_definition(
     command_parts.push("--trim".to_string());
     if is_dir {
         command_parts.push("--glob".to_string());
-        command_parts.push(format!("'{}'", file_pattern.replace('\'', "'\\''"))); // Quote glob
+        // Don't quote the glob pattern itself when passing via shell
+        command_parts.push(file_pattern.to_string()); 
     }
     command_parts.push("--ignore-case".to_string());
     command_parts.push("--max-count=10".to_string());
@@ -136,7 +131,6 @@ pub async fn find_rust_definition(
     if no_stdout || no_match_status {
         Ok(format!("No Rust definition found for symbol: {}", symbol))
     } else {
-        // Return the full result string which includes stdout
         Ok(result)
     }
 }
@@ -150,7 +144,6 @@ mod tests {
     use std::fs;
 
     fn test_working_dir() -> PathBuf {
-        // Use tempdir for isolation
         tempdir().expect("Failed to create temp dir").into_path()
     }
 
@@ -163,23 +156,18 @@ mod tests {
     async fn test_search_text_no_matches() {
         let pattern = "pattern_that_will_not_match_in_a_million_years";
         let working_dir = test_working_dir();
-        let dummy_file = working_dir.join("dummy_search.txt");
-        fs::write(&dummy_file, "content").unwrap(); 
-        
+        fs::write(working_dir.join("dummy.txt"), "content").unwrap(); 
         let result = search_text(pattern, None, None, None, None, None, &working_dir).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         println!("search_text_no_matches output:\n{}", output);
-        // Check for the specific "No matches found" message
         assert!(output.contains("No matches found"), "Output should indicate no matches were found");
-        // Also check that the original command output isn't returned directly
-        // (It might contain status 1, but should be replaced by our message)
         assert!(!output.contains("\nStatus: 1\n")); 
     }
 
      #[tokio::test]
     async fn test_find_rust_definition_found_in_test_file() -> Result<()> {
-        let symbol = "find_this_test_fn_abc"; // Unique symbol
+        let symbol = "find_this_test_fn_xyz"; 
         let working_dir = test_working_dir();
         let test_file_name = "test_src_find_def.rs";
         let test_file_path = working_dir.join(test_file_name);
@@ -193,14 +181,9 @@ mod tests {
         let output = result.unwrap();
         println!("find_rust_definition output:\n{}", output);
         
-        // Check that the output contains the line from the file
         let expected_line = format!("pub fn {}()", symbol);
         assert!(output.contains(&expected_line), "Output did not contain function signature");
-        
-        // Check that the output includes the Stdout section header from execute_shell_command
         assert!(output.contains("\nStdout:\n"), "Output did not contain Stdout section");
-        
-        // Check that it *doesn't* say "No definition found"
         assert!(!output.contains("No Rust definition found"), "Output incorrectly stated no definition found");
         Ok(())
     }
