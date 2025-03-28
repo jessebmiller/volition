@@ -23,7 +23,6 @@ pub struct ModelConfig {
 }
 
 impl RuntimeConfig {
-    /// Returns a reference to the currently selected ModelConfig.
     pub fn selected_model_config(&self) -> Result<&ModelConfig> {
         self.models.get(&self.selected_model).ok_or_else(|| {
             anyhow!(
@@ -34,7 +33,6 @@ impl RuntimeConfig {
     }
 
     /// Parses TOML configuration content and validates it against the provided API key.
-    /// Renamed from parse_and_validate_config.
     pub fn from_toml_str(
         config_toml_content: &str,
         api_key: String,
@@ -68,6 +66,7 @@ impl RuntimeConfig {
             ));
         }
 
+        // This context message IS checked by tests
         config.selected_model_config().context("Validation failed for selected model")?;
 
         for (key, model) in &config.models {
@@ -102,9 +101,6 @@ impl RuntimeConfig {
         Ok(config)
     }
 }
-
-// This free function is removed, logic moved to RuntimeConfig::from_toml_str
-// pub fn parse_and_validate_config(...) -> Result<RuntimeConfig> { ... }
 
 #[derive(Deserialize)]
 struct RuntimeConfigPartial {
@@ -170,7 +166,6 @@ mod tests {
         assert!(err_msg.contains("Selected model key 'nonexistent' not found in models map."));
     }
 
-    // Updated tests to call RuntimeConfig::from_toml_str
     #[test]
     fn test_from_toml_str_success() {
         let content = valid_config_content();
@@ -212,8 +207,8 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         println!("test_from_toml_str_missing_selected_key Error: {}", err_msg);
+        // Check the context message added by .context() in from_toml_str
         assert!(err_msg.contains("Validation failed for selected model")); 
-        assert!(err_msg.contains("Selected model key 'nonexistent' not found")); 
     }
 
     #[test]

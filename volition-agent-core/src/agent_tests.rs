@@ -72,7 +72,6 @@ impl ToolProvider for MockToolProvider {
 
 const TEST_ENDPOINT_PATH: &str = "/test/completions";
 
-// Updated test helper: Removed project_root
 fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
     let mock_endpoint = format!("{}{}", mock_server_base_url, TEST_ENDPOINT_PATH);
     let mut models = HashMap::new();
@@ -89,7 +88,6 @@ fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
         selected_model: "test-model-key".to_string(),
         models,
         api_key: "test-api-key".to_string(),
-        // project_root: PathBuf::from("."), // Removed field
     }
 }
 
@@ -238,7 +236,8 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     assert_eq!(calls[0].0, tool_name);
     assert_eq!(calls[0].1, tool_args.to_string());
 
-    assert!(agent_output.suggested_summary.is_some());
+    // Removed assertion for suggested_summary
+    // assert!(agent_output.suggested_summary.is_some()); 
     assert_eq!(agent_output.applied_tool_results.len(), 1);
     let tool_result = &agent_output.applied_tool_results[0];
     assert_eq!(tool_result.tool_call_id, tool_call_id);

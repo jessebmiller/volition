@@ -14,8 +14,8 @@ use std::{
 use tokio::time::Duration;
 
 use volition_agent_core::{
-    // Use RuntimeConfig::from_toml_str directly
-    config::{ModelConfig, RuntimeConfig}, // Removed parse_and_validate_config
+    // Removed unused ModelConfig import
+    config::{RuntimeConfig}, 
     models::chat::ChatMessage,
     ToolProvider,
     Agent,
@@ -66,7 +66,6 @@ fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
     let api_key = env::var("API_KEY")
         .context("Failed to read API_KEY environment variable. Please ensure it is set.")?;
     
-    // Call the associated function on RuntimeConfig
     let runtime_config = RuntimeConfig::from_toml_str(&config_toml_content, api_key)
         .context("Failed to parse or validate configuration content")?;
 
@@ -193,9 +192,6 @@ async fn run_agent_session(
         Ok(agent_output) => {
             info!("Agent run finished successfully.");
             println!("\n{}", "--- Agent Run Summary ---".bold());
-
-            // Removed suggested_summary handling
-            // if let Some(summary) = agent_output.suggested_summary { ... }
 
             if !agent_output.applied_tool_results.is_empty() {
                 println!("\n{}:", "Tool Execution Results".cyan());
