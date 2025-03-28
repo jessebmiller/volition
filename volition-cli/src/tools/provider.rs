@@ -48,7 +48,6 @@ impl CliToolProvider {
             enum_values: None,
             items: Some(Box::new(ToolParameter {
                 param_type: ToolParameterType::String,
-                // Trimmed trailing space
                 description: "A single string item".to_string(),
                 enum_values: None,
                 items: None,
@@ -63,36 +62,29 @@ impl ToolProvider for CliToolProvider {
         vec![
             ToolDefinition {
                 name: "shell".to_string(),
-                // Trimmed trailing space
                 description: "Run a shell command and get the output".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
-                    // Trimmed trailing space
                     properties: HashMap::from([("command".to_string(), Self::string_param("The shell command to run"))]),
                     required: vec!["command".to_string()],
                 },
             },
             ToolDefinition {
                 name: "read_file".to_string(),
-                // Trimmed trailing space
                 description: "Read the contents of a file".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
-                    // Trimmed trailing space
                     properties: HashMap::from([("path".to_string(), Self::string_param("Path to the file to read"))]),
                     required: vec!["path".to_string()],
                 },
             },
             ToolDefinition {
                 name: "write_file".to_string(),
-                // Trimmed trailing space
                 description: "Write content to a file".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        // Trimmed trailing space
                         ("path".to_string(), Self::string_param("Path to the file to write")),
-                        // Trimmed trailing space
                         ("content".to_string(), Self::string_param("Content to write to the file")),
                     ]),
                     required: vec!["path".to_string(), "content".to_string()],
@@ -100,22 +92,15 @@ impl ToolProvider for CliToolProvider {
             },
             ToolDefinition {
                 name: "search_text".to_string(),
-                // Trimmed trailing space
                 description: "Search for text patterns in files, returning matching lines with context. Requires 'ripgrep' (rg) to be installed.".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        // Trimmed trailing space
                         ("pattern".to_string(), Self::string_param("Text or regex pattern to search for")),
-                        // Trimmed trailing space
                         ("path".to_string(), Self::string_param("Directory or file path to search in (defaults to current directory)")),
-                        // Escaped quotes, trimmed trailing space
                         ("file_glob".to_string(), Self::string_param("Glob pattern to filter files (e.g., \"*.rs\", \"*.md\", defaults to \"*\") - Use forward slashes ('/') as path separators in globs, even on Windows.")),
-                        // Trimmed trailing space
                         ("case_sensitive".to_string(), Self::bool_param("Perform case-sensitive search (defaults to false)")),
-                        // Trimmed trailing space
                         ("context_lines".to_string(), Self::int_param("Number of context lines before and after each match (defaults to 1)")),
-                        // Trimmed trailing space
                         ("max_results".to_string(), Self::int_param("Maximum number of matching lines to return (defaults to 50)")),
                     ]),
                     required: vec!["pattern".to_string()],
@@ -123,14 +108,11 @@ impl ToolProvider for CliToolProvider {
             },
             ToolDefinition {
                 name: "find_rust_definition".to_string(),
-                // Trimmed trailing space
                 description: "Find where a Rust symbol (function, struct, enum, trait, etc.) is defined in the codebase. Searches *.rs files.".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        // Trimmed trailing space
                         ("symbol".to_string(), Self::string_param("Rust symbol name to search for (function, struct, enum, trait, macro, etc.)")),
-                        // Trimmed trailing space
                         ("path".to_string(), Self::string_param("Directory path to search in (defaults to current directory)")),
                     ]),
                     required: vec!["symbol".to_string()],
@@ -138,14 +120,11 @@ impl ToolProvider for CliToolProvider {
             },
             ToolDefinition {
                 name: "user_input".to_string(),
-                // Trimmed trailing space
                 description: "Ask the user for input when a choice needs to be made".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        // Trimmed trailing space
                         ("prompt".to_string(), Self::string_param("The question or prompt to show the user")),
-                        // Trimmed trailing space
                         ("options".to_string(), Self::string_array_param("Optional list of specific options to present to the user")),
                     ]),
                     required: vec!["prompt".to_string()],
@@ -153,19 +132,16 @@ impl ToolProvider for CliToolProvider {
             },
             ToolDefinition {
                 name: "git_command".to_string(),
-                // Trimmed trailing space
                 description: "Run a safe git command. Denied commands: push, reset, rebase, checkout, branch -D, etc.".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
                         (
                             "command".to_string(),
-                             // Escaped quotes, trimmed trailing space
                              Self::string_param("The git subcommand to run (e.g., \"status\", \"diff\", \"add\", \"commit\", \"log\")"),
                         ),
                         (
                             "args".to_string(),
-                             // Escaped quotes, trimmed trailing space
                              Self::string_array_param("Arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"])"),
                         ),
                     ]),
@@ -174,19 +150,16 @@ impl ToolProvider for CliToolProvider {
             },
             ToolDefinition {
                 name: "cargo_command".to_string(),
-                // Trimmed trailing space
                 description: "Run a safe cargo command. Denied commands: publish, install, login, owner, etc.".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
                         (
                             "command".to_string(),
-                             // Escaped quotes, trimmed trailing space
                              Self::string_param("The cargo subcommand to run (e.g., \"build\", \"test\", \"check\", \"fmt\", \"run\")"),
                         ),
                         (
                             "args".to_string(),
-                             // Escaped quotes, trimmed trailing space
                              Self::string_array_param("Arguments for the cargo subcommand (e.g., [\"--release\"], [\"my_test\", \"--\", \"--nocapture\"])"),
                         ),
                     ]),
@@ -195,16 +168,12 @@ impl ToolProvider for CliToolProvider {
             },
             ToolDefinition {
                 name: "list_directory".to_string(),
-                // Trimmed trailing space
                 description: "List files and directories at a given path, respecting .gitignore. Output is raw text, one path per line.".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
-                        // Trimmed trailing space
                         ("path".to_string(), Self::string_param("The directory path to explore.")),
-                        // Trimmed trailing space
                         ("depth".to_string(), Self::int_param("Maximum depth to recurse (1 lists immediate contents, 2 includes subdirs, etc.). Defaults to 1. Use 0 to list only the directory itself (if not hidden/ignored).")),
-                        // Trimmed trailing space
                         ("show_hidden".to_string(), Self::bool_param("Include hidden files/directories (starting with '.'). Defaults to false.")),
                     ]),
                     required: vec!["path".to_string()],
