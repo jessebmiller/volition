@@ -158,7 +158,15 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for more detai
 
 ## License
 
-Volition is released under the MIT License. See [LICENSE](LICENSE) for details.
+Volition is released under the Apache-2.0 License. See [LICENSE](LICENSE) for details.
+
+## License Change Notice
+
+**Important:** This project was previously released under the MIT License. As of 2025-03-28, the license has been changed to Apache License 2.0.
+
+The Apache 2.0 license provides additional patent protections not present in the MIT license. This change was made to better protect contributors and users of this project while maintaining the open source nature of the code.
+
+Any copies or forks of this repository created prior to this change date would still be under the MIT license terms. All new contributions and usage will be governed by the Apache License 2.0.
 
 ---
 
