@@ -8,12 +8,12 @@
 
 **Volition is a contextually-aware AI assistant that supercharges your Rust development workflow.**
 
-[Getting Started](#getting-started) • 
-[Features](#key-features) • 
-[Installation](#installation) • 
-[Configuration](#configuration) • 
-[Usage](#usage) • 
-[Community](#community) • 
+[Getting Started](#getting-started) •
+[Features](#key-features) •
+[Installation](#installation) •
+[Configuration](#configuration) •
+[Usage](#usage) •
+[Community](#community) •
 [Contributing](#contributing)
 
 </div>
@@ -26,13 +26,13 @@ Volition is an open-source CLI tool that brings the power of advanced AI assista
 
 > 💡 **Built for Rust developers by Rust developers** - Volition understands Rust idioms and best practices.
 
-```
+```ignore
 $ volition "Find references to RuntimeConfig across the codebase and explain how it's used"
 
 Volition - AI Assistant
 Searching for references to RuntimeConfig in the codebase...
 
-I found 12 references to RuntimeConfig across 5 files. The struct is defined in src/config.rs 
+I found 12 references to RuntimeConfig across 5 files. The struct is defined in src/config.rs
 and represents configuration loaded from Volition.toml plus environment variables.
 
 Key usage patterns:

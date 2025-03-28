@@ -8,9 +8,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use tracing::{debug, warn};
 
-#[cfg(test)]
-use mockall::automock;
+// #[cfg(test)] // Removed mockall use
+// use mockall::automock;
 
+// #[cfg_attr(test, automock)] // Removed mockall attribute
 /// Executes an arbitrary shell command in a specified working directory.
 ///
 /// This function uses the platform's default shell (`sh -c` on Unix, `cmd /C` on Windows).
@@ -32,7 +33,6 @@ use mockall::automock;
 ///
 /// A `Result` containing a [`CommandOutput`] struct with the status, stdout, and stderr,
 /// or an error if the process failed to spawn.
-#[cfg_attr(test, automock)]
 pub async fn execute_shell_command(
     command: &str,
     working_dir: &Path,
