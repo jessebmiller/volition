@@ -24,8 +24,8 @@ use crate::tools::CliToolProvider;
 use clap::Parser;
 use reqwest::Client;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn, Level};
-use tracing_subscriber::FmtSubscriber;
+use tracing::{debug, error, info, warn}; // Removed Level import
+use tracing_subscriber::EnvFilter; // Import EnvFilter
 
 const CONFIG_FILENAME: &str = "Volition.toml";
 const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
@@ -86,11 +86,7 @@ fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
 }
 
 fn print_welcome_message() {
-    println!(
-        "
-{}",
-        "Volition - AI Assistant".cyan().bold()
-    );
+    println!("\n{}", "Volition - AI Assistant".cyan().bold());
     println!(
         "{}",
         "Type 'exit' or press Enter on an empty line to quit.".cyan()
@@ -235,22 +231,26 @@ fn cleanup_session_state(project_root: &Path) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
-    let cli = Cli::parse();
+    let _cli = Cli::parse(); // Parse CLI args but don't use cli.verbose anymore
 
-    let level = match cli.verbose {
-        0 => Level::WARN,
-        1 => Level::INFO,
-        2 => Level::DEBUG,
-        _ => Level::TRACE,
-    };
+    // --- Start Logging Initialization ---
+    // Use EnvFilter to read RUST_LOG environment variable.
+    // Default to "info" level if RUST_LOG is not set.
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(level)
-        .with_target(false)
-        .with_timer(tracing_subscriber::fmt::time::Uptime::default())
+    // Build the subscriber
+    // Note: Removed .with_max_level() as EnvFilter handles levels.
+    let subscriber = tracing_subscriber::fmt()
+        .with_env_filter(env_filter) // Use the EnvFilter
+        .with_target(false) // Don't include module paths in logs
+        .with_timer(tracing_subscriber::fmt::time::Uptime::default()) // Add uptime
         .finish();
 
+    // Set the global default subscriber
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    // --- End Logging Initialization ---
+
+    info!("Logging initialized. Default level: INFO, controllable via RUST_LOG.");
 
     let (config, project_root) =
         load_cli_config().context("Failed to load configuration and find project root")?;
@@ -385,12 +385,8 @@ async fn main() -> Result<()> {
                 }
             }
             Err(e) => {
-                println!(
-                    "{}: {:?}
-",
-                    "Agent run encountered an error".red(),
-                    e
-                );
+                println!("{}: {:?}\n", "Agent run encountered an error".red(), e);
+                // Pop the user message that caused the error from history
                 messages.pop();
                 info!("Removed last user message from history due to agent error.");
             }
