@@ -2,7 +2,6 @@
 
 pub mod cargo;
 pub mod file;
-// pub mod filesystem; // Removed - file.rs likely handles this now
 pub mod git;
 pub mod provider;
 pub mod search;
