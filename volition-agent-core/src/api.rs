@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
-use serde_json::{error::Category as SerdeJsonCategory, json, to_value, Value};
+use serde_json::{json, to_value, Value};
 use tokio::time::Duration;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -135,20 +135,10 @@ pub async fn get_chat_completion(
         let api_response = match api_response_result {
             Ok(resp) => resp,
             Err(e) => {
-                if e.classify() == SerdeJsonCategory::Data
-                    && e.to_string().contains("missing field `choices`")
-                {
-                    warn!(
-                        "API response successfully received but missing 'choices' field. Response body: {}",
-                        serde_json::to_string_pretty(&response_json_obj).unwrap_or_else(|_| format!("{:?}", response_json_obj))
-                    );
-                    return Err(anyhow!(
-                        "API call succeeded but response was missing the expected 'choices' field."
-                    )
-                    .context(e));
-                } else {
-                    return Err(anyhow!("Failed to deserialize API response").context(e));
-                }
+                return Err(anyhow!(
+                    "Failed to deserialize API response, try again or rephrase your request"
+                )
+                .context(e));
             }
         };
 
