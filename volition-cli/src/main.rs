@@ -231,24 +231,19 @@ fn cleanup_session_state(project_root: &Path) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
-    let _cli = Cli::parse(); // Parse CLI args but don't use cli.verbose anymore
+    let _cli = Cli::parse();
 
-    // --- Start Logging Initialization ---
-    // Use EnvFilter to read RUST_LOG environment variable.
+    // TODO confirm -v -vv and -vvv options still work as expected as an alternate way to set log level.
     // Default to "info" level if RUST_LOG is not set.
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-    // Build the subscriber
-    // Note: Removed .with_max_level() as EnvFilter handles levels.
     let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(env_filter) // Use the EnvFilter
-        .with_target(false) // Don't include module paths in logs
-        .with_timer(tracing_subscriber::fmt::time::Uptime::default()) // Add uptime
+        .with_env_filter(env_filter)
+        .with_target(false)
+        .with_timer(tracing_subscriber::fmt::time::Uptime::default()) // TODO: uptime isn't great. lets use a simple human readable date time yyyy-mm-dd HH:MM:SS
         .finish();
 
-    // Set the global default subscriber
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-    // --- End Logging Initialization ---
 
     info!("Logging initialized. Default level: INFO, controllable via RUST_LOG.");
 
@@ -386,9 +381,6 @@ async fn main() -> Result<()> {
             }
             Err(e) => {
                 println!("{}: {:?}\n", "Agent run encountered an error".red(), e);
-                // // Pop the user message that caused the error from history - Removed as it discards history on non-user errors
-                // messages.pop();
-                // info!("Removed last user message from history due to agent error.");
             }
         }
     }
