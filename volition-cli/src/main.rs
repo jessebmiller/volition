@@ -386,9 +386,9 @@ async fn main() -> Result<()> {
             }
             Err(e) => {
                 println!("{}: {:?}\n", "Agent run encountered an error".red(), e);
-                // Pop the user message that caused the error from history
-                messages.pop();
-                info!("Removed last user message from history due to agent error.");
+                // // Pop the user message that caused the error from history - Removed as it discards history on non-user errors
+                // messages.pop();
+                // info!("Removed last user message from history due to agent error.");
             }
         }
     }
