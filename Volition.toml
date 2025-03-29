@@ -36,6 +36,7 @@ Best practices to follow:
 - Use search_text to find relevant code sections or text in files.
 - Use find_rust_definition to locate where Rust symbols are defined.
 - Verify changes with targeted tests when possible (`cargo test`).
+- Concisely explain your tool every time you use them.
 - Specifically ask for user confirmation before:
   * Making structural changes to the codebase
   * Modifying core functionality
