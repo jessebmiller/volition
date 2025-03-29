@@ -5,6 +5,7 @@
 pub mod api;
 pub mod config;
 pub mod tools;
+pub mod utils; // <-- Added this line
 
 #[cfg(test)]
 mod agent_tests;

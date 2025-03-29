@@ -1,5 +1,6 @@
 // volition-agent-core/src/tools/fs.rs
 
+use crate::utils::truncate_string; // <-- Import the helper
 use anyhow::{anyhow, Context, Result};
 use ignore::WalkBuilder;
 use std::fs;
@@ -8,10 +9,13 @@ use tracing::{debug, info};
 
 pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String> {
     let absolute_path = working_dir.join(relative_path);
-    info!("Reading file (absolute): {:?}", absolute_path);
+    // Use relative path for logging, truncated
+    let path_display = truncate_string(relative_path, 60);
+    info!("Reading file: {}", path_display);
+
     let content = fs::read_to_string(&absolute_path)
         .with_context(|| format!("fs::read_to_string failed for: {:?}", absolute_path))?;
-    info!("Read {} bytes from file", content.len());
+    info!("Read {} bytes from file {}", content.len(), path_display);
     Ok(content)
 }
 
@@ -19,23 +23,28 @@ pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) 
     let target_path_relative = PathBuf::from(relative_path);
     let absolute_target_path = working_dir.join(&target_path_relative);
 
-    info!(
-        "Writing to file (absolute path): {:?}",
-        absolute_target_path
-    );
+    // Use relative path for logging, truncated
+    let path_display = truncate_string(relative_path, 60);
+    info!("Writing to file: {}", path_display);
 
     if let Some(parent) = absolute_target_path.parent() {
         if !parent.exists() {
+            // Log absolute parent path, but truncated
+            let parent_display = truncate_string(&parent.to_string_lossy(), 60);
+            info!("Creating parent directory: {}", parent_display);
             fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create directory: {:?}", parent))?;
-            info!("Created parent directory: {:?}", parent);
         }
     }
 
     fs::write(&absolute_target_path, content)
         .with_context(|| format!("fs::write failed for: {:?}", absolute_target_path))?;
 
-    info!("Successfully wrote {} bytes to file", content.len());
+    info!(
+        "Successfully wrote {} bytes to file {}",
+        content.len(),
+        path_display
+    );
 
     Ok(format!("Successfully wrote to file: {}", relative_path))
 }
