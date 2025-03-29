@@ -80,7 +80,9 @@ MUST stop, clearly explain the situation, improvement ideas you might
 have, and the additional changes required to proceed with the original
 task, and get explicit user confirmation before making those extra
 modifications. Always prioritize fulfilling the user's specific
-request with minimal side effects.  """
+request with minimal side effects.
+
+"""
 
 # Selects the default model key from the [models] map below
 selected_model = "gemini-2-5-pro"
