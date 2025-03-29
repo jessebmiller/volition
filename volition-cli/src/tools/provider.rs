@@ -190,7 +190,7 @@ impl ToolProvider for CliToolProvider {
     ) -> Result<String> {
         tracing::info!(
             tool_name = tool_name,
-            args = ?input.arguments,
+            args = ?input.arguments, // TODO truncate this to 60 characters
             "Executing tool via CliToolProvider"
         );
         let args = input.arguments;

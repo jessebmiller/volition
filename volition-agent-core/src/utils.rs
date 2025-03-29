@@ -7,11 +7,14 @@ pub fn truncate_string(input: &str, max_chars: usize) -> String {
     if input.chars().count() > max_chars {
         // If the limit is too small to include any characters plus "...",
         // just take the first max_chars characters without an ellipsis.
-        if max_chars < 3 { 
+        if max_chars < 3 {
             input.chars().take(max_chars).collect::<String>()
         } else {
             // Otherwise, take max_chars - 3 characters and add "..."
-            format!("{}...", input.chars().take(max_chars - 3).collect::<String>())
+            format!(
+                "{}...",
+                input.chars().take(max_chars - 3).collect::<String>()
+            )
         }
     } else {
         input.to_string()
