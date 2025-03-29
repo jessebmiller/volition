@@ -66,6 +66,7 @@ Best practices to follow:
 - Use search_text to find relevant code sections or text in files.
 - Use find_rust_definition to locate where Rust symbols are defined.
 - Verify changes with targeted tests when possible (`cargo test`).
+- No extranious explanatory or narrative code comments.
 
 # Constraint:
 Professionalism and Plan Adherence & No Surprising
