@@ -57,7 +57,7 @@ core agent orchestration loop.
     *   `initialize_interaction`: Creates standard system prompt + user message based on input.
     *   `process_api_response`: Checks the API response. If `tool_calls` are present, returns `NextStep::ExecuteTools(calls)`. Otherwise, returns `NextStep::Complete { final_messages, final_result: content }`.
     *   `process_tool_results`: Formats tool results into messages, appends them, and returns `NextStep::GetChatCompletion(updated_messages)` to send results back to the API.
-    *   `process_delegation_result`: Likely returns an error, as this strategy doesn't typically delegate.
+    *   `process_delegation_result`: Likely returns an error, as this strategy doesn't delegate.
 
 ### 2. `PlanReviseExecuteStrategy` (Conceptual)
 
@@ -72,6 +72,7 @@ core agent orchestration loop.
         *   Creates `DelegationInput` for the step.
         *   Returns `NextStep::Delegate { strategy_type: StrategyType::CompleteTask, input }`.
     *   `process_delegation_result`: Called when a delegated `CompleteTaskStrategy` finishes an execution step.
+        Question: If the strategy is not waiting for a delegation result should it return an error?
         *   Receives `DelegationOutput` (messages, result of the step).
         *   Updates internal state (marks step complete, stores result).
         *   Decides next action:
