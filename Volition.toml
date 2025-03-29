@@ -109,7 +109,7 @@ selected_model = "gemini-2-5-pro"
   [models.gemini-2-5-pro]
   model_name = "gemini-2.5-pro-exp-03-25"
   endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-  parameters = { temperature = 0.7 }
+  parameters = { temperature = 0.5 }
 
 # Add other model definitions as needed, ensuring each has model_name, endpoint, and parameters.
 # Example for a local Ollama model:
