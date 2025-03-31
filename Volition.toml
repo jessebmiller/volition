@@ -64,7 +64,7 @@ Best practices to follow:
 - Use find_rust_definition to locate where Rust symbols are defined.
 - Verify changes with targeted tests when possible (`cargo test`).
 
-VERY IMPORTANT! Do not write any comments.
+VERY IMPORTANT Do not write any comments.
 
 """
 
@@ -76,23 +76,19 @@ selected_model = "gemini-2-5-pro"
   # --- OpenAI Models ---
   [models.o3-mini]
   model_name = "o3-mini"
-  # Removed service field
   endpoint = "https://api.openai.com/v1/chat/completions" # Added required endpoint (full path)
   parameters = {}
 
   [models.gpt-4o]
   model_name = "gpt-4o"
-  # Removed service field
   endpoint = "https://api.openai.com/v1/chat/completions" # Added required endpoint (full path)
   parameters = { temperature = 0.2 }
 
   [models.gpt-4o-mini]
   model_name = "gpt-4o-mini"
-  # Removed service field
   endpoint = "https://api.openai.com/v1/chat/completions" # Added required endpoint (full path)
   parameters = { temperature = 0.2 }
 
-  # --- Google Gemini Model (via OpenAI compatible endpoint) ---
   [models.gemini-2-5-pro]
   model_name = "gemini-2.5-pro-exp-03-25"
   endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"

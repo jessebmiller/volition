@@ -106,9 +106,6 @@ fn print_welcome_message() {
     println!();
 }
 
-// Removed load_or_initialize_session function
-
-// Refactored run_agent_session
 async fn run_agent_session(
     config: &RuntimeConfig,
     _client: &Client, // Keep client in case needed later
@@ -117,18 +114,13 @@ async fn run_agent_session(
     initial_task: String,
     working_dir: &Path,
 ) -> Result<String, AgentError> {
-    // Return AgentError
-
-    // Create agent with strategy and initial task
     let mut agent = Agent::new(
         config.clone(),
-        tool_provider, // No need to clone Arc here
-        ui_handler,    // No need to clone Arc here
+        tool_provider,
+        ui_handler,
         Box::new(CompleteTaskStrategy::new()),
         initial_task,
     )
-    // Map the anyhow::Result from Agent::new to AgentError if needed
-    // Assuming Agent::new returns anyhow::Result for now.
     .map_err(|e| AgentError::Other(format!("Failed to create agent instance: {}", e)))?;
 
     info!("Starting agent run.");
@@ -137,7 +129,6 @@ async fn run_agent_session(
         config
     );
 
-    // Call the refactored run method
     match agent.run(working_dir).await {
         Ok(final_message) => {
             info!("Agent run finished successfully.");
@@ -147,33 +138,28 @@ async fn run_agent_session(
                     "Failed to render final AI message markdown: {}. Printing raw.",
                     e
                 );
-                println!("{}", final_message); // Print raw on error
+                println!("{}", final_message);
             } else {
-                println!(); // Add newline after successful markdown print
+                println!();
             }
             println!("----------------------");
-            Ok(final_message) // Return the final message
+            Ok(final_message)
         }
         Err(e) => {
             error!(
-                "Agent run failed: {:?}
-",
+                "Agent run failed: {:?}\n",
                 e
-            ); // Added newline for clarity
-               // Log the error, return it
+            );
             Err(e)
         }
     }
 }
-
-// Removed cleanup_session_state function
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     let cli = Cli::parse();
 
-    // --- Logging Setup (unchanged) ---
     let default_level = match cli.verbose {
         0 => Level::INFO,
         1 => Level::DEBUG,
@@ -195,7 +181,6 @@ async fn main() -> Result<()> {
     );
     debug!("Debug logging enabled.");
     trace!("Trace logging enabled.");
-    // --- End Logging Setup ---
 
     let (config, project_root) =
         load_cli_config().context("Failed to load configuration and find project root")?;
@@ -208,12 +193,8 @@ async fn main() -> Result<()> {
     let tool_provider: Arc<dyn ToolProvider> = Arc::new(CliToolProvider::new());
     let ui_handler = Arc::new(CliUserInteraction);
 
-    // Removed max_iterations logic
-    // Removed message history loading/initialization
-
     print_welcome_message();
 
-    // Simplified main loop
     loop {
         println!("{}", "How can I help you?".cyan());
         print!("{} ", ">".green().bold());
@@ -227,38 +208,29 @@ async fn main() -> Result<()> {
             break;
         }
 
-        // Removed saving conversation state
-
-        // Call the refactored agent session function for each input
         match run_agent_session(
             &config,
             &client,
             Arc::clone(&tool_provider),
             Arc::clone(&ui_handler),
-            trimmed_input.to_string(), // Pass user input as the initial task
+            trimmed_input.to_string(),
             &project_root,
         )
         .await
         {
             Ok(_) => {
-                // Success message is already printed within run_agent_session
                 info!("Agent session completed successfully for user input.");
             }
             Err(e) => {
-                // Error is logged in run_agent_session, print user-facing message
                 println!(
-                    "{}: {:?}
-", // Added newline for clarity
+                    "{}: {:?}\n",
                     "Agent run encountered an error".red(),
-                    e // Display the specific AgentError
+                    e
                 );
             }
         }
-        // Removed adding assistant response to message list
-        // Removed recovery file cleanup on success
     }
 
-    // Removed final cleanup call
     println!("{}", "Thanks!".cyan());
     Ok(())
 }
