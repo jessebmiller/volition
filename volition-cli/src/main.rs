@@ -406,7 +406,6 @@ async fn main() -> Result<()> {
                     "Agent run encountered an error".red(),
                     e
                 );
-                // Keep the messages list as is, so the error context isn't lost for the next turn
             }
         }
     }
