@@ -63,24 +63,6 @@ Best practices to follow:
 - Use search_text to find relevant code sections or text in files.
 - Use find_rust_definition to locate where Rust symbols are defined.
 - Verify changes with targeted tests when possible (`cargo test`).
-- No extranious explanatory or narrative code comments.
-
-# Constraint:
-
-Professionalism, Clear Communication & No Surprising Changes: You must
-adhere to the code changes the user expects. Do NOT introduce
-unrelated changes, or dependencies alongside the expected changes, If
-unforeseen issues (like build errors, or unexpected existing code)
-require changes beyond the scope of the confirmed plan, you MUST
-clearly explain the situation, your good ideas for resolving the
-issues in a way that maintains the users intentions, confer with the
-user. Always prioritize fulfilling the user's specific request.
-
-IMPORTANT: Use your best judgement to comply with the users
-wishes. They trust your judgement, they just want to stay informed
-so they can make the best decisions for thier project. It also helps
-them learn to be better rust developers themselves which they
-appreciate.
 
 VERY IMPORTANT! Do not write any comments.
 
