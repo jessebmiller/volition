@@ -3,40 +3,37 @@ mod models;
 mod rendering;
 mod tools;
 
+// Simplified imports
 use anyhow::{anyhow, Context, Result};
 use colored::*;
-use std::{
-    env,
-    fs, // Added fs import back
-    io::{self, Write},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-use tokio::time::Duration;
+// Break down the std use statement
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+use std::path::PathBuf; // Removed unused Path
+use std::sync::Arc;
+// use tokio::time::Duration; // Removed unused Duration
 
-// Updated imports
-use volition_agent_core::{
-    async_trait,
-    config::RuntimeConfig,
-    errors::AgentError,                              // Added AgentError
-    strategies::complete_task::CompleteTaskStrategy, // Added Strategy
-    Agent,
-    ToolProvider,
-    UserInteraction,
-};
+// Import items directly from volition_agent_core
+use volition_agent_core::async_trait;
+use volition_agent_core::config::RuntimeConfig;
+use volition_agent_core::errors::AgentError;
+use volition_agent_core::strategies::complete_task::CompleteTaskStrategy;
+use volition_agent_core::strategies::conversation::ConversationStrategy;
+use volition_agent_core::{Agent, AgentState, ToolProvider, UserInteraction};
+
 
 use crate::models::cli::Cli;
 use crate::rendering::print_formatted;
 use crate::tools::CliToolProvider;
 
 use clap::Parser;
-use reqwest::Client;
+// use reqwest::Client; // Removed unused Client
 use time::macros::format_description;
-use tracing::{debug, error, info, trace, Level}; // Removed warn
+use tracing::{debug, error, info, trace, Level};
 use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 const CONFIG_FILENAME: &str = "Volition.toml";
-// const RECOVERY_FILE_PATH: &str = ".conversation_state.json"; // Removed recovery logic
 
 /// Simple struct to handle CLI user interactions.
 struct CliUserInteraction;
@@ -45,8 +42,7 @@ struct CliUserInteraction;
 impl UserInteraction for CliUserInteraction {
     /// Asks the user a question via the command line.
     async fn ask(&self, prompt: String, _options: Vec<String>) -> Result<String> {
-        // Keep existing ask implementation
-        print!("{}", prompt.yellow().bold());
+        print!("{} ", prompt.yellow().bold());
         io::stdout().flush().context("Failed to flush stdout")?;
 
         let mut buffer = String::new();
@@ -95,64 +91,15 @@ fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
 
 fn print_welcome_message() {
     println!(
-        "
-{}",
+        "\n{}",
         "Volition - AI Assistant".cyan().bold()
     );
     println!(
-        "{}",
-        "Type 'exit' or press Enter on an empty line to quit.".cyan()
+        "{}\n{}",
+        "Type 'exit' or press Enter on an empty line to quit.".cyan(),
+        "Type 'new' to start a fresh conversation.".cyan()
     );
     println!();
-}
-
-async fn run_agent_session(
-    config: &RuntimeConfig,
-    _client: &Client, // Keep client in case needed later
-    tool_provider: Arc<dyn ToolProvider>,
-    ui_handler: Arc<CliUserInteraction>,
-    initial_task: String,
-    working_dir: &Path,
-) -> Result<String, AgentError> {
-    let mut agent = Agent::new(
-        config.clone(),
-        tool_provider,
-        ui_handler,
-        Box::new(CompleteTaskStrategy::new()),
-        initial_task,
-    )
-    .map_err(|e| AgentError::Other(format!("Failed to create agent instance: {}", e)))?;
-
-    info!("Starting agent run.");
-    debug!(
-        "Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>, Strategy: CompleteTask",
-        config
-    );
-
-    match agent.run(working_dir).await {
-        Ok(final_message) => {
-            info!("Agent run finished successfully.");
-            println!("{}", "--- Agent Response ---".bold());
-            if let Err(e) = print_formatted(&final_message) {
-                error!(
-                    "Failed to render final AI message markdown: {}. Printing raw.",
-                    e
-                );
-                println!("{}", final_message);
-            } else {
-                println!();
-            }
-            println!("----------------------");
-            Ok(final_message)
-        }
-        Err(e) => {
-            error!(
-                "Agent run failed: {:?}\n",
-                e
-            );
-            Err(e)
-        }
-    }
 }
 
 #[tokio::main]
@@ -185,18 +132,15 @@ async fn main() -> Result<()> {
     let (config, project_root) =
         load_cli_config().context("Failed to load configuration and find project root")?;
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(120)) // Example timeout
-        .build()
-        .context("Failed to build HTTP client")?;
-
     let tool_provider: Arc<dyn ToolProvider> = Arc::new(CliToolProvider::new());
     let ui_handler = Arc::new(CliUserInteraction);
 
     print_welcome_message();
 
+    let mut conversation_state: Option<AgentState> = None;
+
     loop {
-        println!("{}", "How can I help you?".cyan());
+        println!("\n{}", "How can I help you?".cyan());
         print!("{} ", ">".green().bold());
         io::stdout().flush()?;
 
@@ -208,18 +152,49 @@ async fn main() -> Result<()> {
             break;
         }
 
-        match run_agent_session(
-            &config,
-            &client,
-            Arc::clone(&tool_provider),
-            Arc::clone(&ui_handler),
-            trimmed_input.to_string(),
-            &project_root,
-        )
-        .await
-        {
-            Ok(_) => {
+        if trimmed_input.to_lowercase() == "new" {
+            println!("{}", "Starting a new conversation...".cyan());
+            conversation_state = None;
+            continue;
+        }
+
+        let mut agent = {
+            let inner_strategy = Box::new(CompleteTaskStrategy::new());
+            let conversation_strategy: Box<dyn volition_agent_core::Strategy + Send + Sync> =
+                if let Some(state) = conversation_state.take() {
+                    info!("Continuing conversation.");
+                    Box::new(ConversationStrategy::with_state(inner_strategy, state))
+                } else {
+                    info!("Starting new conversation.");
+                    Box::new(ConversationStrategy::new(inner_strategy))
+                };
+
+            Agent::new(
+                config.clone(),
+                Arc::clone(&tool_provider),
+                Arc::clone(&ui_handler),
+                conversation_strategy,
+                trimmed_input.to_string(),
+            )
+            .map_err(|e| AgentError::Other(format!("Failed to create agent instance: {}", e)))?
+        };
+
+        match agent.run(&project_root).await {
+            Ok((final_message, updated_state)) => {
                 info!("Agent session completed successfully for user input.");
+                println!("{}", "--- Agent Response ---".bold());
+                if let Err(e) = print_formatted(&final_message) {
+                    error!(
+                        "Failed to render final AI message markdown: {}. Printing raw.",
+                        e
+                    );
+                    println!("{}", final_message);
+                } else {
+                    println!();
+                }
+                println!("----------------------");
+
+                conversation_state = Some(updated_state);
             }
             Err(e) => {
                 println!(
@@ -231,6 +206,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    println!("{}", "Thanks!".cyan());
+    println!("\n{}", "Thanks!".cyan());
     Ok(())
 }

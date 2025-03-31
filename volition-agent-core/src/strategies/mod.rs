@@ -2,11 +2,15 @@ use crate::errors::AgentError;
 use crate::{AgentState, ApiResponse, DelegationResult, ToolResult};
 
 pub mod complete_task;
+pub mod conversation; // <-- ADDED
+
+pub use conversation::ConversationStrategy; // <-- ADDED
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StrategyType {
     CompleteTask,
     PlanReviseExecute, // Conceptual for now
+    Conversation,      // <-- ADDED (Optional, but good for clarity)
 }
 
 #[derive(Debug, Clone)]

@@ -1,6 +1,6 @@
 // volition-agent-core/src/lib.rs
 
-#![doc = include_str!("../../README.md")] // Removed space
+#![doc = include_str!("../../README.md")]
 
 pub mod api;
 pub mod config;
@@ -48,15 +48,15 @@ pub trait ToolProvider: Send + Sync {
 #[async_trait]
 pub trait UserInteraction: Send + Sync {
     /// Asks the user a question with optional predefined options.
-    /// Returns the user's response string.
+    /// Returns the user\'s response string.
     /// If options are provided, the implementation should guide the user.
-    /// An empty response or case-insensitive "yes"/"y" typically signifies confirmation.
+    /// An empty response or case-insensitive \"yes\"/\"y\" typically signifies confirmation.
     async fn ask(&self, prompt: String, options: Vec<String>) -> Result<String>;
 }
 
 // --- Structs for Strategy Interaction ---
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)] // Added Serialize/Deserialize for potential persistence
 pub struct AgentState {
     pub messages: Vec<ChatMessage>,
     pub pending_tool_calls: Vec<ToolCall>,
@@ -116,14 +116,14 @@ pub struct DelegationResult {
 pub struct AgentOutput {
     /// A list detailing the results of each tool executed during the run.
     pub applied_tool_results: Vec<ToolExecutionResult>,
-    /// The content of the AI's final message after all tool calls (if any).
+    /// The content of the AI\'s final message after all tool calls (if any).
     pub final_state_description: Option<String>,
 }
 
 /// Details the execution result of a single tool call within an [`AgentOutput`]. (Old version)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolExecutionResult {
-    /// The unique ID associated with the AI's request to call this tool.
+    /// The unique ID associated with the AI\'s request to call this tool.
     pub tool_call_id: String,
     /// The name of the tool that was executed.
     pub tool_name: String,
@@ -172,7 +172,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     ) -> Result<Self> {
         let http_client = Client::builder()
             .build()
-            .context("Failed to build HTTP client for Agent ")?; // Added space
+            .context("Failed to build HTTP client for Agent")?;
         let initial_state = AgentState::new(initial_task);
         info!(
             strategy = strategy.name(),
@@ -188,10 +188,50 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         })
     }
 
+    /// Creates a new `Agent` instance initialized with existing conversation context.
+    /// The passed `strategy` should ideally be a `ConversationStrategy` wrapping
+    /// the desired inner strategy and initialized with the `conversation_state`.
+    /// The `Agent`'s internal state is initialized only with the `new_user_message`.
+    pub fn with_conversation_state(
+        config: RuntimeConfig,
+        tool_provider: Arc<dyn ToolProvider>,
+        ui_handler: Arc<UI>,
+        strategy: Box<dyn Strategy + Send + Sync>,
+        // conversation_state: AgentState, // State is managed *within* the ConversationStrategy now
+        new_user_message: String,
+    ) -> Result<Self> {
+        let http_client = Client::builder()
+            .build()
+            .context("Failed to build HTTP client for Agent")?;
+
+        // Create a new state with just the new user message.
+        // The ConversationStrategy (passed in as `strategy`) is responsible
+        // for merging this with the historical context during initialize_interaction.
+        let initial_state = AgentState::new(new_user_message);
+
+        info!(
+            strategy = strategy.name(),
+            "Initializing Agent with strategy and existing conversation context." // Updated log message
+        );
+
+        Ok(Self {
+            config,
+            tool_provider,
+            http_client,
+            ui_handler,
+            strategy,
+            state: initial_state, // Agent state starts with just the new message
+        })
+    }
+
+
     /// Runs the agent's strategy loop until completion or error.
-    pub async fn run(&mut self, working_dir: &Path) -> Result<String, AgentError> {
+    /// Returns the final message and the final AgentState.
+    pub async fn run(&mut self, working_dir: &Path) -> Result<(String, AgentState), AgentError> { // <-- MODIFIED Return Type
         info!(working_dir = ?working_dir, strategy = self.strategy.name(), "Starting agent run.");
 
+        // The strategy's initialize_interaction is responsible for setting up the initial state,
+        // potentially merging history if it's a ConversationStrategy.
         let mut next_step = self
             .strategy
             .initialize_interaction(&mut self.state)
@@ -207,8 +247,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
             trace!(next_step = ?next_step, "Processing next step.");
             match next_step {
                 NextStep::CallApi(state_from_strategy) => {
-                    // Removed mut
-                    self.state = state_from_strategy;
+                    self.state = state_from_strategy; // Update agent state
 
                     let tool_definitions = self.tool_provider.get_tool_definitions();
                     debug!(
@@ -217,11 +256,9 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         tool_definitions.len()
                     );
 
-                    // Handle Result -> Result conversion using match (trusting compiler error)
                     let model_config = match self.config.selected_model_config() {
-                        Ok(config) => config, // Assuming it returns Result<&ModelConfig, anyhow::Error>
+                        Ok(config) => config,
                         Err(e) => {
-                            // Map the anyhow::Error to AgentError::Config
                             return Err(AgentError::Config(format!(
                                 "Failed to get selected model config: {}",
                                 e
@@ -259,6 +296,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         }
                     };
 
+                    // Pass the API response to the strategy for processing
                     next_step = self
                         .strategy
                         .process_api_response(&mut self.state, api_response)
@@ -271,11 +309,13 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         })?;
                 }
                 NextStep::CallTools(state_from_strategy) => {
-                    self.state = state_from_strategy;
-                    let tool_calls = self.state.pending_tool_calls.clone();
+                    self.state = state_from_strategy; // Update agent state
+                    let tool_calls = self.state.pending_tool_calls.clone(); // Clone to avoid borrow issues
 
                     if tool_calls.is_empty() {
                         warn!("Strategy requested tool calls, but none were pending in the state.");
+                        // Decide if this is an error or just needs a re-prompt
+                        // For now, treat as strategy error
                         return Err(AgentError::Strategy(
                             "Strategy requested CallTools, but no tools were pending.".to_string(),
                         ));
@@ -325,7 +365,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                         ToolResult {
                                             tool_call_id: tool_call_id.clone(),
                                             output: format!(
-                                                "Error executing tool \"{}\": {}", // Changed quotes
+                                                "Error executing tool \"{}\": {}",
                                                 tool_name, e
                                             ),
                                             status: ToolExecutionStatus::Failure,
@@ -354,6 +394,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         "Passing {} tool result(s) back to strategy.",
                         tool_results.len()
                     );
+                    // Pass tool results to the strategy for processing
                     next_step = self
                         .strategy
                         .process_tool_results(&mut self.state, tool_results)
@@ -366,10 +407,15 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         })?;
                 }
                 NextStep::DelegateTask(delegation_input) => {
+                    // Update agent state before delegation if needed
+                    // self.state = delegation_input.current_state; // Assuming input carries state
+
                     warn!(task = ?delegation_input.task_description, "Delegation requested, but not yet implemented.");
+                    // Placeholder implementation
                     let delegation_result = DelegationResult {
                         result: "Delegation is not implemented in this agent.".to_string(),
                     };
+                    // Pass delegation result back to the strategy
                     next_step = self
                         .strategy
                         .process_delegation_result(&mut self.state, delegation_result)
@@ -384,7 +430,8 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                 NextStep::Completed(final_message) => {
                     info!("Strategy indicated completion.");
                     trace!(message = %final_message, "Final message from strategy.");
-                    return Ok(final_message);
+                    // Return the final message AND the final state
+                    return Ok((final_message, self.state.clone())); // <-- MODIFIED Return Value
                 }
             }
         }
