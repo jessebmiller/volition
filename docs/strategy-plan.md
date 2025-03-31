@@ -2,7 +2,7 @@
 
 ## Goal
 
-Refactor the agent\'s core logic to use a pluggable `Strategy`
+Refactor the agent's core logic to use a pluggable `Strategy`
 pattern. This will allow different approaches to task execution (e.g.,
 simple request-response, plan-revise-execute) without modifying the
 core agent orchestration loop.

@@ -1,16 +1,18 @@
 // volition-agent-core/src/lib.rs
 
-#![doc = include_str!("../../README.md")]
+#![doc = include_str!("../../README.md")] // Removed space
 
 pub mod api;
 pub mod config;
+pub mod errors;
+pub mod strategies;
 pub mod tools;
-pub mod utils; // <-- Added this line
+pub mod utils;
 
 #[cfg(test)]
 mod agent_tests;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
@@ -21,8 +23,12 @@ pub use models::tools::{
     ToolCall, ToolDefinition, ToolFunction, ToolInput, ToolParameter, ToolParameterType,
     ToolParametersDefinition,
 };
+pub use strategies::{DelegationInput, DelegationOutput, Strategy};
 
 pub use async_trait::async_trait;
+
+use crate::errors::AgentError;
+use crate::strategies::NextStep;
 
 /// Trait defining the interface for providing tools to the [`Agent`].
 #[async_trait]
@@ -48,7 +54,64 @@ pub trait UserInteraction: Send + Sync {
     async fn ask(&self, prompt: String, options: Vec<String>) -> Result<String>;
 }
 
-/// Represents the final output of an [`Agent::run`] execution.
+// --- Structs for Strategy Interaction ---
+
+#[derive(Debug, Clone)]
+pub struct AgentState {
+    pub messages: Vec<ChatMessage>,
+    pub pending_tool_calls: Vec<ToolCall>,
+    // Add other relevant state fields here if needed
+}
+
+impl AgentState {
+    pub fn new(initial_task: String) -> Self {
+        Self {
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: Some(initial_task),
+                ..Default::default()
+            }],
+            pending_tool_calls: Vec::new(),
+        }
+    }
+
+    pub fn add_message(&mut self, message: ChatMessage) {
+        self.messages.push(message);
+    }
+
+    pub fn set_tool_calls(&mut self, tool_calls: Vec<ToolCall>) {
+        self.pending_tool_calls = tool_calls;
+    }
+
+    pub fn add_tool_results(&mut self, results: Vec<ToolResult>) {
+        for result in results {
+            self.messages.push(ChatMessage {
+                role: "tool".to_string(),
+                content: Some(result.output),
+                tool_call_id: Some(result.tool_call_id),
+                ..Default::default()
+            });
+        }
+        self.pending_tool_calls.clear(); // Clear pending calls after adding results
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolResult {
+    pub tool_call_id: String,
+    pub output: String,
+    pub status: ToolExecutionStatus, // Re-use existing enum
+}
+
+#[derive(Debug, Clone)]
+pub struct DelegationResult {
+    pub result: String,
+    // Potentially add artifacts, logs, etc.
+}
+
+// --- Old AgentOutput Structs (kept for reference, potentially remove later) ---
+
+/// Represents the final output of an [`Agent::run`] execution. (Old version)
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AgentOutput {
     /// A list detailing the results of each tool executed during the run.
@@ -57,7 +120,7 @@ pub struct AgentOutput {
     pub final_state_description: Option<String>,
 }
 
-/// Details the execution result of a single tool call within an [`AgentOutput`].
+/// Details the execution result of a single tool call within an [`AgentOutput`]. (Old version)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolExecutionResult {
     /// The unique ID associated with the AI's request to call this tool.
@@ -81,292 +144,251 @@ pub enum ToolExecutionStatus {
     Failure,
 }
 
+// --- Agent Struct and Implementation ---
+
 use reqwest::Client;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
-/// The main struct for interacting with the AI agent.
+/// The main struct for interacting with the AI agent using Strategies.
 pub struct Agent<UI: UserInteraction> {
     config: RuntimeConfig,
     tool_provider: Arc<dyn ToolProvider>,
     http_client: Client,
+    #[allow(dead_code)] // Keep UI handler even if unused in current loop
     ui_handler: Arc<UI>,
-    initial_max_iterations: usize,
+    strategy: Box<dyn Strategy + Send + Sync>,
+    state: AgentState,
 }
 
 impl<UI: UserInteraction + 'static> Agent<UI> {
-    /// Creates a new `Agent` instance.
+    /// Creates a new `Agent` instance with a specific strategy.
     pub fn new(
         config: RuntimeConfig,
         tool_provider: Arc<dyn ToolProvider>,
         ui_handler: Arc<UI>,
-        max_iterations: usize,
+        strategy: Box<dyn Strategy + Send + Sync>,
+        initial_task: String,
     ) -> Result<Self> {
         let http_client = Client::builder()
             .build()
-            .context("Failed to build HTTP client for Agent")?;
+            .context("Failed to build HTTP client for Agent ")?; // Added space
+        let initial_state = AgentState::new(initial_task);
+        info!(
+            strategy = strategy.name(),
+            "Initializing Agent with strategy."
+        );
         Ok(Self {
             config,
             tool_provider,
             http_client,
             ui_handler,
-            initial_max_iterations: max_iterations,
+            strategy,
+            state: initial_state,
         })
     }
 
-    /// Runs the agent based on the provided message history.
-    pub async fn run(
-        &self,
-        mut messages: Vec<ChatMessage>,
-        working_dir: &Path,
-    ) -> Result<AgentOutput> {
-        info!(num_initial_messages = messages.len(), working_dir = ?working_dir, "Starting agent run.");
+    /// Runs the agent's strategy loop until completion or error.
+    pub async fn run(&mut self, working_dir: &Path) -> Result<String, AgentError> {
+        info!(working_dir = ?working_dir, strategy = self.strategy.name(), "Starting agent run.");
 
-        if messages.is_empty() {
-            error!("Agent run started with empty message history.");
-            return Err(anyhow!("Cannot run agent with empty message history"));
-        }
-
-        let mut current_iteration_limit = self.initial_max_iterations;
-        info!(
-            limit = current_iteration_limit,
-            "Agent iteration limit set to {}.", current_iteration_limit
-        );
-
-        let mut iteration = 0;
-        let mut collected_tool_results: Vec<ToolExecutionResult> = Vec::new();
+        let mut next_step = self
+            .strategy
+            .initialize_interaction(&mut self.state)
+            .map_err(|e| {
+                AgentError::Strategy(format!(
+                    "Initialization failed for {}: {}",
+                    self.strategy.name(),
+                    e
+                ))
+            })?;
 
         loop {
-            if iteration >= current_iteration_limit {
-                warn!(
-                    iteration = iteration,
-                    limit = current_iteration_limit,
-                    "Agent reached iteration limit."
-                );
+            trace!(next_step = ?next_step, "Processing next step.");
+            match next_step {
+                NextStep::CallApi(state_from_strategy) => {
+                    // Removed mut
+                    self.state = state_from_strategy;
 
-                let additional_iterations =
-                    ((current_iteration_limit as f64 / 3.0).ceil() as usize).max(1);
+                    let tool_definitions = self.tool_provider.get_tool_definitions();
+                    debug!(
+                        count = tool_definitions.len(),
+                        "Providing {} tool definitions to AI.",
+                        tool_definitions.len()
+                    );
 
-                let prompt = format!(
-                    "Agent reached iteration limit ({current_iteration_limit}). \
-                    Would you like to continue for {additional_iterations} more iterations? [Y/n] \
-                    (The initial limit is configured when the agent starts)",
-                );
+                    // Handle Result -> Result conversion using match (trusting compiler error)
+                    let model_config = match self.config.selected_model_config() {
+                        Ok(config) => config, // Assuming it returns Result<&ModelConfig, anyhow::Error>
+                        Err(e) => {
+                            // Map the anyhow::Error to AgentError::Config
+                            return Err(AgentError::Config(format!(
+                                "Failed to get selected model config: {}",
+                                e
+                            )));
+                        }
+                    };
 
-                let options = vec!["Yes".to_string(), "No".to_string()];
+                    debug!(
+                        model = %model_config.model_name,
+                        endpoint = %model_config.endpoint,
+                        num_messages = self.state.messages.len(),
+                        "Sending request to AI model."
+                    );
+                    trace!(payload = %serde_json::to_string_pretty(&self.state.messages).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Messages sent to API "); // Added space
+                    trace!(tools = %serde_json::to_string_pretty(&tool_definitions).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Tools sent to API "); // Added space
 
-                match self.ui_handler.ask(prompt, options).await {
-                    Ok(response) => {
-                        let response_lower = response.trim().to_lowercase();
-                        if response_lower.is_empty()
-                            || response_lower == "yes"
-                            || response_lower == "y"
-                        {
-                            info!(
-                                additional = additional_iterations,
-                                new_limit = current_iteration_limit + additional_iterations,
-                                "User chose to continue agent run."
-                            );
-                            current_iteration_limit += additional_iterations;
-                        } else {
-                            info!("User chose to stop agent run at iteration limit.");
-                            return Err(anyhow!(
-                                "Agent stopped by user after reaching iteration limit ({})",
-                                iteration
+                    let api_response = match api::get_chat_completion(
+                        &self.http_client,
+                        &self.config,
+                        self.state.messages.clone(), // Clone messages for the API call
+                        &tool_definitions,
+                    )
+                    .await
+                    {
+                        Ok(resp) => {
+                            debug!("Received successful response from AI.");
+                            trace!(response = %serde_json::to_string_pretty(&resp).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Full API Response Body "); // Added space
+                            resp
+                        }
+                        Err(e) => {
+                            error!(error = ?e, "API call failed during agent run.");
+                            return Err(AgentError::Api(
+                                e.context("API call failed during agent run "), // Added space
                             ));
                         }
+                    };
+
+                    next_step = self
+                        .strategy
+                        .process_api_response(&mut self.state, api_response)
+                        .map_err(|e| {
+                            AgentError::Strategy(format!(
+                                "Processing API response failed for {}: {}",
+                                self.strategy.name(),
+                                e
+                            ))
+                        })?;
+                }
+                NextStep::CallTools(state_from_strategy) => {
+                    // Removed mut
+                    self.state = state_from_strategy;
+                    let tool_calls = self.state.pending_tool_calls.clone(); // Clone to avoid borrow issues
+
+                    if tool_calls.is_empty() {
+                        warn!("Strategy requested tool calls, but none were pending in the state."); // Re-added warn import if needed
+                        return Err(AgentError::Strategy(
+                            "Strategy requested CallTools, but no tools were pending.".to_string(),
+                        ));
                     }
-                    Err(e) => {
-                        error!(error = ?e, "Failed to get user input about continuing iteration.");
-                        return Err(e.context(format!(
-                            "Failed to get user input at iteration limit ({})",
-                            iteration
-                        )));
+
+                    info!(
+                        count = tool_calls.len(),
+                        "Executing {} requested tool call(s).",
+                        tool_calls.len()
+                    );
+
+                    let mut tool_results: Vec<ToolResult> = Vec::new();
+
+                    for tool_call in tool_calls {
+                        let tool_name = tool_call.function.name.clone();
+                        let tool_call_id = tool_call.id.clone();
+                        debug!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Processing request for tool \"{}\".", tool_name); // Changed quotes
+                        trace!(arguments = %tool_call.function.arguments, "Raw Tool Arguments for \"{}\"", tool_name); // Changed quotes
+
+                        let tool_input_result: Result<HashMap<String, JsonValue>, _> =
+                            serde_json::from_str(&tool_call.function.arguments);
+
+                        let tool_result = match tool_input_result {
+                            Ok(args_map) => {
+                                let tool_input = ToolInput {
+                                    arguments: args_map,
+                                };
+                                debug!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Executing tool: \"{}\"", tool_name); // Changed quotes
+                                trace!(input = %serde_json::to_string_pretty(&tool_input.arguments).unwrap_or_default(), "Parsed Input for tool \"{}\"", tool_name); // Changed quotes
+
+                                match self
+                                    .tool_provider
+                                    .execute_tool(&tool_name, tool_input.clone(), working_dir)
+                                    .await
+                                {
+                                    Ok(output) => {
+                                        info!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Tool \"{}\" executed successfully.", tool_name); // Changed quotes
+                                        trace!(tool_call_id = %tool_call_id, output = %output, "Output from tool \"{}\"", tool_name); // Changed quotes
+                                        ToolResult {
+                                            tool_call_id: tool_call_id.clone(),
+                                            output,
+                                            status: ToolExecutionStatus::Success,
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(tool_call_id = %tool_call_id, tool_name = %tool_name, error = ?e, "Execution failed for tool \"{}\".", tool_name); // Changed quotes
+                                        ToolResult {
+                                            tool_call_id: tool_call_id.clone(),
+                                            output: format!(
+                                                "Error executing tool \"{}\": {}", // Changed quotes
+                                                tool_name, e
+                                            ),
+                                            status: ToolExecutionStatus::Failure,
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!(tool_call_id = %tool_call_id, tool_name = %tool_name, error = ?e, "Failed to parse arguments for tool \"{}\".", tool_name); // Changed quotes
+                                ToolResult {
+                                    tool_call_id: tool_call_id.clone(),
+                                    output: format!(
+                                        "Error parsing arguments for tool \"{}\": {}. Arguments received: {}", // Changed quotes
+                                        tool_name, e, tool_call.function.arguments
+                                    ),
+                                    status: ToolExecutionStatus::Failure,
+                                }
+                            }
+                        };
+                        trace!(tool_call_id = %tool_result.tool_call_id, result = ?tool_result.status, "Collected Tool Result "); // Added space
+                        tool_results.push(tool_result);
                     }
+
+                    debug!(
+                        count = tool_results.len(),
+                        "Passing {} tool result(s) back to strategy.",
+                        tool_results.len()
+                    );
+                    next_step = self
+                        .strategy
+                        .process_tool_results(&mut self.state, tool_results)
+                        .map_err(|e| {
+                            AgentError::Strategy(format!(
+                                "Processing tool results failed for {}: {}",
+                                self.strategy.name(),
+                                e
+                            ))
+                        })?;
+                }
+                NextStep::DelegateTask(delegation_input) => {
+                    warn!(task = ?delegation_input.task_description, "Delegation requested, but not yet implemented."); // Re-added warn import if needed
+                                                                                                                        // Ask the strategy to handle the delegation result (which indicates an error/unsupported operation).
+                    let delegation_result = DelegationResult {
+                        result: "Delegation is not implemented in this agent.".to_string(),
+                    };
+                    next_step = self
+                        .strategy
+                        .process_delegation_result(&mut self.state, delegation_result)
+                        .map_err(|e| {
+                            AgentError::Delegation(format!(
+                                "Processing delegation result failed for {}: {}",
+                                self.strategy.name(),
+                                e
+                            ))
+                        })?;
+                }
+                NextStep::Completed(final_message) => {
+                    info!("Strategy indicated completion.");
+                    trace!(message = %final_message, "Final message from strategy.");
+                    return Ok(final_message);
                 }
             }
-
-            iteration += 1;
-            info!(
-                iteration = iteration,
-                limit = current_iteration_limit,
-                "Starting agent iteration {}/{}.",
-                iteration,
-                current_iteration_limit
-            );
-
-            let tool_definitions = self.tool_provider.get_tool_definitions();
-            debug!(
-                count = tool_definitions.len(),
-                "Providing {} tool definitions to AI.",
-                tool_definitions.len()
-            );
-
-            let model_config = self
-                .config
-                .selected_model_config()
-                .expect("Selected model config should be valid");
-            debug!(
-                model = %model_config.model_name,
-                endpoint = %model_config.endpoint,
-                num_messages = messages.len(),
-                "Sending request to AI model."
-            );
-            trace!(payload = %serde_json::to_string_pretty(&messages).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Messages sent to API");
-            trace!(tools = %serde_json::to_string_pretty(&tool_definitions).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Tools sent to API");
-
-            let api_response = match api::get_chat_completion(
-                &self.http_client,
-                &self.config,
-                messages.clone(),
-                &tool_definitions,
-            )
-            .await
-            {
-                Ok(resp) => {
-                    debug!("Received successful response from AI.");
-                    trace!(response = %serde_json::to_string_pretty(&resp).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Full API Response Body");
-                    resp
-                }
-                Err(e) => {
-                    error!(error = ?e, "API call failed during agent run.");
-                    trace!(error = %e, "API call failed.");
-                    return Err(e.context("API call failed during agent run"));
-                }
-            };
-
-            let choice = api_response.choices.into_iter().next().ok_or_else(|| {
-                error!("API response contained no choices.");
-                anyhow!("API response contained no choices")
-            })?;
-            let response_message = choice.message;
-
-            debug!("Received assistant message from AI.");
-            trace!(message = %serde_json::to_string_pretty(&response_message).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Assistant Message Details");
-
-            messages.push(response_message.clone());
-
-            if let Some(tool_calls) = response_message.tool_calls {
-                info!(
-                    count = tool_calls.len(),
-                    "AI requested {} tool call(s).",
-                    tool_calls.len()
-                );
-                trace!(tool_calls = %serde_json::to_string_pretty(&tool_calls).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Tool Call Details");
-
-                let mut tool_outputs: Vec<ChatMessage> = Vec::new();
-
-                for tool_call in tool_calls {
-                    let tool_name = tool_call.function.name.clone();
-                    debug!(tool_call_id = %tool_call.id, tool_name = %tool_name, "Processing request for tool '{}'.", tool_name);
-                    trace!(arguments = %tool_call.function.arguments, "Raw Tool Arguments for '{}'", tool_name);
-
-                    let input_result: Result<HashMap<String, JsonValue>, serde_json::Error> =
-                        serde_json::from_str(&tool_call.function.arguments);
-
-                    let tool_input = match input_result {
-                        Ok(args_map) => ToolInput {
-                            arguments: args_map,
-                        },
-                        Err(e) => {
-                            error!(tool_call_id = %tool_call.id, tool_name = %tool_name, error = ?e, "Failed to parse arguments for tool '{}'.", tool_name);
-                            let error_output = format!(
-                                "Error parsing arguments for tool '{}': {}. Arguments received: {}",
-                                tool_name, e, tool_call.function.arguments
-                            );
-                            trace!(tool_call_id = %tool_call.id, error = %e, arguments = %tool_call.function.arguments, "Tool argument parsing failed for '{}'.", tool_name);
-
-                            tool_outputs.push(ChatMessage {
-                                role: "tool".to_string(),
-                                content: Some(error_output.clone()),
-                                tool_call_id: Some(tool_call.id.clone()),
-                                ..Default::default()
-                            });
-                            collected_tool_results.push(ToolExecutionResult {
-                                tool_call_id: tool_call.id,
-                                tool_name,
-                                input: serde_json::from_str(&tool_call.function.arguments)
-                                    .unwrap_or_else(|_| {
-                                        JsonValue::String("Invalid JSON".to_string())
-                                    }),
-                                output: error_output,
-                                status: ToolExecutionStatus::Failure,
-                            });
-                            continue;
-                        }
-                    };
-
-                    debug!(tool_call_id = %tool_call.id, tool_name = %tool_name, "Executing tool: '{}'", tool_name);
-                    trace!(input = %serde_json::to_string_pretty(&tool_input.arguments).unwrap_or_default(), "Parsed Input for tool '{}'", tool_name);
-
-                    let execution_result = self
-                        .tool_provider
-                        .execute_tool(&tool_name, tool_input.clone(), working_dir)
-                        .await;
-
-                    let (output_str, status) = match execution_result {
-                        Ok(output) => {
-                            info!(tool_call_id = %tool_call.id, tool_name = %tool_name, "Tool '{}' executed successfully.", tool_name);
-                            trace!(tool_call_id = %tool_call.id, output = %output, "Output from tool '{}'", tool_name);
-                            (output, ToolExecutionStatus::Success)
-                        }
-                        Err(e) => {
-                            error!(tool_call_id = %tool_call.id, tool_name = %tool_name, error = ?e, "Execution failed for tool '{}'.", tool_name);
-                            trace!(tool_call_id = %tool_call.id, error = %e, "Error during execution of tool '{}'", tool_name);
-                            (
-                                format!("Error executing tool '{}': {}", tool_name, e),
-                                ToolExecutionStatus::Failure,
-                            )
-                        }
-                    };
-
-                    let tool_output_message = ChatMessage {
-                        role: "tool".to_string(),
-                        content: Some(output_str.clone()),
-                        tool_call_id: Some(tool_call.id.clone()),
-                        ..Default::default()
-                    };
-                    trace!(message = %serde_json::to_string_pretty(&tool_output_message).unwrap_or_default(), "Tool Output Message for '{}'", tool_name);
-                    tool_outputs.push(tool_output_message);
-
-                    let exec_result_log = ToolExecutionResult {
-                        tool_call_id: tool_call.id,
-                        tool_name: tool_name.clone(),
-                        input: serde_json::to_value(tool_input.arguments)
-                            .unwrap_or(JsonValue::Null),
-                        output: output_str,
-                        status,
-                    };
-
-                    trace!(result = %serde_json::to_string_pretty(&exec_result_log).unwrap_or_default(), "Collected Execution Result for '{}'", tool_name);
-
-                    collected_tool_results.push(exec_result_log);
-                }
-
-                messages.extend(tool_outputs.clone());
-
-                debug!(
-                    count = tool_outputs.len(),
-                    "Added {} tool output(s) to messages, continuing loop.",
-                    tool_outputs.len()
-                );
-                trace!(tool_outputs = %serde_json::to_string_pretty(&tool_outputs).unwrap_or_default(), "Tool Output Messages Added to History");
-
-                continue;
-            }
-
-            info!("Received final response from AI (no further tool calls requested).");
-            let final_description = response_message.content;
-
-            let agent_output = AgentOutput {
-                applied_tool_results: collected_tool_results,
-                final_state_description: final_description,
-            };
-
-            debug!("Agent run finished successfully.");
-            trace!(output = %serde_json::to_string_pretty(&agent_output).unwrap_or_default(), "Final Agent Output");
-
-            return Ok(agent_output);
         }
     }
 }

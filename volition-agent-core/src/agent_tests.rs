@@ -2,13 +2,16 @@
 #![cfg(test)]
 
 use super::*;
+// use crate::errors::AgentError; // Removed unused import
+use crate::strategies::complete_task::CompleteTaskStrategy;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result}; // Added anyhow macro import
 use httpmock::prelude::*;
 use serde_json::json;
+use tracing::debug; // Import debug for logging
 use tracing_subscriber;
 
 #[derive(Default)]
@@ -26,7 +29,7 @@ impl UserInteraction for MockUI {
             .lock()
             .unwrap()
             .pop()
-            .unwrap_or_else(|| "yes".to_string());
+            .unwrap_or_else(|| "yes".to_string()); // Default to "yes" for tests
         Ok(response)
     }
 }
@@ -101,8 +104,9 @@ impl ToolProvider for MockToolProvider {
 
         match self.outputs.get(tool_name) {
             Some(Ok(output)) => Ok(output.clone()),
-            Some(Err(e)) => Err(anyhow!("{}", e.clone())),
+            Some(Err(e)) => Err(anyhow!("{}", e.clone())), // Use imported anyhow!
             None => Err(anyhow!(
+                // Use imported anyhow!
                 "MockToolProvider: No output defined for tool '{}'",
                 tool_name
             )),
@@ -111,7 +115,6 @@ impl ToolProvider for MockToolProvider {
 }
 
 const TEST_ENDPOINT_PATH: &str = "/test/completions";
-const TEST_ITERATION_LIMIT: usize = 5;
 
 fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
     let mock_endpoint = format!("{}{}", mock_server_base_url, TEST_ENDPOINT_PATH);
@@ -137,8 +140,15 @@ async fn test_agent_initialization() {
     let config = create_test_config("http://unused");
     let mock_provider = Arc::new(MockToolProvider::new(vec![], HashMap::new()));
     let mock_ui = Arc::new(MockUI::default());
+    let initial_task = "Test task".to_string();
 
-    let agent_result = Agent::new(config, mock_provider, mock_ui, TEST_ITERATION_LIMIT);
+    let agent_result = Agent::new(
+        config,
+        mock_provider,
+        mock_ui,
+        Box::new(CompleteTaskStrategy::new()),
+        initial_task,
+    );
     assert!(agent_result.is_ok());
 }
 
@@ -158,27 +168,28 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     let mock_ui = Arc::new(MockUI::default());
 
     let config = create_test_config(&mock_base_url);
-    let agent = Agent::new(
+    let initial_task = "What is the weather?".to_string();
+
+    let mut agent = Agent::new(
         config.clone(),
         mock_provider.clone(),
         mock_ui,
-        TEST_ITERATION_LIMIT,
+        Box::new(CompleteTaskStrategy::new()),
+        initial_task.clone(),
     )?;
 
-    let goal = "What is the weather?";
     let tool_call_id = "call_123";
     let tool_args = json!({ "arg": "today" });
 
+    // Mock 1: Initial user message -> Tool Call Request
     let expected_messages_1 = json!([
-        { "role": "system", "content": config.system_prompt },
-        { "role": "user", "content": goal },
+        { "role": "user", "content": initial_task },
     ]);
+    let model_name = config.selected_model_config().unwrap().model_name.clone(); // Clone model name
     let expected_body_1 = json!({
-        "model": config.selected_model_config().unwrap().model_name,
+        "model": model_name,
         "messages": expected_messages_1,
-        "tools": [
-            { "type": "function", "function": tool_defs[0] }
-        ]
+        "tools": [ { "type": "function", "function": tool_defs[0] } ]
     });
     let mock_response_1 = json!({
         "id": "resp1",
@@ -190,13 +201,10 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
                 "tool_calls": [{
                     "id": tool_call_id,
                     "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": tool_args.to_string()
-                    }
+                    "function": { "name": tool_name, "arguments": tool_args.to_string() }
                 }]
             },
-            "finish_reason": "tool_calls"
+            "finish_reason": "tool_use"
         }]
     });
     let api_mock_1 = server
@@ -208,7 +216,8 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
         })
         .await;
 
-    let final_answer = "The weather today is sunny.";
+    // Mock 2: Tool Result -> Final Answer
+    let final_answer = "The weather today is sunny.".to_string();
     let mock_response_2 = json!({
         "id": "resp2",
         "choices": [{
@@ -218,21 +227,19 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
                 "content": final_answer,
                 "tool_calls": null
             },
-            "finish_reason": "stop"
+            "finish_reason": "stop_sequence"
         }]
     });
+    // Adjusted expected messages: remove "content": null from assistant message
     let expected_messages_2 = json!([
-        { "role": "system", "content": config.system_prompt },
-        { "role": "user", "content": goal },
+        { "role": "user", "content": initial_task },
         {
             "role": "assistant",
+            // "content": null, // Removed this line
             "tool_calls": [{
                 "id": tool_call_id,
                 "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "arguments": tool_args.to_string()
-                }
+                "function": { "name": tool_name, "arguments": tool_args.to_string() }
             }]
         },
         {
@@ -242,11 +249,9 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
         }
     ]);
     let expected_body_2 = json!({
-        "model": config.selected_model_config().unwrap().model_name,
+        "model": model_name, // Use cloned model name
         "messages": expected_messages_2,
-        "tools": [
-            { "type": "function", "function": tool_defs[0] }
-        ]
+        "tools": [ { "type": "function", "function": tool_defs[0] } ]
     });
     let api_mock_2 = server
         .mock_async(|when, then| {
@@ -258,55 +263,35 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
         .await;
 
     let working_dir = PathBuf::from(".");
-    println!("Running agent...");
+    debug!("Running agent...");
 
-    let initial_messages = vec![
-        ChatMessage {
-            role: "system".to_string(),
-            content: Some(config.system_prompt.clone()),
-            ..Default::default()
-        },
-        ChatMessage {
-            role: "user".to_string(),
-            content: Some(goal.to_string()),
-            ..Default::default()
-        },
-    ];
+    let agent_result = agent.run(&working_dir).await;
+    debug!("Agent run finished. Result: {:?}", agent_result);
 
-    let agent_output_result = agent.run(initial_messages, &working_dir).await;
-    println!("Agent run finished. Result: {:?}", agent_output_result);
-
-    println!("Checking mock 1 hits...");
+    debug!("Checking mock 1 hits...");
     api_mock_1.assert_hits(1);
-    println!("Checking mock 2 hits...");
+    debug!("Checking mock 2 hits...");
     api_mock_2.assert_hits(1);
 
     assert!(
-        agent_output_result.is_ok(),
+        agent_result.is_ok(),
         "Agent run failed: {:?}",
-        agent_output_result.err()
+        agent_result.err()
     );
-    let agent_output = agent_output_result.unwrap();
+    let final_message = agent_result.unwrap();
 
     let calls = mock_provider.call_log.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].0, tool_name);
-    assert_eq!(calls[0].1, tool_args.to_string());
+    assert_eq!(calls.len(), 1, "Expected exactly one tool call");
+    assert_eq!(calls[0].0, tool_name, "Tool name mismatch");
+    let logged_args: serde_json::Value =
+        serde_json::from_str(&calls[0].1).expect("Failed to parse logged tool arguments");
+    assert_eq!(logged_args, tool_args, "Tool arguments mismatch");
 
-    assert_eq!(agent_output.applied_tool_results.len(), 1);
-    let tool_result = &agent_output.applied_tool_results[0];
-    assert_eq!(tool_result.tool_call_id, tool_call_id);
-    assert_eq!(tool_result.tool_name, tool_name);
-    assert_eq!(tool_result.input, tool_args);
-    assert_eq!(tool_result.output, tool_output_content);
-    assert_eq!(tool_result.status, ToolExecutionStatus::Success);
-    assert_eq!(
-        agent_output.final_state_description,
-        Some(final_answer.to_string())
-    );
+    assert_eq!(final_message, final_answer, "Final message mismatch");
 
     Ok(())
 }
 
-// TODO: More tests
-// TODO: Test iteration limit prompt
+// TODO: Add tests for error handling (API errors, tool errors)
+// TODO: Add tests for scenarios without tool calls
+// TODO: Test delegation once implemented (will require different strategy/mocks)

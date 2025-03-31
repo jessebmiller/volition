@@ -6,15 +6,23 @@ mod tools;
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 use std::{
-    env, fs,
+    env,
+    fs, // Added fs import back
     io::{self, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use tokio::time::Duration;
 
+// Updated imports
 use volition_agent_core::{
-    async_trait, config::RuntimeConfig, models::chat::ChatMessage, Agent, AgentOutput,
-    ToolProvider, UserInteraction,
+    async_trait,
+    config::RuntimeConfig,
+    errors::AgentError,                              // Added AgentError
+    strategies::complete_task::CompleteTaskStrategy, // Added Strategy
+    Agent,
+    ToolProvider,
+    UserInteraction,
 };
 
 use crate::models::cli::Cli;
@@ -23,13 +31,12 @@ use crate::tools::CliToolProvider;
 
 use clap::Parser;
 use reqwest::Client;
-use std::sync::Arc;
-use time::macros::format_description; // Added for timestamp formatting
-use tracing::{debug, error, info, trace, warn, Level}; // Added trace, Level
-use tracing_subscriber::{fmt::time::LocalTime, EnvFilter}; // Added LocalTime
+use time::macros::format_description;
+use tracing::{debug, error, info, trace, Level}; // Removed warn
+use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 const CONFIG_FILENAME: &str = "Volition.toml";
-const RECOVERY_FILE_PATH: &str = ".conversation_state.json";
+// const RECOVERY_FILE_PATH: &str = ".conversation_state.json"; // Removed recovery logic
 
 /// Simple struct to handle CLI user interactions.
 struct CliUserInteraction;
@@ -37,8 +44,8 @@ struct CliUserInteraction;
 #[async_trait]
 impl UserInteraction for CliUserInteraction {
     /// Asks the user a question via the command line.
-    /// The prompt should ideally include formatting like "[Y/n]".
     async fn ask(&self, prompt: String, _options: Vec<String>) -> Result<String> {
+        // Keep existing ask implementation
         print!("{}", prompt.yellow().bold());
         io::stdout().flush().context("Failed to flush stdout")?;
 
@@ -99,239 +106,114 @@ fn print_welcome_message() {
     println!();
 }
 
-fn load_or_initialize_session(
-    config: &RuntimeConfig,
-    project_root: &Path,
-) -> Result<Option<Vec<ChatMessage>>> {
-    let recovery_path = project_root.join(RECOVERY_FILE_PATH);
-    let mut messages_option: Option<Vec<ChatMessage>> = None;
+// Removed load_or_initialize_session function
 
-    if recovery_path.exists() {
-        info!("Found existing session state file: {:?}", recovery_path);
-        print!(
-            "{}",
-            "An incomplete session state was found. Resume? [Y/n]: "
-                .yellow()
-                .bold()
-        );
-        io::stdout().flush()?;
-        let mut user_choice = String::new();
-        io::stdin().read_line(&mut user_choice)?;
-
-        if user_choice.trim().to_lowercase() != "n" {
-            match fs::read_to_string(&recovery_path) {
-                Ok(state_json) => match serde_json::from_str(&state_json) {
-                    Ok(loaded_messages) => {
-                        messages_option = Some(loaded_messages);
-                        info!("Successfully loaded session state from file.");
-                        println!("{}", "Resuming previous session...".cyan());
-                    }
-                    Err(e) => {
-                        error!("Failed to deserialize state file: {}. Starting fresh.", e);
-                        println!("{}", "Error reading state file. Starting fresh.".red());
-                    }
-                },
-                Err(e) => {
-                    error!("Failed to read state file: {}. Starting fresh.", e);
-                    println!("{}", "Error reading state file. Starting fresh.".red());
-                }
-            }
-        } else {
-            info!("User chose not to resume. Starting fresh.");
-            println!("{}", "Starting a fresh session.".cyan());
-        }
-    }
-
-    if messages_option.is_none() {
-        messages_option = Some(vec![ChatMessage {
-            role: "system".to_string(),
-            content: Some(config.system_prompt.clone()),
-            ..Default::default()
-        }]);
-        info!("Initialized new session with system prompt.");
-    }
-
-    Ok(messages_option)
-}
-
+// Refactored run_agent_session
 async fn run_agent_session(
     config: &RuntimeConfig,
-    _client: &Client,
+    _client: &Client, // Keep client in case needed later
     tool_provider: Arc<dyn ToolProvider>,
-    messages: Vec<ChatMessage>,
-    working_dir: &Path,
-    max_iterations: usize,
     ui_handler: Arc<CliUserInteraction>,
-) -> Result<AgentOutput> {
-    let agent = Agent::new(
-        config.clone(),
-        Arc::clone(&tool_provider),
-        ui_handler,
-        max_iterations,
-    )
-    .context("Failed to create agent instance")?;
+    initial_task: String,
+    working_dir: &Path,
+) -> Result<String, AgentError> {
+    // Return AgentError
 
-    info!("Starting agent run with {} messages", messages.len());
+    // Create agent with strategy and initial task
+    let mut agent = Agent::new(
+        config.clone(),
+        tool_provider, // No need to clone Arc here
+        ui_handler,    // No need to clone Arc here
+        Box::new(CompleteTaskStrategy::new()),
+        initial_task,
+    )
+    // Map the anyhow::Result from Agent::new to AgentError if needed
+    // Assuming Agent::new returns anyhow::Result for now.
+    .map_err(|e| AgentError::Other(format!("Failed to create agent instance: {}", e)))?;
+
+    info!("Starting agent run.");
     debug!(
-        "Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>, Max Iterations: {}",
-        config, max_iterations
+        "Agent config: {:?}, Tool Provider: Arc<dyn ToolProvider>, Strategy: CompleteTask",
+        config
     );
 
-    match agent.run(messages, working_dir).await {
-        Ok(agent_output) => {
+    // Call the refactored run method
+    match agent.run(working_dir).await {
+        Ok(final_message) => {
             info!("Agent run finished successfully.");
-            println!("{}", "--- Agent Run Summary ---".bold());
-
-            if !agent_output.applied_tool_results.is_empty() {
-                println!("{}:", "Tool Execution Results".cyan());
-                for result in &agent_output.applied_tool_results {
-                    let status_color = match result.status {
-                        volition_agent_core::ToolExecutionStatus::Success => "Success".green(),
-                        volition_agent_core::ToolExecutionStatus::Failure => "Failure".red(),
-                    };
-                    println!(
-                        "- Tool: {}, Status: {}",
-                        result.tool_name.yellow(),
-                        status_color
-                    );
-                }
-            }
-
-            if let Some(final_desc) = &agent_output.final_state_description {
-                println!("{}:", "Final AI Message".cyan());
-                if let Err(e) = print_formatted(final_desc) {
-                    error!(
-                        "Failed to render final AI message markdown: {}. Printing raw.",
-                        e
-                    );
-                    println!("{}", final_desc);
-                } else {
-                    println!();
-                }
+            println!("{}", "--- Agent Response ---".bold());
+            if let Err(e) = print_formatted(&final_message) {
+                error!(
+                    "Failed to render final AI message markdown: {}. Printing raw.",
+                    e
+                );
+                println!("{}", final_message); // Print raw on error
             } else {
-                warn!("Agent finished but provided no final description in output.");
+                println!(); // Add newline after successful markdown print
             }
-            println!("-----------------------");
-            Ok(agent_output)
+            println!("----------------------");
+            Ok(final_message) // Return the final message
         }
         Err(e) => {
-            error!("Agent run failed: {:?}", e);
+            error!(
+                "Agent run failed: {:?}
+",
+                e
+            ); // Added newline for clarity
+               // Log the error, return it
             Err(e)
         }
     }
 }
 
-fn cleanup_session_state(project_root: &Path) -> Result<()> {
-    let recovery_path = project_root.join(RECOVERY_FILE_PATH);
-    if recovery_path.exists() {
-        if let Err(e) = fs::remove_file(&recovery_path) {
-            warn!("Failed to remove recovery state file on exit: {}", e);
-        } else {
-            info!("Removed recovery state file on clean exit.");
-        }
-    }
-    Ok(())
-}
+// Removed cleanup_session_state function
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
-    let cli = Cli::parse(); // Parse CLI args early
+    let cli = Cli::parse();
 
-    // Set up logging based on RUST_LOG or verbosity flags
+    // --- Logging Setup (unchanged) ---
     let default_level = match cli.verbose {
-        0 => Level::INFO,  // Default: no flag -> INFO
-        1 => Level::DEBUG, // -v -> DEBUG
-        _ => Level::TRACE, // -vv, -vvv -> TRACE
+        0 => Level::INFO,
+        1 => Level::DEBUG,
+        _ => Level::TRACE,
     };
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::default().add_directive(default_level.into()));
-
-    // Configure timestamp format
     let time_format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
     let local_timer = LocalTime::new(time_format);
-
     let subscriber = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
-        .with_target(false) // Don't include module paths in logs
-        .with_timer(local_timer) // Use local time with custom format
+        .with_target(false)
+        .with_timer(local_timer)
         .finish();
-
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-
-    // Log after initialization
     info!(
         "Logging initialized. Level determined by RUST_LOG or -v flags (default: {}).",
         default_level
     );
     debug!("Debug logging enabled.");
     trace!("Trace logging enabled.");
+    // --- End Logging Setup ---
 
     let (config, project_root) =
         load_cli_config().context("Failed to load configuration and find project root")?;
 
     let client = Client::builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(120)) // Example timeout
         .build()
         .context("Failed to build HTTP client")?;
 
     let tool_provider: Arc<dyn ToolProvider> = Arc::new(CliToolProvider::new());
-
-    const DEFAULT_MAX_ITERATIONS: usize = 20;
-    let max_iterations =
-        env::var("VOLITION_MAX_ITERATIONS")
-            .ok()
-            .and_then(|s| {
-                s.parse::<usize>().map_err(|e| {
-                warn!(
-                    env_var = "VOLITION_MAX_ITERATIONS",
-                    value = %s,
-                    error = ?e,
-                    "Failed to parse iteration limit from environment variable. Using default."
-                );
-                e
-            }).ok()
-            })
-            .unwrap_or(DEFAULT_MAX_ITERATIONS);
-
-    info!(
-        limit = max_iterations,
-        source = if env::var("VOLITION_MAX_ITERATIONS").is_ok()
-            && env::var("VOLITION_MAX_ITERATIONS")
-                .unwrap()
-                .parse::<usize>()
-                .is_ok()
-        {
-            "env(VOLITION_MAX_ITERATIONS)"
-        } else if env::var("VOLITION_MAX_ITERATIONS").is_ok() {
-            "env(parse_failed)->default"
-        } else {
-            "default"
-        },
-        "Agent iteration limit set."
-    );
-
     let ui_handler = Arc::new(CliUserInteraction);
 
-    let mut messages = match load_or_initialize_session(&config, &project_root)? {
-        Some(msgs) => msgs,
-        None => {
-            error!("Failed to load or initialize session messages.");
-            return Err(anyhow!("Session initialization failed"));
-        }
-    };
-
-    if messages.is_empty() || messages[0].role != "system" {
-        warn!("Messages list was empty or missing system prompt after init. Re-initializing.");
-        messages = vec![ChatMessage {
-            role: "system".to_string(),
-            content: Some(config.system_prompt.clone()),
-            ..Default::default()
-        }];
-    }
+    // Removed max_iterations logic
+    // Removed message history loading/initialization
 
     print_welcome_message();
 
+    // Simplified main loop
     loop {
         println!("{}", "How can I help you?".cyan());
         print!("{} ", ">".green().bold());
@@ -345,72 +227,38 @@ async fn main() -> Result<()> {
             break;
         }
 
-        messages.push(ChatMessage {
-            role: "user".to_string(),
-            content: Some(trimmed_input.to_string()),
-            ..Default::default()
-        });
+        // Removed saving conversation state
 
-        let recovery_path = project_root.join(RECOVERY_FILE_PATH);
-        match serde_json::to_string_pretty(&messages) {
-            Ok(state_json) => {
-                if let Err(e) = fs::write(&recovery_path, state_json) {
-                    warn!("Failed to write recovery state file: {}", e);
-                } else {
-                    info!("Saved conversation state to {:?}", recovery_path);
-                }
-            }
-            Err(e) => {
-                error!(
-                    "Failed to serialize conversation state: {}. Cannot guarantee recovery.",
-                    e
-                );
-            }
-        }
-
+        // Call the refactored agent session function for each input
         match run_agent_session(
             &config,
             &client,
             Arc::clone(&tool_provider),
-            messages.clone(),
-            &project_root,
-            max_iterations,
             Arc::clone(&ui_handler),
+            trimmed_input.to_string(), // Pass user input as the initial task
+            &project_root,
         )
         .await
         {
-            Ok(agent_output) => {
-                if let Some(final_desc) = agent_output.final_state_description {
-                    messages.push(ChatMessage {
-                        role: "assistant".to_string(),
-                        content: Some(final_desc),
-                        ..Default::default()
-                    });
-                }
-
-                if recovery_path.exists() {
-                    if let Err(e) = fs::remove_file(&recovery_path) {
-                        warn!(
-                            "Failed to remove recovery state file after successful run: {}",
-                            e
-                        );
-                    } else {
-                        info!("Removed recovery state file after successful run.");
-                    }
-                }
+            Ok(_) => {
+                // Success message is already printed within run_agent_session
+                info!("Agent session completed successfully for user input.");
             }
             Err(e) => {
+                // Error is logged in run_agent_session, print user-facing message
                 println!(
                     "{}: {:?}
-",
+", // Added newline for clarity
                     "Agent run encountered an error".red(),
-                    e
+                    e // Display the specific AgentError
                 );
             }
         }
+        // Removed adding assistant response to message list
+        // Removed recovery file cleanup on success
     }
 
-    let _ = cleanup_session_state(&project_root);
+    // Removed final cleanup call
     println!("{}", "Thanks!".cyan());
     Ok(())
 }
