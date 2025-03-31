@@ -235,8 +235,8 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         num_messages = self.state.messages.len(),
                         "Sending request to AI model."
                     );
-                    trace!(payload = %serde_json::to_string_pretty(&self.state.messages).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Messages sent to API "); // Added space
-                    trace!(tools = %serde_json::to_string_pretty(&tool_definitions).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Tools sent to API "); // Added space
+                    trace!(payload = %serde_json::to_string_pretty(&self.state.messages).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Messages sent to API");
+                    trace!(tools = %serde_json::to_string_pretty(&tool_definitions).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Tools sent to API");
 
                     let api_response = match api::get_chat_completion(
                         &self.http_client,
@@ -248,13 +248,13 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     {
                         Ok(resp) => {
                             debug!("Received successful response from AI.");
-                            trace!(response = %serde_json::to_string_pretty(&resp).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Full API Response Body "); // Added space
+                            trace!(response = %serde_json::to_string_pretty(&resp).unwrap_or_else(|e| format!("Serialization error: {}", e)), "Full API Response Body");
                             resp
                         }
                         Err(e) => {
                             error!(error = ?e, "API call failed during agent run.");
                             return Err(AgentError::Api(
-                                e.context("API call failed during agent run "), // Added space
+                                e.context("API call failed during agent run"),
                             ));
                         }
                     };
@@ -271,12 +271,11 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         })?;
                 }
                 NextStep::CallTools(state_from_strategy) => {
-                    // Removed mut
                     self.state = state_from_strategy;
-                    let tool_calls = self.state.pending_tool_calls.clone(); // Clone to avoid borrow issues
+                    let tool_calls = self.state.pending_tool_calls.clone();
 
                     if tool_calls.is_empty() {
-                        warn!("Strategy requested tool calls, but none were pending in the state."); // Re-added warn import if needed
+                        warn!("Strategy requested tool calls, but none were pending in the state.");
                         return Err(AgentError::Strategy(
                             "Strategy requested CallTools, but no tools were pending.".to_string(),
                         ));
@@ -293,8 +292,8 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     for tool_call in tool_calls {
                         let tool_name = tool_call.function.name.clone();
                         let tool_call_id = tool_call.id.clone();
-                        debug!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Processing request for tool \"{}\".", tool_name); // Changed quotes
-                        trace!(arguments = %tool_call.function.arguments, "Raw Tool Arguments for \"{}\"", tool_name); // Changed quotes
+                        debug!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Processing request for tool \"{}\".", tool_name);
+                        trace!(arguments = %tool_call.function.arguments, "Raw Tool Arguments for \"{}\"", tool_name);
 
                         let tool_input_result: Result<HashMap<String, JsonValue>, _> =
                             serde_json::from_str(&tool_call.function.arguments);
@@ -304,8 +303,8 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 let tool_input = ToolInput {
                                     arguments: args_map,
                                 };
-                                debug!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Executing tool: \"{}\"", tool_name); // Changed quotes
-                                trace!(input = %serde_json::to_string_pretty(&tool_input.arguments).unwrap_or_default(), "Parsed Input for tool \"{}\"", tool_name); // Changed quotes
+                                debug!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Executing tool: \"{}\"", tool_name);
+                                trace!(input = %serde_json::to_string_pretty(&tool_input.arguments).unwrap_or_default(), "Parsed Input for tool \"{}\"", tool_name);
 
                                 match self
                                     .tool_provider
@@ -313,8 +312,8 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                     .await
                                 {
                                     Ok(output) => {
-                                        info!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Tool \"{}\" executed successfully.", tool_name); // Changed quotes
-                                        trace!(tool_call_id = %tool_call_id, output = %output, "Output from tool \"{}\"", tool_name); // Changed quotes
+                                        info!(tool_call_id = %tool_call_id, tool_name = %tool_name, "Tool \"{}\" executed successfully.", tool_name);
+                                        trace!(tool_call_id = %tool_call_id, output = %output, "Output from tool \"{}\"", tool_name);
                                         ToolResult {
                                             tool_call_id: tool_call_id.clone(),
                                             output,
@@ -322,7 +321,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                         }
                                     }
                                     Err(e) => {
-                                        error!(tool_call_id = %tool_call_id, tool_name = %tool_name, error = ?e, "Execution failed for tool \"{}\".", tool_name); // Changed quotes
+                                        error!(tool_call_id = %tool_call_id, tool_name = %tool_name, error = ?e, "Execution failed for tool \"{}\".", tool_name);
                                         ToolResult {
                                             tool_call_id: tool_call_id.clone(),
                                             output: format!(
@@ -335,18 +334,18 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 }
                             }
                             Err(e) => {
-                                error!(tool_call_id = %tool_call_id, tool_name = %tool_name, error = ?e, "Failed to parse arguments for tool \"{}\".", tool_name); // Changed quotes
+                                error!(tool_call_id = %tool_call_id, tool_name = %tool_name, error = ?e, "Failed to parse arguments for tool \"{}\".", tool_name);
                                 ToolResult {
                                     tool_call_id: tool_call_id.clone(),
                                     output: format!(
-                                        "Error parsing arguments for tool \"{}\": {}. Arguments received: {}", // Changed quotes
+                                        "Error parsing arguments for tool \"{}\": {}. Arguments received: {}",
                                         tool_name, e, tool_call.function.arguments
                                     ),
                                     status: ToolExecutionStatus::Failure,
                                 }
                             }
                         };
-                        trace!(tool_call_id = %tool_result.tool_call_id, result = ?tool_result.status, "Collected Tool Result "); // Added space
+                        trace!(tool_call_id = %tool_result.tool_call_id, result = ?tool_result.status, "Collected Tool Result");
                         tool_results.push(tool_result);
                     }
 
@@ -367,8 +366,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         })?;
                 }
                 NextStep::DelegateTask(delegation_input) => {
-                    warn!(task = ?delegation_input.task_description, "Delegation requested, but not yet implemented."); // Re-added warn import if needed
-                                                                                                                        // Ask the strategy to handle the delegation result (which indicates an error/unsupported operation).
+                    warn!(task = ?delegation_input.task_description, "Delegation requested, but not yet implemented.");
                     let delegation_result = DelegationResult {
                         result: "Delegation is not implemented in this agent.".to_string(),
                     };

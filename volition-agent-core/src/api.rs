@@ -114,7 +114,7 @@ pub async fn get_chat_completion(
                 error_text
             );
             // Return the error including the status and body text
-            return Err(anyhow!("API error: {} - {}", status, error_text));
+            return Err(anyhow!("API error: {} - {:?} {}", status, headers, error_text));
         }
 
         let response_value: Value = response
@@ -132,7 +132,7 @@ pub async fn get_chat_completion(
         };
 
         if !response_json_obj.contains_key("id") {
-            let new_id = format!("chatcmpl-{}", Uuid::new_v4());
+            let new_id = format!("missing-id-replacement-{}", Uuid::new_v4());
             debug!(
                 "Added missing 'id' field to API response with value: {}",
                 new_id
@@ -146,7 +146,7 @@ pub async fn get_chat_completion(
         let api_response = match api_response_result {
             Ok(resp) => resp,
             Err(e) => {
-                debug!(
+                warn!(
                     "ERROR: failed to deserialize API response {:#?}",
                     response_value.clone()
                 );
