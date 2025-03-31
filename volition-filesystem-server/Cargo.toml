@@ -1,0 +1,13 @@
+[package]
+name = "volition-filesystem-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+# Inherit rmcp from workspace, specify needed features
+rmcp = { workspace = true, features = ["server", "transport-io"] } # Added transport-io
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7" # Added tokio-util
+async-trait = { workspace = true } # Added async-trait

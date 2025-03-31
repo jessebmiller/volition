@@ -1,113 +1,73 @@
-use super::{DelegationResult, NextStep, Strategy};
+// volition-agent-core/src/strategies/complete_task.rs
+use crate::agent::Agent;
 use crate::errors::AgentError;
-use crate::{AgentState, ApiResponse, ToolResult};
-use anyhow::anyhow; // Import anyhow for error creation
+use crate::models::chat::{ApiResponse, ChatMessage};
+use crate::strategies::{NextStep, Strategy};
+use crate::UserInteraction;
+use anyhow::{anyhow, Result}; // Import anyhow
+use async_trait::async_trait;
+use tracing::info;
 
+#[derive(Default)]
 pub struct CompleteTaskStrategy;
 
-impl CompleteTaskStrategy {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Default for CompleteTaskStrategy {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Strategy for CompleteTaskStrategy {
+#[async_trait]
+impl<UI: UserInteraction + 'static> Strategy<UI> for CompleteTaskStrategy {
     fn name(&self) -> &'static str {
         "CompleteTask"
     }
 
-    fn initialize_interaction(&self, state: &mut AgentState) -> Result<NextStep, AgentError> {
-        // For CompleteTask, the initial step is usually to call the API
-        // with the user's request already in the state.
-        Ok(NextStep::CallApi(state.clone())) // Assuming AgentState is cloneable
+    fn initialize_interaction(
+        &mut self,
+        state: &mut crate::AgentState,
+    ) -> Result<NextStep, AgentError> {
+        info!("Initializing CompleteTask strategy.");
+        Ok(NextStep::CallApi(state.clone()))
     }
 
     fn process_api_response(
-        &self,
-        state: &mut AgentState,
+        &mut self,
+        state: &mut crate::AgentState,
         response: ApiResponse,
     ) -> Result<NextStep, AgentError> {
-        // Get the first choice, or return error if none
+        info!("Processing API response for CompleteTask.");
         let choice = response
             .choices
             .into_iter()
             .next()
-            .ok_or_else(|| AgentError::Api(anyhow!("API response contained no choices")))?;
+            .ok_or(AgentError::Api(anyhow!("No choices returned from API")))?;
 
-        // Add the assistant's response message to the state
-        let assistant_message = choice.message.clone(); // Clone for state update
-        state.add_message(assistant_message.clone()); // Clone again for potential use below
+        state.add_message(choice.message.clone());
 
-        // Check for tool calls in the message
-        // Use `ref` to borrow the vector instead of moving it
-        if let Some(ref tool_calls) = assistant_message.tool_calls {
-            if !tool_calls.is_empty() {
-                // Clone the tool_calls when setting them in the state
-                state.set_tool_calls(tool_calls.clone());
-                return Ok(NextStep::CallTools(state.clone()));
-            }
-        }
-
-        // If no tool calls, check the finish reason
-        match choice.finish_reason.as_str() {
-            "tool_use" | "tool_calls" => {
-                // This case handles the scenario where finish_reason indicates tool use,
-                // even if the tool_calls vector might be empty (which would be unusual).
-                // We still need to handle the possibility of assistant_message.tool_calls being None here.
-                state.set_tool_calls(assistant_message.tool_calls.clone().unwrap_or_default());
-                Ok(NextStep::CallTools(state.clone()))
-            }
-            "stop" | "stop_sequence" | "max_tokens" | "end_turn" => {
-                // Task is considered complete.
-                // Return the content of the assistant message.
-                Ok(NextStep::Completed(
-                    assistant_message.content.unwrap_or_default(),
-                ))
-            }
-            other_reason => {
-                // Unknown finish reason.
-                if !other_reason.is_empty() {
-                    tracing::warn!(
-                        "Unknown API finish reason: '{}'. Assuming completion.",
-                        other_reason
-                    );
-                } else {
-                    tracing::warn!("Empty API finish reason. Assuming completion.");
-                }
-                Ok(NextStep::Completed(
-                    assistant_message.content.unwrap_or_default(),
-                ))
-            }
+        if let Some(tool_calls) = choice.message.tool_calls {
+            state.set_tool_calls(tool_calls);
+            Ok(NextStep::CallTools(state.clone()))
+        } else {
+            let final_content = choice
+                .message
+                .content
+                .unwrap_or_else(|| "Task completed.".to_string());
+            Ok(NextStep::Completed(final_content))
         }
     }
 
     fn process_tool_results(
-        &self,
-        state: &mut AgentState,
-        results: Vec<ToolResult>,
+        &mut self,
+        state: &mut crate::AgentState,
+        results: Vec<crate::ToolResult>,
     ) -> Result<NextStep, AgentError> {
-        // Add tool results to the state
-        state.add_tool_results(results); // This adds tool messages
-                                         // After getting tool results, call the API again to let the LLM process them.
+        info!("Processing tool results for CompleteTask.");
+        state.add_tool_results(results);
         Ok(NextStep::CallApi(state.clone()))
     }
 
     fn process_delegation_result(
-        &self,
-        _state: &mut AgentState,
-        _result: DelegationResult,
+        &mut self,
+        _state: &mut crate::AgentState,
+        _result: crate::DelegationResult,
     ) -> Result<NextStep, AgentError> {
-        // CompleteTaskStrategy does not initiate delegation, so receiving
-        // a delegation result is unexpected.
-        Err(AgentError::Strategy(format!(
-            "{} received unexpected delegation result",
-            self.name()
-        )))
+        Err(AgentError::Strategy(
+            "Delegation not supported by CompleteTaskStrategy".to_string(),
+        ))
     }
 }

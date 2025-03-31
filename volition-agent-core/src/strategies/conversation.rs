@@ -1,93 +1,101 @@
-use super::{DelegationInput, DelegationResult, NextStep, Strategy};
-use crate::{AgentState, ApiResponse, ToolResult};
+// volition-agent-core/src/strategies/conversation.rs
+use super::{DelegationResult, NextStep, Strategy};
+use crate::agent::Agent;
 use crate::errors::AgentError;
-use anyhow::anyhow;
+use crate::models::chat::{ApiResponse, ChatMessage};
+use crate::UserInteraction;
+use anyhow::Result;
+use async_trait::async_trait;
 
-pub struct ConversationStrategy {
-    inner_strategy: Box<dyn Strategy + Send + Sync>,
-    conversation_state: Option<AgentState>,
+// Add generic parameter <UI>
+pub struct ConversationStrategy<UI: UserInteraction + 'static> {
+    conversation_history: Vec<ChatMessage>,
+    inner_strategy: Box<dyn Strategy<UI> + Send + Sync>,
     end_current_task: bool,
 }
 
-impl ConversationStrategy {
-    pub fn new(inner_strategy: Box<dyn Strategy + Send + Sync>) -> Self {
+impl<UI: UserInteraction + 'static> ConversationStrategy<UI> {
+    pub fn new(inner_strategy: Box<dyn Strategy<UI> + Send + Sync>) -> Self {
         Self {
+            conversation_history: Vec::new(),
             inner_strategy,
-            conversation_state: None,
             end_current_task: false,
         }
     }
 
-    pub fn with_state(
-        inner_strategy: Box<dyn Strategy + Send + Sync>,
-        existing_state: AgentState,
+    pub fn with_history(
+        inner_strategy: Box<dyn Strategy<UI> + Send + Sync>,
+        history: Vec<ChatMessage>,
     ) -> Self {
         Self {
+            conversation_history: history,
             inner_strategy,
-            conversation_state: Some(existing_state),
             end_current_task: false,
         }
-    }
-
-    pub fn get_conversation_state(&self) -> Option<&AgentState> {
-        self.conversation_state.as_ref()
-    }
-
-    pub fn get_conversation_state_mut(&mut self) -> Option<&mut AgentState> {
-        self.conversation_state.as_mut()
-    }
-
-    pub fn take_conversation_state(&mut self) -> Option<AgentState> {
-        self.conversation_state.take()
     }
 }
 
-impl Strategy for ConversationStrategy {
+#[async_trait]
+impl<UI: UserInteraction + 'static> Strategy<UI> for ConversationStrategy<UI> {
     fn name(&self) -> &'static str {
         "Conversation"
     }
 
-    fn initialize_interaction(&self, state: &mut AgentState) -> Result<NextStep, AgentError> {
-        // If we have existing conversation state, merge it with the new state
-        if let Some(existing_state) = &self.conversation_state {
-            // Create a new state that has all previous messages plus the new user message
-            let user_message = state.messages.last().cloned().ok_or_else(|| {
-                AgentError::Strategy("State contains no initial message".to_string())
-            })?;
-
-            // Use existing conversation messages but add the new user message
-            state.messages = existing_state.messages.clone();
-            state.add_message(user_message);
-        }
-
-        // Delegate to the inner strategy
+    fn initialize_interaction(
+        &mut self,
+        state: &mut crate::AgentState,
+    ) -> Result<NextStep, AgentError> {
+        let current_messages = std::mem::take(&mut state.messages);
+        state.messages = self.conversation_history.clone();
+        state.messages.extend(current_messages);
+        self.end_current_task = false;
         self.inner_strategy.initialize_interaction(state)
     }
 
     fn process_api_response(
-        &self,
-        state: &mut AgentState,
+        &mut self,
+        state: &mut crate::AgentState,
         response: ApiResponse,
     ) -> Result<NextStep, AgentError> {
-        // Delegate to the inner strategy
-        self.inner_strategy.process_api_response(state, response)
+        let next_step = self.inner_strategy.process_api_response(state, response)?;
+        self.update_history_and_check_completion(state, &next_step);
+        Ok(next_step)
     }
 
     fn process_tool_results(
-        &self,
-        state: &mut AgentState,
-        results: Vec<ToolResult>,
+        &mut self,
+        state: &mut crate::AgentState,
+        results: Vec<crate::ToolResult>,
     ) -> Result<NextStep, AgentError> {
-        // Delegate to the inner strategy
-        self.inner_strategy.process_tool_results(state, results)
+        let next_step = self.inner_strategy.process_tool_results(state, results)?;
+        self.update_history_and_check_completion(state, &next_step);
+        Ok(next_step)
     }
 
     fn process_delegation_result(
-        &self,
-        state: &mut AgentState,
+        &mut self,
+        state: &mut crate::AgentState,
         result: DelegationResult,
     ) -> Result<NextStep, AgentError> {
-        // Delegate to the inner strategy
-        self.inner_strategy.process_delegation_result(state, result)
+        let next_step = self.inner_strategy.process_delegation_result(state, result)?;
+        self.update_history_and_check_completion(state, &next_step);
+        Ok(next_step)
+    }
+}
+
+impl<UI: UserInteraction + 'static> ConversationStrategy<UI> {
+    fn update_history_and_check_completion(
+        &mut self,
+        state: &crate::AgentState,
+        next_step: &NextStep,
+    ) {
+        self.conversation_history = state.messages.clone();
+        if let NextStep::Completed(_) = next_step {
+            self.end_current_task = true;
+        }
+    }
+
+    pub fn get_history(&self) -> &Vec<ChatMessage> {
+        &self.conversation_history
     }
 }
