@@ -1,19 +1,16 @@
 // volition-agent-core/src/providers/mod.rs
-use crate::models::chat::{ApiResponse, ChatMessage}; // Assuming ChatMessage is the right type
+use crate::models::chat::{ApiResponse, ChatMessage};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use serde_json::Value;
+// Removed unused Value import
 use std::collections::HashMap;
 
-// Simple provider trait
 #[async_trait]
 pub trait Provider: Send + Sync {
-    // Changed Message to ChatMessage based on existing codebase
     async fn get_completion(&self, messages: Vec<ChatMessage>) -> Result<ApiResponse>; 
     fn name(&self) -> &str;
 }
 
-// Provider registry
 pub struct ProviderRegistry {
     providers: HashMap<String, Box<dyn Provider>>,
     default_provider: String,
@@ -28,7 +25,6 @@ impl ProviderRegistry {
     }
 
     pub fn register(&mut self, id: String, provider: Box<dyn Provider>) {
-        // TODO: Log provider registration?
         self.providers.insert(id, provider);
     }
 
@@ -48,7 +44,8 @@ impl ProviderRegistry {
     }
 }
 
-// Placeholder modules for specific providers
-pub mod gemini; 
+pub mod gemini;
+// Add ollama module
+pub mod ollama; 
 // pub mod openai;
 // pub mod anthropic;

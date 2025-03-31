@@ -8,17 +8,33 @@ use rmcp::{
 };
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
+use std::fs::File;
 use std::future::Future;
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 
-// Use ignore crate for searching
 use ignore::WalkBuilder;
-use std::io::BufRead; // For reading file lines
-use std::fs::File;
-use std::io::BufReader;
+
+// Helper to create JSON schema object
+fn create_schema_object(properties: Vec<(&str, Value)>, required: Vec<&str>) -> Arc<Map<String, Value>> {
+    let props_map: Map<String, Value> = properties.into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    let req_vec: Vec<Value> = required.into_iter().map(|s| Value::String(s.to_string())).collect();
+
+    let schema = json!({
+        "type": "object",
+        "properties": props_map,
+        "required": req_vec
+    });
+    let map = match schema {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    };
+    Arc::new(map)
+}
 
 // Define the server struct
 #[derive(Debug, Clone)]
@@ -30,13 +46,21 @@ struct SearchServer {
 impl SearchServer {
     fn new() -> Self {
         let mut tools = HashMap::new();
+        let search_schema = create_schema_object(
+            vec![
+                ("pattern", json!({ "type": "string", "description": "Text or regex pattern to search for." })),
+                ("path", json!({ "type": "string", "description": "Optional directory or file path to search in (defaults to current directory)." })),
+                ("case_sensitive", json!({ "type": "boolean", "description": "Perform case-sensitive search (defaults to false)." })),
+                // TODO: context_lines, file_glob, max_results
+            ],
+            vec!["pattern"],
+        );
         tools.insert(
             "search_text".to_string(),
             Tool {
                 name: "search_text".into(),
                 description: Some("Search for text patterns in files, respecting .gitignore.".into()),
-                // TODO: Define schema for pattern, path, case_sensitive, context_lines, file_glob, max_results
-                input_schema: Arc::new(Map::new()),
+                input_schema: search_schema,
             },
         );
 
@@ -46,7 +70,6 @@ impl SearchServer {
         }
     }
 
-    // Helper to handle search call
     fn handle_search_call(&self, params: CallToolRequestParam) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpError>> + Send + '_>> {
         Box::pin(async move {
             let args_map: Map<String, Value> = params.arguments
@@ -56,16 +79,16 @@ impl SearchServer {
                 .ok_or_else(|| McpError::invalid_params("Missing 'pattern' argument", None))?;
             let path = args_map.get("path").and_then(Value::as_str).unwrap_or(".");
             let case_sensitive = args_map.get("case_sensitive").and_then(Value::as_bool).unwrap_or(false);
-            // TODO: Implement context_lines, file_glob, max_results
 
             let mut results = Vec::new();
-            let walker = WalkBuilder::new(path).build(); // Respects .gitignore by default
+            let walker = WalkBuilder::new(path).build();
 
             for result in walker {
                 match result {
                     Ok(entry) => {
                         if entry.file_type().map_or(false, |ft| ft.is_file()) {
                             let file_path = entry.path();
+                            // Use blocking read for simplicity, consider spawn_blocking for large files/searches
                             if let Ok(file) = File::open(file_path) {
                                 let reader = BufReader::new(file);
                                 for (line_num, line_result) in reader.lines().enumerate() {
@@ -75,16 +98,13 @@ impl SearchServer {
                                         } else {
                                             line.to_lowercase().contains(&pattern.to_lowercase())
                                         };
-
                                         if matches {
-                                            // Format: path:line_num:line_content
                                             results.push(format!(
                                                 " {}:{}:{}",
                                                 file_path.display(),
                                                 line_num + 1,
                                                 line
                                             ));
-                                            // TODO: Handle max_results
                                         }
                                     }
                                 }
@@ -103,7 +123,6 @@ impl SearchServer {
 
             let raw_content = RawContent::Text(RawTextContent { text: result_text });
             let annotated = Annotated { raw: raw_content, annotations: None };
-            // TODO: Check if search errors should set is_error = true
             Ok(CallToolResult { content: vec![annotated], is_error: Some(false) })
         })
     }

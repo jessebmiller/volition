@@ -3,28 +3,96 @@ use crate::config::AgentConfig;
 use crate::errors::AgentError;
 use crate::mcp::McpConnection;
 use crate::models::chat::{ApiResponse, ChatMessage};
-use crate::models::tools::ToolDefinition;
+use crate::models::tools::{ToolDefinition, ToolInput, ToolParameter, ToolParameterType, ToolParametersDefinition};
 use crate::providers::{Provider, ProviderRegistry};
 use crate::strategies::{NextStep, Strategy};
 use crate::UserInteraction;
 use anyhow::{anyhow, Context, Result};
 use rmcp::model::Tool as McpTool;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::AgentState;
 
 pub struct Agent<UI: UserInteraction> {
     provider_registry: ProviderRegistry,
-    mcp_connections: HashMap<String, Arc<McpConnection>>,
+    mcp_connections: HashMap<String, Arc<Mutex<McpConnection>>>,
     http_client: reqwest::Client,
     ui_handler: Arc<UI>,
     strategy: Box<dyn Strategy<UI> + Send + Sync>,
     state: AgentState,
     current_provider_id: String,
+}
+
+fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolParametersDefinition {
+    let default_params = ToolParametersDefinition {
+        param_type: "object".to_string(),
+        properties: HashMap::new(),
+        required: Vec::new(),
+    };
+    let schema = match schema_val {
+        Some(s) => s,
+        None => return default_params,
+    };
+    let props_val = schema.get("properties").and_then(Value::as_object);
+    let required_val = schema.get("required").and_then(Value::as_array);
+    let mut properties = HashMap::new();
+    if let Some(props_map) = props_val {
+        for (key, val) in props_map {
+            if let Some(prop_obj) = val.as_object() {
+                let param_type_str = prop_obj.get("type").and_then(Value::as_str).unwrap_or("string");
+                let description = prop_obj.get("description").and_then(Value::as_str).unwrap_or("").to_string();
+                let param_type = match param_type_str {
+                    "string" => ToolParameterType::String,
+                    "integer" => ToolParameterType::Integer,
+                    "number" => ToolParameterType::Number,
+                    "boolean" => ToolParameterType::Boolean,
+                    "array" => ToolParameterType::Array,
+                    "object" => ToolParameterType::Object,
+                    _ => ToolParameterType::String,
+                };
+                properties.insert(key.clone(), ToolParameter {
+                    param_type,
+                    description,
+                    enum_values: None,
+                    items: None, 
+                });
+            }
+        }
+    }
+    let required = required_val
+        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .unwrap_or_default();
+    ToolParametersDefinition {
+        param_type: "object".to_string(),
+        properties,
+        required,
+    }
+}
+
+struct DummyClientService;
+impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
+    fn handle_request(
+        &self,
+        _request: rmcp::model::ServerRequest,
+        _context: rmcp::service::RequestContext<rmcp::service::RoleClient>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<rmcp::model::ClientResult, rmcp::Error>> + Send>> {
+        Box::pin(async { Err(rmcp::Error::method_not_found::<rmcp::model::InitializeResultMethod>()) })
+    }
+    fn handle_notification(
+        &self,
+        _notification: rmcp::model::ServerNotification,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), rmcp::Error>> + Send>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn get_peer(&self) -> Option<rmcp::service::Peer<rmcp::service::RoleClient>> { None }
+    fn set_peer(&mut self, _peer: rmcp::service::Peer<rmcp::service::RoleClient>) {}
+    fn get_info(&self) -> rmcp::model::ClientInfo { rmcp::model::ClientInfo::default() }
 }
 
 impl<UI: UserInteraction + 'static> Agent<UI> {
@@ -40,11 +108,19 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
 
         let mut provider_registry = ProviderRegistry::new(config.default_provider.clone());
         for (id, provider_conf) in config.providers {
-            let api_key = std::env::var(&provider_conf.api_key_env_var)
-                .with_context(|| format!("API key env var {} not set for provider {}", provider_conf.api_key_env_var, id))?;
-
+            let api_key = if !provider_conf.api_key_env_var.is_empty() {
+                 std::env::var(&provider_conf.api_key_env_var)
+                    .with_context(|| format!("API key env var {} not set for provider {}", provider_conf.api_key_env_var, id))?
+            } else {
+                String::new()
+            };
             let provider: Box<dyn Provider> = match provider_conf.provider_type.as_str() {
                 "gemini" => Box::new(crate::providers::gemini::GeminiProvider::new(
+                    provider_conf.model_config,
+                    http_client.clone(),
+                    api_key,
+                )),
+                 "ollama" => Box::new(crate::providers::ollama::OllamaProvider::new(
                     provider_conf.model_config,
                     http_client.clone(),
                     api_key,
@@ -57,7 +133,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         let mut mcp_connections = HashMap::new();
         for (id, server_conf) in config.mcp_servers {
             let connection = McpConnection::new(server_conf.command, server_conf.args);
-            mcp_connections.insert(id, Arc::new(connection));
+            mcp_connections.insert(id, Arc::new(Mutex::new(connection)));
         }
 
         let initial_state = AgentState::new(initial_task);
@@ -80,6 +156,13 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         })
     }
 
+    async fn ensure_mcp_connection(&self, server_id: &str) -> Result<()> {
+        let conn_mutex = self.mcp_connections.get(server_id)
+            .ok_or_else(|| anyhow!("MCP server config not found: {}", server_id))?;
+        let mut conn_guard = conn_mutex.lock().await;
+        conn_guard.establish_connection_external(DummyClientService, Default::default()).await
+    }
+
     pub fn switch_provider(&mut self, provider_id: &str) -> Result<()> {
         self.provider_registry.get(provider_id)?;
         if self.current_provider_id != provider_id {
@@ -96,22 +179,26 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     }
 
     pub async fn call_mcp_tool(&self, server_id: &str, tool_name: &str, args: Value) -> Result<Value> {
-        let connection = self.mcp_connections.get(server_id)
-            .ok_or_else(|| anyhow!("MCP server connection not found: {}", server_id))?;
+        self.ensure_mcp_connection(server_id).await?;
+        let conn_mutex = self.mcp_connections.get(server_id).unwrap();
+        let conn = conn_mutex.lock().await;
         debug!(server = %server_id, tool = %tool_name, "Calling MCP tool");
-        connection.call_tool(tool_name, args).await
+        conn.call_tool(tool_name, args).await
     }
 
      pub async fn get_mcp_resource(&self, server_id: &str, uri: &str) -> Result<Value> {
-        let connection = self.mcp_connections.get(server_id)
-            .ok_or_else(|| anyhow!("MCP server connection not found: {}", server_id))?;
+        self.ensure_mcp_connection(server_id).await?;
+        let conn_mutex = self.mcp_connections.get(server_id).unwrap();
+        let conn = conn_mutex.lock().await;
         debug!(server = %server_id, uri = %uri, "Getting MCP resource");
-        connection.get_resource(uri).await
+        conn.get_resource(uri).await
     }
 
     pub async fn list_mcp_tools(&self) -> Result<Vec<McpTool>> {
         let mut all_tools = Vec::new();
-        for (id, conn) in &self.mcp_connections {
+        for (id, conn_mutex) in &self.mcp_connections {
+            self.ensure_mcp_connection(id).await?;
+            let conn = conn_mutex.lock().await;
             match conn.list_tools().await {
                 Ok(tools) => all_tools.extend(tools),
                 Err(e) => warn!(server_id = %id, error = ?e, "Failed to list tools from MCP server"),
@@ -134,15 +221,13 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         .map_err(|e| AgentError::Mcp(e.context("Failed to list MCP tools")))?;
                     
                     let tool_definitions: Vec<ToolDefinition> = mcp_tools.iter().map(|mcp_tool| {
+                        // Use as_ref() to get &Map from Arc<Map>
+                        let schema_map = mcp_tool.input_schema.as_ref(); 
                         ToolDefinition {
                             name: mcp_tool.name.to_string(),
-                            // Use empty string if description is None
                             description: mcp_tool.description.clone().map(|s| s.to_string()).unwrap_or_default(),
-                            parameters: crate::models::tools::ToolParametersDefinition { 
-                                param_type: "object".to_string(), 
-                                properties: std::collections::HashMap::new(), 
-                                required: vec![] 
-                            }
+                            // Pass Option<&Map> to helper
+                            parameters: mcp_schema_to_tool_params(Some(schema_map)), 
                         }
                     }).collect();
 
@@ -177,14 +262,15 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         let args: Value = serde_json::from_str(&tool_call.function.arguments)
                             .unwrap_or(Value::Null);
 
-                        let server_id = if tool_name.starts_with("git_") {
-                            "git"
-                        } else if tool_name == "shell" {
-                            "shell"
-                        } else if tool_name == "search_text" {
-                             "search"
-                        } else {
-                             "filesystem"
+                        let server_id = match tool_name.as_str() {
+                            "read_file" | "write_file" => "filesystem",
+                            "shell" => "shell",
+                            "git_diff" | "git_status" => "git",
+                            "search_text" => "search",
+                            _ => {
+                                warn!(tool_name = %tool_name, "Cannot map tool to MCP server, skipping.");
+                                continue;
+                            }
                         };
                         
                         match self.call_mcp_tool(server_id, tool_name, args).await {
@@ -192,8 +278,17 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 info!(tool_call_id = %tool_call.id, tool_name = %tool_name, server_id = %server_id, "MCP Tool executed successfully.");
                                 let output_str = match output_value {
                                     Value::String(s) => s,
+                                    Value::Object(map) if map.contains_key("content") && map["content"].is_string() => {
+                                        map["content"].as_str().unwrap().to_string()
+                                    }
+                                    Value::Object(map) if map.contains_key("success") => {
+                                        format!("Success: {}", map["success"])
+                                    }
+                                    Value::Object(map) if map.contains_key("text") && map.contains_key("uri") => {
+                                         map["text"].as_str().unwrap_or("").to_string()
+                                    }
                                     Value::Null => "<no output>".to_string(),
-                                    other => serde_json::to_string_pretty(&other).unwrap_or_default(),
+                                    other => serde_json::to_string_pretty(&other).unwrap_or_else(|_| "<invalid JSON output>".to_string()),
                                 };
                                 tool_results.push(crate::ToolResult {
                                     tool_call_id: tool_call.id.clone(),

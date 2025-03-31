@@ -15,6 +15,25 @@ use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 use git2::{Repository, StatusOptions};
 
+// Helper to create JSON schema object
+fn create_schema_object(properties: Vec<(&str, Value)>, required: Vec<&str>) -> Arc<Map<String, Value>> {
+    let props_map: Map<String, Value> = properties.into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    let req_vec: Vec<Value> = required.into_iter().map(|s| Value::String(s.to_string())).collect();
+
+    let schema = json!({
+        "type": "object",
+        "properties": props_map,
+        "required": req_vec
+    });
+    let map = match schema {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    };
+    Arc::new(map)
+}
+
 // Define the server struct
 #[derive(Debug, Clone)]
 struct GitServer {
@@ -25,23 +44,36 @@ struct GitServer {
 impl GitServer {
     fn new() -> Self {
         let mut tools = HashMap::new();
+        let path_schema_prop = ("path", json!({ "type": "string", "description": "Optional path to the repository (defaults to current directory)." }));
+
+        let diff_schema = create_schema_object(
+            vec![
+                path_schema_prop.clone(),
+                // TODO: Add staged (bool), paths (array[string])?
+            ],
+            vec![], // No required args for basic diff
+        );
         tools.insert(
             "git_diff".to_string(),
             Tool {
                 name: "git_diff".into(),
                 description: Some("Shows git diff for the repository.".into()),
-                input_schema: Arc::new(Map::new()), // TODO: Schema for path, staged, etc.
+                input_schema: diff_schema,
             },
+        );
+        
+        let status_schema = create_schema_object(
+            vec![path_schema_prop.clone()],
+            vec![], // No required args for status
         );
         tools.insert(
             "git_status".to_string(),
             Tool {
                 name: "git_status".into(),
                 description: Some("Shows git status for the repository.".into()),
-                input_schema: Arc::new(Map::new()), // TODO: Schema for path?
+                input_schema: status_schema,
             },
         );
-        // TODO: Add git_add, git_commit?
 
         Self {
             peer: Arc::new(Mutex::new(None)),
@@ -49,7 +81,6 @@ impl GitServer {
         }
     }
 
-    // Helper to open repo at optional path or current dir
     fn open_repo(&self, args_map: &Map<String, Value>) -> Result<Repository, McpError> {
         let path_str = args_map.get("path").and_then(Value::as_str);
         let repo_path = path_str.map(Path::new).unwrap_or_else(|| Path::new("."));
@@ -57,41 +88,32 @@ impl GitServer {
             .map_err(|e| McpError::internal_error(format!("Failed to open repository at '{}': {}", repo_path.display(), e), None))
     }
 
-    // Helper to handle git diff
     async fn handle_git_diff(&self, args_map: Map<String, Value>) -> Result<CallToolResult, McpError> {
         let repo = self.open_repo(&args_map)?;
         let mut diff_opts = git2::DiffOptions::new();
-        // TODO: Handle staged, specific files from args_map
-
-        // Diff HEAD against working directory
         let diff = repo.diff_index_to_workdir(None, Some(&mut diff_opts))
             .map_err(|e| McpError::internal_error(format!("Failed to generate diff: {}", e), None))?;
-
         let mut diff_text = String::new();
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
             let prefix = match line.origin() {
                 '+' | '-' | ' ' => line.origin().to_string(),
-                _ => " ".to_string(), // Default prefix for context lines, etc.
+                _ => " ".to_string(),
             };
             diff_text.push_str(&prefix);
             diff_text.push_str(std::str::from_utf8(line.content()).unwrap_or("<invalid utf8>"));
-            true // Continue processing lines
+            true
         }).map_err(|e| McpError::internal_error(format!("Failed to format diff: {}", e), None))?;
-
         let raw_content = RawContent::Text(RawTextContent { text: diff_text });
         let annotated = Annotated { raw: raw_content, annotations: None };
         Ok(CallToolResult { content: vec![annotated], is_error: Some(false) })
     }
 
-    // Helper to handle git status
     async fn handle_git_status(&self, args_map: Map<String, Value>) -> Result<CallToolResult, McpError> {
         let repo = self.open_repo(&args_map)?;
         let mut status_opts = StatusOptions::new();
         status_opts.include_untracked(true).recurse_untracked_dirs(true);
-
         let statuses = repo.statuses(Some(&mut status_opts))
             .map_err(|e| McpError::internal_error(format!("Failed to get status: {}", e), None))?;
-
         let mut status_text = String::new();
         if statuses.is_empty() {
             status_text.push_str("No changes detected.");
@@ -102,15 +124,13 @@ impl GitServer {
                 status_text.push_str(&format!("{:?}: {}\n", status, path));
             }
         }
-
         let raw_content = RawContent::Text(RawTextContent { text: status_text });
         let annotated = Annotated { raw: raw_content, annotations: None };
         Ok(CallToolResult { content: vec![annotated], is_error: Some(false) })
     }
 
-    // Helper to handle tool calls
     fn handle_tool_call(&self, params: CallToolRequestParam) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpError>> + Send + '_>> {
-        let args_map = params.arguments.unwrap_or_default(); // Use default empty map if no args
+        let args_map = params.arguments.unwrap_or_default();
         match params.name.as_ref() {
             "git_diff" => Box::pin(self.handle_git_diff(args_map)),
             "git_status" => Box::pin(self.handle_git_status(args_map)),

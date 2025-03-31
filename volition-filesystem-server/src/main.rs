@@ -7,13 +7,32 @@ use rmcp::{
     Error as McpError,
 };
 use serde_json::{json, Map, Value};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use tokio::fs;
 use tokio_util::sync::CancellationToken;
+
+// Helper to create JSON schema object
+fn create_schema_object(properties: Vec<(&str, Value)>, required: Vec<&str>) -> Arc<Map<String, Value>> {
+    let props_map: Map<String, Value> = properties.into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    let req_vec: Vec<Value> = required.into_iter().map(|s| Value::String(s.to_string())).collect();
+
+    let schema = json!({
+        "type": "object",
+        "properties": props_map,
+        "required": req_vec
+    });
+    // Ensure it's a map
+    let map = match schema {
+        Value::Object(map) => map,
+        _ => Map::new(), // Should not happen
+    };
+    Arc::new(map)
+}
 
 // Define the server struct
 #[derive(Debug, Clone)]
@@ -25,20 +44,37 @@ struct FileSystemServer {
 impl FileSystemServer {
     fn new() -> Self {
         let mut tools = HashMap::new();
+        
+        // read_file schema
+        let read_file_schema = create_schema_object(
+            vec![
+                ("path", json!({ "type": "string", "description": "Path to the file to read." })),
+            ],
+            vec!["path"],
+        );
         tools.insert(
             "read_file".to_string(),
             Tool {
                 name: "read_file".into(),
                 description: Some("Reads the content of a file at the given path.".into()),
-                input_schema: Arc::new(Map::new()),
+                input_schema: read_file_schema,
             },
+        );
+        
+        // write_file schema
+         let write_file_schema = create_schema_object(
+            vec![
+                ("path", json!({ "type": "string", "description": "Path to the file to write." })),
+                ("content", json!({ "type": "string", "description": "Content to write to the file." })),
+            ],
+            vec!["path", "content"],
         );
         tools.insert(
             "write_file".to_string(),
             Tool {
                 name: "write_file".into(),
                 description: Some("Writes the given content to a file at the specified path.".into()),
-                input_schema: Arc::new(Map::new()),
+                input_schema: write_file_schema,
             },
         );
 
@@ -83,26 +119,20 @@ impl FileSystemServer {
         Box::pin(async move {
             let content_string = fs::read_to_string(&path).await
                 .map_err(|e| McpError::internal_error(format!("Failed to read resource (file): {}", e), None))?;
-            // Try ResourceContents::RawContent variant?
-            let raw_content = RawContent::Text(RawTextContent { text: content_string });
-            let contents_item = ResourceContents::RawContent(raw_content); // GUESSING ResourceContents::RawContent variant
+            let contents_item = ResourceContents::text(content_string, path);
             Ok(ReadResourceResult { contents: vec![contents_item] })
         })
     }
 }
 
 impl Service<RoleServer> for FileSystemServer {
-    fn get_info(&self) -> ServerInfo { // ServerInfo is type alias for InitializeResult
+    fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::LATEST,
-            // Provide ServerCapabilities struct
-            capabilities: ServerCapabilities { // Use ServerCapabilities struct
-                tools: Some(ToolsCapability { list_changed: Some(true) }), // Example: Enable tools capability
-                resources: Some(ResourcesCapability { subscribe: Some(true), list_changed: Some(true) }), // Example: Enable resources
-                // Set other capabilities as needed or use None/Default
-                experimental: None,
-                logging: None,
-                prompts: None,
+            capabilities: ServerCapabilities {
+                tools: Some(ToolsCapability { list_changed: Some(true) }),
+                resources: Some(ResourcesCapability { subscribe: Some(true), list_changed: Some(true) }),
+                ..Default::default()
             },
             server_info: Implementation {
                 name: "volition-filesystem-server".into(),

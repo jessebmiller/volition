@@ -1,6 +1,6 @@
-// volition-agent-core/src/providers/gemini.rs
-use super::Provider; // Import Provider trait
-use crate::api; // Use refactored api module
+// volition-agent-core/src/providers/ollama.rs
+use super::Provider;
+use crate::api;
 use crate::config::ModelConfig;
 use crate::models::chat::{ApiResponse, ChatMessage};
 use anyhow::{anyhow, Result};
@@ -8,38 +8,40 @@ use async_trait::async_trait;
 use reqwest::Client;
 
 #[derive(Clone)]
-pub struct GeminiProvider {
+pub struct OllamaProvider {
     config: ModelConfig,
     http_client: Client,
-    api_key: String,
+    // No API key needed for standard Ollama
 }
 
-impl GeminiProvider {
-    pub fn new(config: ModelConfig, http_client: Client, api_key: String) -> Self {
+impl OllamaProvider {
+    // API key is ignored here
+    pub fn new(config: ModelConfig, http_client: Client, _api_key: String) -> Self {
         Self {
             config,
             http_client,
-            api_key,
         }
     }
 }
 
 #[async_trait]
-impl Provider for GeminiProvider {
+impl Provider for OllamaProvider {
     fn name(&self) -> &str {
         &self.config.model_name
     }
 
     async fn get_completion(&self, messages: Vec<ChatMessage>) -> Result<ApiResponse> {
         let endpoint = self.config.endpoint.as_deref()
-             .ok_or_else(|| anyhow!("Endpoint missing for Gemini provider model {}", self.config.model_name))?;
-             
+            .ok_or_else(|| anyhow!("Endpoint missing for Ollama provider model {}", self.config.model_name))?;
+
         // Call the generic API function
-        // TODO: Handle tool conversion properly later
+        // Ollama API might differ slightly (e.g., no bearer auth, different tool format?)
+        // Assuming call_chat_completion_api is compatible or needs adjustment later.
+        // Pass empty string for API key as it's not used.
         api::call_chat_completion_api(
             &self.http_client,
             endpoint,
-            &self.api_key,
+            "", // No API key for Ollama
             &self.config.model_name,
             messages,
             None, // Pass None for tools for now
