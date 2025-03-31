@@ -2,6 +2,7 @@
 
 use super::shell::execute_shell_command;
 use super::CommandOutput;
+use crate::utils::truncate_string; // <-- Import the helper
 use anyhow::Result;
 use std::path::Path;
 use tracing::{debug, info};
@@ -60,9 +61,17 @@ pub async fn search_text(
     let context_arg = context_lines.unwrap_or(1);
     let max_lines = max_results.unwrap_or(50);
 
+    // Truncate pattern for logging
+    let pattern_display = truncate_string(pattern, 60);
+
     info!(
         "Searching for pattern: '{}' in path: '{}' (glob: '{}', context: {}, ignore_case: {}) -> max {} lines",
-        pattern, path_arg, glob_arg, context_arg, ignore_case_flag, max_lines
+        pattern_display, // <-- Use truncated version
+        path_arg,
+        glob_arg,
+        context_arg,
+        ignore_case_flag,
+        max_lines
     );
 
     let context_str = context_arg.to_string();
@@ -78,7 +87,7 @@ pub async fn search_text(
     if ignore_case_flag {
         rg_cmd_vec.push("--ignore-case");
     }
-    rg_cmd_vec.push(pattern);
+    rg_cmd_vec.push(pattern); // Use original pattern for command
     rg_cmd_vec.push(path_arg);
 
     let mut rg_cmd_parts = Vec::new();
@@ -122,9 +131,14 @@ pub async fn find_rust_definition(
     let directory_or_file_arg = search_path.unwrap_or(".");
     let is_dir = working_dir.join(directory_or_file_arg).is_dir();
 
+    // Truncate symbol for logging
+    let symbol_display = truncate_string(symbol, 60);
+
     info!(
         "Finding Rust definition for symbol: {} in path: {} (is_dir: {})",
-        symbol, directory_or_file_arg, is_dir
+        symbol_display, // <-- Use truncated version
+        directory_or_file_arg,
+        is_dir
     );
 
     let file_pattern = "*.rs";

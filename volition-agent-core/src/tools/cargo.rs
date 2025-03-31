@@ -1,6 +1,7 @@
 // volition-agent-core/src/tools/cargo.rs
 
 use super::CommandOutput;
+use crate::utils::truncate_string; // <-- Import the helper
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -12,9 +13,12 @@ pub async fn execute_cargo_command(
     working_dir: &Path,
 ) -> Result<CommandOutput> {
     let full_command_log = format!("cargo {} {}", command_name, command_args.join(" "));
+    // Truncate command for logging
+    let command_display = truncate_string(&full_command_log, 60);
     info!(
         "Executing cargo command: {} in {:?}",
-        full_command_log, working_dir
+        command_display, // <-- Use truncated version
+        working_dir
     );
 
     let output = Command::new("cargo")

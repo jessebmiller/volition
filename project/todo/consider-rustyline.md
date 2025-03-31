@@ -1,0 +1,1 @@
+Rustyline seems to be a crate for handling repl apps. That could work well.

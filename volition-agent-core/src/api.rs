@@ -1,8 +1,8 @@
 // volition-agent-core/src/api.rs
 
 use anyhow::{anyhow, Context, Result};
-use reqwest::Client;
-use serde_json::{error::Category as SerdeJsonCategory, json, to_value, Value};
+use reqwest::Client; // Import HeaderMap if needed for cloning
+use serde_json::{json, to_value, Value};
 use tokio::time::Duration;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -99,10 +99,21 @@ pub async fn get_chat_completion(
         }
 
         if !status.is_success() {
+            // Clone headers before consuming the response body
+            let headers = response.headers().clone();
+            // Read the response body text
             let error_text = response
                 .text()
                 .await
                 .context("Failed to read API error response body")?;
+            // New detailed debug log with status, headers, and body
+            debug!(
+                "API request failed. Status: {}, Headers: {:#?}, Body: {}",
+                status,
+                headers, // Use the cloned headers
+                error_text
+            );
+            // Return the error including the status and body text
             return Err(anyhow!("API error: {} - {}", status, error_text));
         }
 
@@ -111,7 +122,7 @@ pub async fn get_chat_completion(
             .await
             .context("Failed to read API response body as JSON")?;
 
-        let mut response_json_obj = if let Value::Object(map) = response_value {
+        let mut response_json_obj = if let Value::Object(map) = response_value.clone() {
             map
         } else {
             return Err(anyhow!(
@@ -135,20 +146,11 @@ pub async fn get_chat_completion(
         let api_response = match api_response_result {
             Ok(resp) => resp,
             Err(e) => {
-                if e.classify() == SerdeJsonCategory::Data
-                    && e.to_string().contains("missing field `choices`")
-                {
-                    warn!(
-                        "API response successfully received but missing 'choices' field. Response body: {}",
-                        serde_json::to_string_pretty(&response_json_obj).unwrap_or_else(|_| format!("{:?}", response_json_obj))
-                    );
-                    return Err(anyhow!(
-                        "API call succeeded but response was missing the expected 'choices' field."
-                    )
-                    .context(e));
-                } else {
-                    return Err(anyhow!("Failed to deserialize API response").context(e));
-                }
+                debug!(
+                    "ERROR: failed to deserialize API response {:#?}",
+                    response_value.clone()
+                );
+                return Err(anyhow!("Failed to deserialize API response").context(e));
             }
         };
 
@@ -376,7 +378,8 @@ mod tests {
         let server = MockServer::start_async().await;
         let endpoint_path_b = "/v1/model_b";
         let server_url = server.base_url();
-        let model_config_a = create_test_model_config(&format!("{}/v1/model_a", server_url), None);
+        let model_config_a =
+            create_test_model_config(&format!("{}{}", server_url, "/v1/model_a"), None);
         let model_config_b =
             create_test_model_config(&format!("{}{}", server_url, endpoint_path_b), None);
         let mut models = HashMap::new();

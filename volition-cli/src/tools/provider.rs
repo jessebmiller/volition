@@ -1,14 +1,221 @@
 // volition-cli/src/tools/provider.rs
-
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::Path;
 
 use volition_agent_core::tools::fs::{list_directory_contents, read_file as read_file_core};
 use volition_agent_core::{async_trait, models::tools::*, ToolProvider};
 
 use super::{cargo, file, git, search, shell, user_input};
+
+// --- BEGIN NEW ENUM DEFINITION ---
+#[derive(Debug)]
+enum CliToolArguments {
+    Shell {
+        command: String,
+    },
+    ReadFile {
+        path: String,
+    },
+    WriteFile {
+        path: String,
+        content: String,
+    },
+    SearchText {
+        pattern: String,
+        path: Option<String>,
+        file_glob: Option<String>,
+        case_sensitive: Option<bool>,
+        context_lines: Option<u32>,
+        max_results: Option<usize>,
+    },
+    FindRustDefinition {
+        symbol: String,
+        path: Option<String>,
+    },
+    UserInput {
+        prompt: String,
+        options: Option<Vec<String>>,
+    },
+    CargoCommand {
+        command: String,
+        args: Option<Vec<String>>,
+    },
+    GitCommand {
+        command: String,
+        args: Option<Vec<String>>,
+    },
+    ListDirectory {
+        path: String,
+        depth: Option<usize>,
+        show_hidden: Option<bool>,
+    },
+}
+// --- END NEW ENUM DEFINITION ---
+
+// --- BEGIN DISPLAY IMPLEMENTATION ---
+impl fmt::Display for CliToolArguments {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CliToolArguments::Shell { command } => write!(f, "command: '{}'", command),
+            CliToolArguments::ReadFile { path } => write!(f, "path: {}", path),
+            CliToolArguments::WriteFile { path, content } => {
+                write!(f, "path: {}, content_len: {}", path, content.len())
+            }
+            CliToolArguments::SearchText {
+                pattern,
+                path,
+                file_glob,
+                ..
+            } => {
+                write!(f, "pattern: '{}'", pattern)?;
+                if let Some(p) = path {
+                    write!(f, ", path: {}", p)?;
+                }
+                if let Some(g) = file_glob {
+                    write!(f, ", glob: {}", g)?;
+                }
+                Ok(())
+            }
+            CliToolArguments::FindRustDefinition { symbol, path } => {
+                write!(f, "symbol: {}", symbol)?;
+                if let Some(p) = path {
+                    write!(f, ", path: {}", p)?;
+                }
+                Ok(())
+            }
+            CliToolArguments::UserInput { prompt, options } => {
+                write!(f, "prompt: '{}'", prompt)?;
+                if let Some(opts) = options {
+                    write!(f, ", options: [{}]", opts.join(", "))?;
+                }
+                Ok(())
+            }
+            CliToolArguments::CargoCommand { command, args } => {
+                write!(f, "command: {}", command)?;
+                if let Some(a) = args {
+                    write!(f, ", args: {:?}", a)?;
+                }
+                Ok(())
+            }
+            CliToolArguments::GitCommand { command, args } => {
+                write!(f, "command: {}", command)?;
+                if let Some(a) = args {
+                    write!(f, ", args: {:?}", a)?;
+                }
+                Ok(())
+            }
+            CliToolArguments::ListDirectory {
+                path,
+                depth,
+                show_hidden,
+            } => {
+                write!(f, "path: {}", path)?;
+                if let Some(d) = depth {
+                    write!(f, ", depth: {}", d)?;
+                }
+                if let Some(h) = show_hidden {
+                    write!(f, ", show_hidden: {}", h)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+// --- END DISPLAY IMPLEMENTATION ---
+
+// --- BEGIN NEW HELPER FUNCTION --- (Includes argument parsing logic)
+fn parse_tool_arguments(
+    tool_name: &str,
+    args: &HashMap<String, JsonValue>,
+) -> Result<CliToolArguments> {
+    // Helper functions defined inline for clarity within this scope
+    fn get_required_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let value = args
+            .get(key)
+            .ok_or_else(|| anyhow!("Missing required argument: '{}'", key))?;
+        serde_json::from_value(value.clone()).with_context(|| {
+            format!(
+                "Invalid type or value for argument '{}'. Expected {}.",
+                key,
+                std::any::type_name::<T>()
+            )
+        })
+    }
+
+    fn get_optional_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<Option<T>>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        match args.get(key) {
+            Some(value) => {
+                if value.is_null() {
+                    Ok(None)
+                } else {
+                    serde_json::from_value(value.clone())
+                        .map(Some)
+                        .with_context(|| {
+                            format!(
+                                "Invalid type or value for optional argument '{}'. Expected {}.",
+                                key,
+                                std::any::type_name::<T>()
+                            )
+                        })
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    match tool_name {
+        "shell" => Ok(CliToolArguments::Shell {
+            command: get_required_arg(args, "command")?,
+        }),
+        "read_file" => Ok(CliToolArguments::ReadFile {
+            path: get_required_arg(args, "path")?,
+        }),
+        "write_file" => Ok(CliToolArguments::WriteFile {
+            path: get_required_arg(args, "path")?,
+            content: get_required_arg(args, "content")?,
+        }),
+        "search_text" => Ok(CliToolArguments::SearchText {
+            pattern: get_required_arg(args, "pattern")?,
+            path: get_optional_arg(args, "path")?,
+            file_glob: get_optional_arg(args, "file_glob")?,
+            case_sensitive: get_optional_arg(args, "case_sensitive")?,
+            context_lines: get_optional_arg(args, "context_lines")?,
+            max_results: get_optional_arg(args, "max_results")?,
+        }),
+        "find_rust_definition" => Ok(CliToolArguments::FindRustDefinition {
+            symbol: get_required_arg(args, "symbol")?,
+            path: get_optional_arg(args, "path")?,
+        }),
+        "user_input" => Ok(CliToolArguments::UserInput {
+            prompt: get_required_arg(args, "prompt")?,
+            options: get_optional_arg(args, "options")?,
+        }),
+        "cargo_command" => Ok(CliToolArguments::CargoCommand {
+            command: get_required_arg(args, "command")?,
+            args: get_optional_arg(args, "args")?,
+        }),
+        "git_command" => Ok(CliToolArguments::GitCommand {
+            command: get_required_arg(args, "command")?,
+            args: get_optional_arg(args, "args")?,
+        }),
+        "list_directory" => Ok(CliToolArguments::ListDirectory {
+            path: get_required_arg(args, "path")?,
+            depth: get_optional_arg(args, "depth")?,
+            show_hidden: get_optional_arg(args, "show_hidden")?,
+        }),
+        unknown => Err(anyhow!("Unknown tool name: {}", unknown)),
+    }
+}
+// --- END NEW HELPER FUNCTION ---
 
 pub struct CliToolProvider {}
 
@@ -17,6 +224,7 @@ impl CliToolProvider {
         Self {}
     }
 
+    // Parameter definition helpers (string_param, bool_param, etc.) remain unchanged
     fn string_param(description: &str) -> ToolParameter {
         ToolParameter {
             param_type: ToolParameterType::String,
@@ -58,6 +266,7 @@ impl CliToolProvider {
 
 #[async_trait]
 impl ToolProvider for CliToolProvider {
+    // get_tool_definitions remains unchanged
     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
         vec![
             ToolDefinition {
@@ -185,37 +394,37 @@ impl ToolProvider for CliToolProvider {
     async fn execute_tool(
         &self,
         tool_name: &str,
-        input: ToolInput,
+        input: ToolInput, // ToolInput still contains the HashMap
         working_dir: &Path,
     ) -> Result<String> {
+        // Parse the HashMap into our strongly-typed enum
+        let parsed_args = parse_tool_arguments(tool_name, &input.arguments)
+            .with_context(|| format!("Failed to parse arguments for tool '{}'", tool_name))?;
+
+        // Log the concise summary using the Display implementation
         tracing::info!(
             tool_name = tool_name,
-            args = ?input.arguments,
+            args = %parsed_args, // Use Display format (%)
             "Executing tool via CliToolProvider"
         );
-        let args = input.arguments;
 
-        match tool_name {
-            "shell" => {
-                let command: String = get_required_arg(&args, "command")?;
+        // Match on the enum variant to execute the correct logic
+        match parsed_args {
+            CliToolArguments::Shell { command } => {
                 shell::run_shell_command(&command, working_dir).await
             }
-            "read_file" => {
-                let path: String = get_required_arg(&args, "path")?;
-                read_file_core(&path, working_dir).await
-            }
-            "write_file" => {
-                let path: String = get_required_arg(&args, "path")?;
-                let content: String = get_required_arg(&args, "content")?;
+            CliToolArguments::ReadFile { path } => read_file_core(&path, working_dir).await,
+            CliToolArguments::WriteFile { path, content } => {
                 file::write_file(&path, &content, working_dir).await
             }
-            "search_text" => {
-                let pattern: String = get_required_arg(&args, "pattern")?;
-                let path: Option<String> = get_optional_arg(&args, "path")?;
-                let file_glob: Option<String> = get_optional_arg(&args, "file_glob")?;
-                let case_sensitive: Option<bool> = get_optional_arg(&args, "case_sensitive")?;
-                let context_lines: Option<u32> = get_optional_arg(&args, "context_lines")?;
-                let max_results: Option<usize> = get_optional_arg(&args, "max_results")?;
+            CliToolArguments::SearchText {
+                pattern,
+                path,
+                file_glob,
+                case_sensitive,
+                context_lines,
+                max_results,
+            } => {
                 search::search_text(
                     &pattern,
                     path.as_deref(),
@@ -227,78 +436,27 @@ impl ToolProvider for CliToolProvider {
                 )
                 .await
             }
-            "find_rust_definition" => {
-                let symbol: String = get_required_arg(&args, "symbol")?;
-                let path: Option<String> = get_optional_arg(&args, "path")?;
+            CliToolArguments::FindRustDefinition { symbol, path } => {
                 search::find_rust_definition(&symbol, path.as_deref(), working_dir).await
             }
-            "user_input" => {
-                let prompt: String = get_required_arg(&args, "prompt")?;
-                let options: Option<Vec<String>> = get_optional_arg(&args, "options")?;
+            CliToolArguments::UserInput { prompt, options } => {
                 user_input::get_user_input(&prompt, options)
             }
-            "cargo_command" => {
-                let command: String = get_required_arg(&args, "command")?;
-                let cmd_args: Option<Vec<String>> = get_optional_arg(&args, "args")?;
-                cargo::run_cargo_command(&command, cmd_args.as_deref().unwrap_or(&[]), working_dir)
+            CliToolArguments::CargoCommand { command, args } => {
+                cargo::run_cargo_command(&command, args.as_deref().unwrap_or(&[]), working_dir)
                     .await
             }
-            "git_command" => {
-                let command: String = get_required_arg(&args, "command")?;
-                let cmd_args: Option<Vec<String>> = get_optional_arg(&args, "args")?;
-                git::run_git_command(&command, cmd_args.as_deref().unwrap_or(&[]), working_dir)
-                    .await
+            CliToolArguments::GitCommand { command, args } => {
+                git::run_git_command(&command, args.as_deref().unwrap_or(&[]), working_dir).await
             }
-            "list_directory" => {
-                let path: String = get_required_arg(&args, "path")?;
-                let depth: Option<usize> = get_optional_arg(&args, "depth")?;
-                let show_hidden: Option<bool> = get_optional_arg(&args, "show_hidden")?;
-                list_directory_contents(&path, depth, show_hidden.unwrap_or(false), working_dir)
-            }
-            unknown => {
-                tracing::error!(tool_name = unknown, "Unknown tool requested");
-                Err(anyhow!("Unknown tool requested by AI: {}", unknown))
-            }
+            CliToolArguments::ListDirectory {
+                path,
+                depth,
+                show_hidden,
+            } => list_directory_contents(&path, depth, show_hidden.unwrap_or(false), working_dir),
         }
     }
 }
 
-fn get_required_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let value = args
-        .get(key)
-        .ok_or_else(|| anyhow!("Missing required argument: '{}'", key))?;
-    serde_json::from_value(value.clone()).with_context(|| {
-        format!(
-            "Invalid type or value for argument '{}'. Expected {}.",
-            key,
-            std::any::type_name::<T>()
-        )
-    })
-}
-
-fn get_optional_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<Option<T>>
-where
-    T: serde::de::DeserializeOwned,
-{
-    match args.get(key) {
-        Some(value) => {
-            if value.is_null() {
-                Ok(None)
-            } else {
-                serde_json::from_value(value.clone())
-                    .map(Some)
-                    .with_context(|| {
-                        format!(
-                            "Invalid type or value for optional argument '{}'. Expected {}.",
-                            key,
-                            std::any::type_name::<T>()
-                        )
-                    })
-            }
-        }
-        None => Ok(None),
-    }
-}
+// Note: The old get_required_arg and get_optional_arg functions are removed as their logic
+// is now encapsulated within parse_tool_arguments.
