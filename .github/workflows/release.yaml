@@ -11,12 +11,9 @@ on:
       - '[0-9]+.[0-9]+.x'
 
 jobs:
-  get-next-version:
-    name: Calculate Next Version
+  release:
+    name: Release
     runs-on: ubuntu-latest
-    outputs:
-      new-release-published: ${{ steps.semantic.outputs.new-release-published }}
-      new-release-version: ${{ steps.semantic.outputs.new-release-version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,78 +25,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install Dependencies
-        run: |
-          npm install -g semantic-release@21 @semantic-release/changelog@6 @semantic-release/git@10 @semantic-release/exec@6
-
-      - name: Dry Run Semantic Release
-        id: semantic
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          semantic-release --dry-run
-
-  build:
-    name: Build and Prepare Release
-    needs: get-next-version
-    if: needs.get-next-version.outputs.new-release-published == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Install semantic-release-cargo
-        uses: EricCrosson/install-github-release-binary@v2
-        with:
-          targets: semantic-release-cargo@2
-
-      - name: Prepare semantic-release for Rust
-        run: semantic-release-cargo prepare ${{ needs.get-next-version.outputs.new-release-version }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      - name: Cargo Build
-        run: cargo build --release
+      - name: Install dependencies
+        run: |
+          npm install -g semantic-release@21 @semantic-release/changelog@6 @semantic-release/git@10 @semantic-release/exec@6
 
-  release:
-    name: Publish Release
-    needs: [get-next-version, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Install semantic-release-cargo
+        uses: EricCrosson/install-github-release-binary@v2
         with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+          targets: semantic-release-cargo@2
 
       - name: Create .releaserc.json
         run: |
           cat > .releaserc.json << 'EOF'
           {
-            "branches": [
-              "main",
-              "next",
-              {
-                "name": "beta",
-                "prerelease": true
-              },
-              {
-                "name": "alpha",
-                "prerelease": true
-              }
-            ],
+            "branches": ["main"],
             "plugins": [
               "@semantic-release/commit-analyzer",
               "@semantic-release/release-notes-generator",
@@ -117,15 +62,6 @@ jobs:
             ]
           }
           EOF
-
-      - name: Install Dependencies
-        run: |
-          npm install -g semantic-release@21 @semantic-release/changelog@6 @semantic-release/git@10 @semantic-release/exec@6
-
-      - name: Install semantic-release-cargo
-        uses: EricCrosson/install-github-release-binary@v2
-        with:
-          targets: semantic-release-cargo@2
 
       - name: Release
         env:
