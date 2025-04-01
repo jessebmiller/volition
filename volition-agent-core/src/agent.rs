@@ -1,4 +1,4 @@
-// volition-agent-core/src/agent.rs
+"""// volition-agent-core/src/agent.rs
 use crate::UserInteraction;
 use crate::config::AgentConfig;
 use crate::errors::AgentError;
@@ -106,8 +106,8 @@ impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
         >,
     > {
         Box::pin(async {
-            Err(rmcp::Error::method_not_found::<
-                rmcp::model::InitializeResultMethod,
+            Err(rmcp::Error::method_not_found::<\
+                rmcp::model::InitializeResultMethod,\
             >())
         })
     }
@@ -230,7 +230,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     }
 
     pub fn switch_provider(&mut self, provider_id: &str) -> Result<()> {
-        self.provider_registry.get(provider_id)?;
+        self.provider_registry.get(provider_id)?;\
         if self.current_provider_id != provider_id {
             debug!(old_provider = %self.current_provider_id, new_provider = %provider_id, "Switching provider");
             self.current_provider_id = provider_id.to_string();
@@ -243,7 +243,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         messages: Vec<ChatMessage>,
         tools: Option<&[ToolDefinition]>,
     ) -> Result<ApiResponse> {
-        let provider = self.provider_registry.get(&self.current_provider_id)?;
+        let provider = self.provider_registry.get(&self.current_provider_id)?;\
         debug!(provider = %self.current_provider_id, num_messages = messages.len(), "Getting completion from provider");
         provider.get_completion(messages, tools).await
     }
@@ -254,7 +254,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         tool_name: &str,
         args: Value,
     ) -> Result<Value> {
-        self.ensure_mcp_connection(server_id).await?;
+        self.ensure_mcp_connection(server_id).await?;\
         let conn_mutex = self.mcp_connections.get(server_id).unwrap();
         let conn = conn_mutex.lock().await;
         debug!(server = %server_id, tool = %tool_name, "Calling MCP tool");
@@ -262,7 +262,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     }
 
     pub async fn get_mcp_resource(&self, server_id: &str, uri: &str) -> Result<Value> {
-        self.ensure_mcp_connection(server_id).await?;
+        self.ensure_mcp_connection(server_id).await?;\
         let conn_mutex = self.mcp_connections.get(server_id).unwrap();
         let conn = conn_mutex.lock().await;
         debug!(server = %server_id, uri = %uri, "Getting MCP resource");
@@ -294,7 +294,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         info!(strategy = self.strategy.name(), "Starting MCP agent run.");
 
         // Initialize interaction using the state created in Agent::new
-        let mut next_step = self.strategy.initialize_interaction(&mut self.state)?;
+        let mut next_step = self.strategy.initialize_interaction(&mut self.state)?;\
 
         loop {
             trace!(?next_step, "Processing next step.");
@@ -312,11 +312,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                             let schema_map = mcp_tool.input_schema.as_ref();
                             ToolDefinition {
                                 name: mcp_tool.name.to_string(),
-                                description: mcp_tool
-                                    .description
-                                    .clone()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default(),
+                                description: mcp_tool.description.as_ref().map(|s| s.to_string()).unwrap_or_default(), // Fixed: Use as_ref() and handle Option
                                 parameters: mcp_schema_to_tool_params(Some(schema_map)),
                             }
                         })
@@ -348,7 +344,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
 
                     next_step = self
                         .strategy
-                        .process_api_response(&mut self.state, api_response)?;
+                        .process_api_response(&mut self.state, api_response)?;\
                 }
                 NextStep::CallTools(state_from_strategy) => {
                     self.state = state_from_strategy;
@@ -357,7 +353,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     if tool_calls.is_empty() {
                         warn!("Strategy requested tool calls, but none were pending.");
                         return Err(AgentError::Strategy(
-                            "Strategy requested tool calls, but none were pending in state"
+                            "Strategy requested tool calls, but none were pending in state"\
                                 .to_string(),
                         ));
                     }
@@ -371,7 +367,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     let mut tool_results = Vec::new();
                     for tool_call in tool_calls {
                         let tool_name = &tool_call.function.name;
-                        let args: Value = serde_json::from_str(&tool_call.function.arguments)
+                        let args: Value = serde_json::from_str(&tool_call.function.arguments)\
                             .unwrap_or(Value::Null);
 
                         let server_id = match tool_name.as_str() {
@@ -381,7 +377,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                             "search_text" => "search",
                             _ => {
                                 warn!(tool_name = %tool_name, "Cannot map tool to MCP server, skipping.");
-                                tool_results.push(crate::ToolResult {
+                                tool_results.push(crate::ToolResult {\
                                     tool_call_id: tool_call.id.clone(),
                                     output: format!("Error: Unknown tool name '{}'", tool_name),
                                     status: crate::ToolExecutionStatus::Failure,
@@ -403,14 +399,14 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                     Value::Array(arr) if arr.is_empty() => {
                                         "<empty result>".to_string()
                                     }
-                                    Value::Array(arr) => serde_json::to_string_pretty(&arr)
+                                    Value::Array(arr) => serde_json::to_string_pretty(&arr)\
                                         .unwrap_or_else(|_| "<invalid JSON array>".to_string()),
-                                    Value::Object(map) => serde_json::to_string_pretty(&map)
+                                    Value::Object(map) => serde_json::to_string_pretty(&map)\
                                         .unwrap_or_else(|_| "<invalid JSON object>".to_string()),
                                     Value::Null => "<no output>".to_string(),
                                     other => other.to_string(),
                                 };
-                                tool_results.push(crate::ToolResult {
+                                tool_results.push(crate::ToolResult {\
                                     tool_call_id: tool_call.id.clone(),
                                     output: output_str,
                                     status: crate::ToolExecutionStatus::Success,
@@ -418,7 +414,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                             }
                             Err(e) => {
                                 error!(tool_call_id = %tool_call.id, tool_name = %tool_name, server_id = %server_id, error = ?e, "MCP Tool execution failed.");
-                                tool_results.push(crate::ToolResult {
+                                tool_results.push(crate::ToolResult {\
                                     tool_call_id: tool_call.id.clone(),
                                     output: format!(
                                         "Error executing MCP tool '{}' on server '{}': {}",
@@ -435,18 +431,18 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         "Passing {} tool result(s) back to strategy.",
                         tool_results.len()
                     );
-                    next_step = self
-                        .strategy
-                        .process_tool_results(&mut self.state, tool_results)?;
+                    next_step = self\
+                        .strategy\
+                        .process_tool_results(&mut self.state, tool_results)?;\
                 }
                 NextStep::DelegateTask(delegation_input) => {
                     warn!(task = ?delegation_input.task_description, "Delegation requested, but not yet implemented.");
-                    let delegation_result = crate::DelegationResult {
+                    let delegation_result = crate::DelegationResult {\
                         result: "Delegation is not implemented.".to_string(),
                     };
-                    next_step = self
-                        .strategy
-                        .process_delegation_result(&mut self.state, delegation_result)?;
+                    next_step = self\
+                        .strategy\
+                        .process_delegation_result(&mut self.state, delegation_result)?;\
                 }
                 NextStep::Completed(final_message) => {
                     info!("Strategy indicated completion.");
@@ -457,3 +453,4 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         }
     }
 }
+""
