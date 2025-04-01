@@ -3,6 +3,7 @@ use super::Provider;
 use crate::api;
 use crate::config::ModelConfig;
 use crate::models::chat::{ApiResponse, ChatMessage};
+use crate::models::tools::ToolDefinition; // Import ToolDefinition
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use reqwest::Client;
@@ -30,7 +31,12 @@ impl Provider for OllamaProvider {
         &self.config.model_name
     }
 
-    async fn get_completion(&self, messages: Vec<ChatMessage>) -> Result<ApiResponse> {
+    // Add tools argument
+    async fn get_completion(
+        &self, 
+        messages: Vec<ChatMessage>,
+        tools: Option<&[ToolDefinition]> // Add tools argument
+    ) -> Result<ApiResponse> {
         let endpoint = self.config.endpoint.as_deref()
             .ok_or_else(|| anyhow!("Endpoint missing for Ollama provider model {}", self.config.model_name))?;
 
@@ -44,8 +50,8 @@ impl Provider for OllamaProvider {
             "", // No API key for Ollama
             &self.config.model_name,
             messages,
-            None, // Pass None for tools for now
-            self.config.parameters.as_ref(),
+            tools, // Pass tools argument down
+            self.config.parameters.as_ref(), // Restore parameters
         ).await
     }
 }

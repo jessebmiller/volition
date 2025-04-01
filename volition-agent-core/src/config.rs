@@ -23,13 +23,11 @@ pub struct AgentConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ProviderInstanceConfig {
-    #[serde(rename = "type")]
+    #[serde(rename = "type")] // Keep rename for TOML consistency
     pub provider_type: String,
-    // Removed model_name - get from embedded ModelConfig
-    // pub model_name: String, 
     pub api_key_env_var: String,
-    #[serde(flatten)]
-    pub model_config: ModelConfig,
+    // REMOVED #[serde(flatten)]
+    pub model_config: ModelConfig, // Expect a [providers.name.model_config] table
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -47,8 +45,8 @@ pub struct StrategyConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
-    // Uncomment model_name
     pub model_name: String, 
+    // Restore parameters field
     #[serde(default)]
     pub parameters: Option<toml::Value>,
     #[serde(default)]
@@ -57,9 +55,16 @@ pub struct ModelConfig {
 
 impl AgentConfig {
     pub fn from_toml_str(config_toml_content: &str) -> Result<AgentConfig> {
-        let config: AgentConfig = toml::from_str(config_toml_content)
-            .context("Failed to parse configuration TOML content. Check TOML syntax.")?;
+        let config: AgentConfig = match toml::from_str(config_toml_content) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                // Log the detailed TOML parsing error
+                tracing::error!(error=%e, content=%config_toml_content, "Failed to parse TOML content");
+                return Err(anyhow!(e)).context("Failed to parse configuration TOML content. Check TOML syntax.");
+            }
+        };
 
+        // --- Basic Checks ---
         if config.system_prompt.trim().is_empty() {
             return Err(anyhow!("'system_prompt' in config content is empty."));
         }
@@ -73,41 +78,50 @@ impl AgentConfig {
             ));
         }
 
+        // --- Provider Validation ---
         for (key, provider) in &config.providers {
             if provider.provider_type.trim().is_empty() {
-                return Err(anyhow!("Provider '{}' is missing 'type'.", key));
+                // Use rename value in error message if applicable
+                return Err(anyhow!("Provider '{}' is missing 'type' (provider_type).", key));
             }
-            // Validate model_name from embedded ModelConfig
+            // Validate fields within the nested model_config
             if provider.model_config.model_name.trim().is_empty() {
-                 return Err(anyhow!("Provider '{}' is missing 'model_name'.", key));
+                 return Err(anyhow!("Provider '{}' is missing 'model_config.model_name'.", key));
             }
-             if provider.api_key_env_var.trim().is_empty() {
+             if provider.api_key_env_var.trim().is_empty() && provider.provider_type != "ollama" { // Allow empty for ollama
                  return Err(anyhow!("Provider '{}' is missing 'api_key_env_var'.", key));
             }
             if let Some(endpoint) = &provider.model_config.endpoint {
                  if endpoint.trim().is_empty() {
-                    return Err(anyhow!("Provider '{}' has an empty 'endpoint'.", key));
+                    return Err(anyhow!("Provider '{}' has an empty 'model_config.endpoint'.", key));
                  }
                  Url::parse(endpoint).with_context(|| {
                     format!("Invalid URL format for endpoint ('{}') in provider '{}'.", endpoint, key)
                  })?;
+            } else if provider.provider_type != "ollama" { // Endpoint is generally required unless it's ollama with defaults
+                 // Allow missing endpoint if type is ollama (it has a default)
+                 // return Err(anyhow!("Provider '{}' is missing 'model_config.endpoint'.", key));
             }
-            // Handle Option<toml::Value> for parameters
+            // Restore parameter validation
             if let Some(params) = &provider.model_config.parameters {
                  if !params.is_table() && !params.is_str() {
                      return Err(anyhow!(
-                        "Provider '{}' has invalid 'parameters'. Expected a TOML table or string.",
+                        "Provider '{}' has invalid 'model_config.parameters'. Expected a TOML table or string.",
                         key
                     ));
                  }
             }
         }
         
+        // --- MCP Server Validation ---
         for (key, server) in &config.mcp_servers {
              if server.command.trim().is_empty() {
                  return Err(anyhow!("MCP Server '{}' has an empty 'command'.", key));
             }
         }
+
+        // --- Strategy Validation (Optional) ---
+        // Could add checks here, e.g., ensuring specified providers exist
 
         tracing::info!("Successfully parsed and validated agent configuration.");
         Ok(config)
@@ -120,30 +134,35 @@ impl AgentConfig {
 mod tests {
     use super::*;
 
+    // Updated test config to use nested model_config and restore parameters
     fn valid_mcp_config_content() -> String {
         r#"
             system_prompt = "You are Volition MCP."
             default_provider = "gemini_default"
 
             [providers.gemini_default]
-            type = "gemini"
-            model_name = "gemini-2.5-pro" # model_name now part of ModelConfig
+            provider_type = "gemini"
             api_key_env_var = "GOOGLE_API_KEY"
-            parameters = { temperature = 0.6 }
+            [providers.gemini_default.model_config]
+                model_name = "gemini-2.5-pro"
+                endpoint = "https://example.com/gemini"
+                parameters = { temperature = 0.6 }
             
             [providers.openai_fast]
-            type = "openai"
-            model_name = "gpt-4o-mini" # model_name now part of ModelConfig
+            provider_type = "openai"
             api_key_env_var = "OPENAI_API_KEY"
-            parameters = { temperature = 0.1 }
+            [providers.openai_fast.model_config]
+                model_name = "gpt-4o-mini"
+                endpoint = "https://example.com/openai"
+                parameters = { temperature = 0.1 }
 
             [mcp_servers.filesystem]
-            command = "cargo"
-            args = ["run", "--bin", "volition-filesystem-server"]
+            command = "echo"
+            args = ["fs"]
             
             [mcp_servers.shell]
-            command = "cargo"
-            args = ["run", "--bin", "volition-shell-server"]
+            command = "echo"
+            args = ["sh"]
 
             [strategies.plan_execute]
             planning_provider = "openai_fast"
@@ -161,10 +180,10 @@ mod tests {
         assert_eq!(config.default_provider, "gemini_default");
         assert_eq!(config.providers.len(), 2);
         assert!(config.providers.contains_key("gemini_default"));
-        // Check model_name within embedded ModelConfig
         assert_eq!(config.providers["openai_fast"].model_config.model_name, "gpt-4o-mini"); 
+        assert!(config.providers["gemini_default"].model_config.parameters.is_some());
         assert_eq!(config.mcp_servers.len(), 2);
-        assert_eq!(config.mcp_servers["filesystem"].command, "cargo");
+        assert_eq!(config.mcp_servers["filesystem"].command, "echo");
         assert_eq!(config.strategies.len(), 1);
         assert_eq!(config.strategies["plan_execute"].planning_provider, Some("openai_fast".to_string()));
     }
@@ -175,12 +194,16 @@ mod tests {
             system_prompt = "Valid"
             default_provider = "missing_provider"
             [providers.gemini_default]
-            type = "gemini"
-            model_name = "gemini-2.5-pro"
+            provider_type = "gemini"
             api_key_env_var = "GOOGLE_API_KEY"
+            [providers.gemini_default.model_config]
+                model_name = "gemini-2.5-pro"
+                endpoint = "https://example.com"
         "#;
         let result = AgentConfig::from_toml_str(content);
         assert!(result.is_err());
         assert!(result.err().unwrap().to_string().contains("Default provider 'missing_provider' not found"));
     }
+    
+    // Add more tests for other validation rules
 }

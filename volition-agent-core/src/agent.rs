@@ -1,9 +1,9 @@
 // volition-agent-core/src/agent.rs
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, ProviderInstanceConfig}; // Import ProviderInstanceConfig
 use crate::errors::AgentError;
 use crate::mcp::McpConnection;
 use crate::models::chat::{ApiResponse, ChatMessage};
-use crate::models::tools::{ToolDefinition, ToolInput, ToolParameter, ToolParameterType, ToolParametersDefinition};
+use crate::models::tools::{ToolDefinition, ToolParameter, ToolParameterType, ToolParametersDefinition};
 use crate::providers::{Provider, ProviderRegistry};
 use crate::strategies::{NextStep, Strategy};
 use crate::UserInteraction;
@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::AgentState;
@@ -22,7 +21,9 @@ use crate::AgentState;
 pub struct Agent<UI: UserInteraction> {
     provider_registry: ProviderRegistry,
     mcp_connections: HashMap<String, Arc<Mutex<McpConnection>>>,
+    #[allow(dead_code)] // Field currently unused
     http_client: reqwest::Client,
+    #[allow(dead_code)] // Field currently unused
     ui_handler: Arc<UI>,
     strategy: Box<dyn Strategy<UI> + Send + Sync>,
     state: AgentState,
@@ -77,6 +78,7 @@ fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolPar
 
 struct DummyClientService;
 impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
+    #[allow(refining_impl_trait)] // Allow Pin<Box<dyn Future>> where trait uses impl Future
     fn handle_request(
         &self,
         _request: rmcp::model::ServerRequest,
@@ -84,6 +86,7 @@ impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<rmcp::model::ClientResult, rmcp::Error>> + Send>> {
         Box::pin(async { Err(rmcp::Error::method_not_found::<rmcp::model::InitializeResultMethod>()) })
     }
+    #[allow(refining_impl_trait)] // Allow Pin<Box<dyn Future>> where trait uses impl Future
     fn handle_notification(
         &self,
         _notification: rmcp::model::ServerNotification,
@@ -107,21 +110,31 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
             .context("Failed to build HTTP client for Agent")?;
 
         let mut provider_registry = ProviderRegistry::new(config.default_provider.clone());
+        // Use into_iter to consume the config
         for (id, provider_conf) in config.providers {
             let api_key = if !provider_conf.api_key_env_var.is_empty() {
-                 std::env::var(&provider_conf.api_key_env_var)
-                    .with_context(|| format!("API key env var {} not set for provider {}", provider_conf.api_key_env_var, id))?
+                 match std::env::var(&provider_conf.api_key_env_var) {
+                     Ok(key) => key,
+                     Err(e) => {
+                         warn!(provider_id = %id, env_var = %provider_conf.api_key_env_var, error = %e, "API key environment variable not set or invalid");
+                         String::new() // Use empty string if env var is missing/invalid
+                     }
+                 }
             } else {
                 String::new()
             };
+            
+            // Extract model_config before matching
+            let model_config = provider_conf.model_config; 
+            
             let provider: Box<dyn Provider> = match provider_conf.provider_type.as_str() {
                 "gemini" => Box::new(crate::providers::gemini::GeminiProvider::new(
-                    provider_conf.model_config,
+                    model_config, // Pass the extracted ModelConfig
                     http_client.clone(),
                     api_key,
                 )),
                  "ollama" => Box::new(crate::providers::ollama::OllamaProvider::new(
-                    provider_conf.model_config,
+                    model_config, // Pass the extracted ModelConfig
                     http_client.clone(),
                     api_key,
                 )),
@@ -159,8 +172,9 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     async fn ensure_mcp_connection(&self, server_id: &str) -> Result<()> {
         let conn_mutex = self.mcp_connections.get(server_id)
             .ok_or_else(|| anyhow!("MCP server config not found: {}", server_id))?;
-        let mut conn_guard = conn_mutex.lock().await;
-        conn_guard.establish_connection_external(DummyClientService, Default::default()).await
+        let conn_guard = conn_mutex.lock().await;
+        let ct = tokio_util::sync::CancellationToken::new(); 
+        conn_guard.establish_connection_external(DummyClientService, ct).await
     }
 
     pub fn switch_provider(&mut self, provider_id: &str) -> Result<()> {
@@ -172,15 +186,15 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         Ok(())
     }
 
-    pub async fn get_completion(&self, messages: Vec<ChatMessage>) -> Result<ApiResponse> {
+    pub async fn get_completion(&self, messages: Vec<ChatMessage>, tools: Option<&[ToolDefinition]>) -> Result<ApiResponse> {
         let provider = self.provider_registry.get(&self.current_provider_id)?;
         debug!(provider = %self.current_provider_id, num_messages = messages.len(), "Getting completion from provider");
-        provider.get_completion(messages).await
+        provider.get_completion(messages, tools).await
     }
 
     pub async fn call_mcp_tool(&self, server_id: &str, tool_name: &str, args: Value) -> Result<Value> {
         self.ensure_mcp_connection(server_id).await?;
-        let conn_mutex = self.mcp_connections.get(server_id).unwrap();
+        let conn_mutex = self.mcp_connections.get(server_id).unwrap(); 
         let conn = conn_mutex.lock().await;
         debug!(server = %server_id, tool = %tool_name, "Calling MCP tool");
         conn.call_tool(tool_name, args).await
@@ -188,7 +202,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
 
      pub async fn get_mcp_resource(&self, server_id: &str, uri: &str) -> Result<Value> {
         self.ensure_mcp_connection(server_id).await?;
-        let conn_mutex = self.mcp_connections.get(server_id).unwrap();
+        let conn_mutex = self.mcp_connections.get(server_id).unwrap(); 
         let conn = conn_mutex.lock().await;
         debug!(server = %server_id, uri = %uri, "Getting MCP resource");
         conn.get_resource(uri).await
@@ -197,11 +211,17 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     pub async fn list_mcp_tools(&self) -> Result<Vec<McpTool>> {
         let mut all_tools = Vec::new();
         for (id, conn_mutex) in &self.mcp_connections {
-            self.ensure_mcp_connection(id).await?;
-            let conn = conn_mutex.lock().await;
-            match conn.list_tools().await {
-                Ok(tools) => all_tools.extend(tools),
-                Err(e) => warn!(server_id = %id, error = ?e, "Failed to list tools from MCP server"),
+            match self.ensure_mcp_connection(id).await {
+                 Ok(_) => {
+                      let conn = conn_mutex.lock().await;
+                      match conn.list_tools().await {
+                           Ok(tools) => all_tools.extend(tools),
+                           Err(e) => warn!(server_id = %id, error = ?e, "Failed to list tools from MCP server (post-connection)"),
+                      }
+                 },
+                 Err(e) => {
+                      warn!(server_id = %id, error = ?e, "Failed to ensure MCP connection for listing tools");
+                 }
             }
         }
         Ok(all_tools)
@@ -221,12 +241,10 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         .map_err(|e| AgentError::Mcp(e.context("Failed to list MCP tools")))?;
                     
                     let tool_definitions: Vec<ToolDefinition> = mcp_tools.iter().map(|mcp_tool| {
-                        // Use as_ref() to get &Map from Arc<Map>
                         let schema_map = mcp_tool.input_schema.as_ref(); 
                         ToolDefinition {
                             name: mcp_tool.name.to_string(),
                             description: mcp_tool.description.clone().map(|s| s.to_string()).unwrap_or_default(),
-                            // Pass Option<&Map> to helper
                             parameters: mcp_schema_to_tool_params(Some(schema_map)), 
                         }
                     }).collect();
@@ -237,7 +255,11 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         num_tools = tool_definitions.len(),
                         "Sending request to AI provider."
                     );
-                    let api_response = self.get_completion(self.state.messages.clone()).await
+                    
+                    let api_response = self.get_completion(
+                        self.state.messages.clone(), 
+                        if tool_definitions.is_empty() { None } else { Some(&tool_definitions) }
+                    ).await
                         .map_err(|e| AgentError::Api(e.context("API call failed during agent run")))?;
 
                     debug!("Received response from AI.");
@@ -251,7 +273,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
 
                     if tool_calls.is_empty() {
                         warn!("Strategy requested tool calls, but none were pending.");
-                        return Err(AgentError::Strategy("No tools pending".to_string()));
+                        return Err(AgentError::Strategy("Strategy requested tool calls, but none were pending in state".to_string()));
                     }
 
                     info!(count = tool_calls.len(), "Executing {} requested tool call(s) via MCP.", tool_calls.len());
@@ -269,6 +291,11 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                             "search_text" => "search",
                             _ => {
                                 warn!(tool_name = %tool_name, "Cannot map tool to MCP server, skipping.");
+                                tool_results.push(crate::ToolResult {
+                                    tool_call_id: tool_call.id.clone(),
+                                    output: format!("Error: Unknown tool name '{}'", tool_name),
+                                    status: crate::ToolExecutionStatus::Failure,
+                                });
                                 continue;
                             }
                         };
@@ -278,17 +305,14 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 info!(tool_call_id = %tool_call.id, tool_name = %tool_name, server_id = %server_id, "MCP Tool executed successfully.");
                                 let output_str = match output_value {
                                     Value::String(s) => s,
-                                    Value::Object(map) if map.contains_key("content") && map["content"].is_string() => {
-                                        map["content"].as_str().unwrap().to_string()
+                                    Value::Object(map) if map.contains_key("text") => { 
+                                        map.get("text").and_then(Value::as_str).unwrap_or("").to_string()
                                     }
-                                    Value::Object(map) if map.contains_key("success") => {
-                                        format!("Success: {}", map["success"])
-                                    }
-                                    Value::Object(map) if map.contains_key("text") && map.contains_key("uri") => {
-                                         map["text"].as_str().unwrap_or("").to_string()
-                                    }
+                                    Value::Array(arr) if arr.is_empty() => "<empty result>".to_string(),
+                                    Value::Array(arr) => serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "<invalid JSON array>".to_string()),
+                                    Value::Object(map) => serde_json::to_string_pretty(&map).unwrap_or_else(|_| "<invalid JSON object>".to_string()),
                                     Value::Null => "<no output>".to_string(),
-                                    other => serde_json::to_string_pretty(&other).unwrap_or_else(|_| "<invalid JSON output>".to_string()),
+                                    other => other.to_string(),
                                 };
                                 tool_results.push(crate::ToolResult {
                                     tool_call_id: tool_call.id.clone(),

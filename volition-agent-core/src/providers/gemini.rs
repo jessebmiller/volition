@@ -1,11 +1,13 @@
 // volition-agent-core/src/providers/gemini.rs
-use super::Provider; // Import Provider trait
-use crate::api; // Use refactored api module
+use super::Provider;
+use crate::api;
 use crate::config::ModelConfig;
 use crate::models::chat::{ApiResponse, ChatMessage};
+use crate::models::tools::ToolDefinition;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use reqwest::Client;
+use tracing::{info, warn, error, trace}; // Added info, error, trace
 
 #[derive(Clone)]
 pub struct GeminiProvider {
@@ -30,20 +32,35 @@ impl Provider for GeminiProvider {
         &self.config.model_name
     }
 
-    async fn get_completion(&self, messages: Vec<ChatMessage>) -> Result<ApiResponse> {
+    async fn get_completion(
+        &self, 
+        messages: Vec<ChatMessage>,
+        tools: Option<&[ToolDefinition]> // Use tools argument again
+    ) -> Result<ApiResponse> {
+        trace!("Entering GeminiProvider::get_completion");
         let endpoint = self.config.endpoint.as_deref()
              .ok_or_else(|| anyhow!("Endpoint missing for Gemini provider model {}", self.config.model_name))?;
+        trace!(endpoint = %endpoint, "Endpoint retrieved.");
              
-        // Call the generic API function
-        // TODO: Handle tool conversion properly later
-        api::call_chat_completion_api(
+        // Restore passing tools if available
+        // warn!("TEMPORARY: Sending request to Gemini without tools."); 
+        
+        trace!("Calling api::call_chat_completion_api...");
+        let result = api::call_chat_completion_api(
             &self.http_client,
             endpoint,
             &self.api_key,
             &self.config.model_name,
             messages,
-            None, // Pass None for tools for now
-            self.config.parameters.as_ref(),
-        ).await
+            tools, // Pass tools argument down
+            self.config.parameters.as_ref(), // Restore parameters
+        ).await;
+        
+        match &result {
+            Ok(_) => trace!("api::call_chat_completion_api returned Ok"),
+            Err(e) => error!(error = %e, "api::call_chat_completion_api returned Err"),
+        }
+        
+        result // Return the original result
     }
 }

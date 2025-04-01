@@ -1,7 +1,6 @@
-"""// volition-cli/src/main.rs
+// volition-cli/src/main.rs
 mod models;
 mod rendering;
-// mod tools; // Old tool provider removed
 
 use anyhow::{anyhow, Context, Result};
 use colored::*;
@@ -9,36 +8,36 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::process::ExitCode; // For returning error codes
 use std::sync::Arc;
 
 // Import new core types
 use volition_agent_core::{
-    agent::Agent, // Correct path
-    config::AgentConfig, // Use AgentConfig
+    agent::Agent,
+    config::AgentConfig,
     errors::AgentError,
-    // Import necessary strategies
     strategies::{
-        complete_task::CompleteTaskStrategy, // Assuming this still exists/is useful
+        complete_task::CompleteTaskStrategy,
         conversation::ConversationStrategy,
-        plan_execute::PlanExecuteStrategy, // Import new strategy
-        StrategyConfig, // Import StrategyConfig
+        plan_execute::PlanExecuteStrategy,
     },
-    // ToolProvider is removed
-    AgentState,
-    UserInteraction, // Keep UserInteraction trait
-    async_trait, // Keep async_trait
+    AgentState, UserInteraction, async_trait,
 };
 
 use crate::models::cli::Cli;
 use crate::rendering::print_formatted;
-// Removed CliToolProvider import
 
 use clap::Parser;
 use time::macros::format_description;
-use tracing::{debug, error, info, trace, Level};
+use tracing::{debug, error, info, trace, Level, warn};
 use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 const CONFIG_FILENAME: &str = "Volition.toml";
+
+// Define agent type with concrete UI
+type CliAgent = Agent<CliUserInteraction>;
+// Define strategy trait object type with concrete UI
+type CliStrategy = Box<dyn volition_agent_core::Strategy<CliUserInteraction> + Send + Sync>;
 
 struct CliUserInteraction;
 
@@ -76,17 +75,13 @@ fn find_project_root() -> Result<PathBuf> {
     }
 }
 
-// Load new AgentConfig
 fn load_cli_config() -> Result<(AgentConfig, PathBuf)> {
     let project_root = find_project_root()?;
     let config_path = project_root.join(CONFIG_FILENAME);
     let config_toml_content = fs::read_to_string(&config_path)
         .with_context(|| format!("Failed to read project config file: {:?}", config_path))?;
-
-    // API keys are now handled during Agent creation based on provider config
     let agent_config = AgentConfig::from_toml_str(&config_toml_content)
         .context("Failed to parse or validate configuration content")?;
-
     Ok((agent_config, project_root))
 }
 
@@ -94,7 +89,7 @@ fn print_welcome_message() {
     println!(
         "
 {}",
-        "Volition - AI Assistant (MCP Refactor)".cyan().bold() // Updated title
+        "Volition - AI Assistant (MCP Refactor)".cyan().bold()
     );
     println!(
         "{}
@@ -105,76 +100,78 @@ fn print_welcome_message() {
     println!();
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
-    let cli = Cli::parse();
+/// Selects the base strategy based on config and potentially CLI args (future).
+fn select_base_strategy(config: &AgentConfig) -> CliStrategy {
+    // TODO: Allow selecting strategy via CLI arg or config
+    let strategy_name = "plan_execute"; // Hardcoded for now
 
-    let default_level = match cli.verbose {
-        0 => Level::INFO,
-        1 => Level::DEBUG,
-        _ => Level::TRACE,
-    };
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::default().add_directive(default_level.into()));
-    let time_format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
-    let local_timer = LocalTime::new(time_format);
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
-        .with_target(false)
-        .with_timer(local_timer)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-    info!(
-        "Logging initialized. Level determined by RUST_LOG or -v flags (default: {}).",
-        default_level
-    );
-    debug!("Debug logging enabled.");
-    trace!("Trace logging enabled.");
+    if strategy_name == "plan_execute" {
+        match config.strategies.get(strategy_name) {
+            Some(strategy_config)
+                if strategy_config.planning_provider.is_some()
+                    && strategy_config.execution_provider.is_some() =>
+            {
+                info!("Using PlanExecute strategy with provided config.");
+                Box::new(PlanExecuteStrategy::new(strategy_config.clone()))
+            }
+            _ => {
+                warn!("'plan_execute' strategy selected but config is missing or incomplete. Falling back to 'CompleteTask'.");
+                info!("Using CompleteTask strategy.");
+                Box::new(CompleteTaskStrategy::default())
+            }
+        }
+    } else {
+        // Default to CompleteTask if plan_execute isn't the chosen strategy
+        info!("Using CompleteTask strategy.");
+        Box::new(CompleteTaskStrategy::default())
+    }
+}
 
-    let (config, project_root) =
-        load_cli_config().context("Failed to load configuration and find project root")?;
+/// Runs the agent non-interactively for a single task.
+async fn run_non_interactive(
+    task: String,
+    config: AgentConfig,
+    project_root: PathBuf,
+    ui_handler: Arc<CliUserInteraction>,
+) -> Result<()> {
+    info!(task = %task, "Running non-interactive task.");
 
-    // ToolProvider is removed, tools are accessed via MCP
-    let ui_handler = Arc::new(CliUserInteraction);
+    let base_strategy = select_base_strategy(&config);
 
+    // --- Agent Creation (No Conversation Wrapper) ---
+    let mut agent = CliAgent::new(
+        config.clone(),
+        ui_handler,
+        base_strategy, // Use the base strategy directly
+        task,
+    )
+    .map_err(|e| AgentError::Config(format!("Failed to create agent instance: {}", e)))?;
+
+    match agent.run(&project_root).await {
+        Ok((final_message, _updated_state)) => {
+            info!("Agent session completed successfully.");
+            println!("{}", "--- Agent Response ---".bold());
+            // Print raw output in non-interactive mode for easier parsing/piping
+            println!("{}", final_message);
+            println!("----------------------");
+            Ok(()) // Indicate success
+        }
+        Err(e) => {
+            error!("Agent run encountered an error: {}", e);
+            // Return the error to indicate failure
+            Err(anyhow!(e))
+        }
+    }
+}
+
+/// Runs the agent in interactive mode.
+async fn run_interactive(
+    config: AgentConfig,
+    project_root: PathBuf,
+    ui_handler: Arc<CliUserInteraction>,
+) -> Result<()> {
     print_welcome_message();
-
     let mut conversation_state: Option<AgentState> = None;
-
-    // --- Select Strategy ---
-    // For now, let's default to PlanExecuteStrategy if configured, otherwise CompleteTask
-    let strategy_name = "plan_execute"; // Or get from CLI args?
-    let strategy_config = config.strategies.get(strategy_name)
-        .cloned()
-        .unwrap_or_else(|| {
-            warn!("Strategy '{}' not found in config, using default.", strategy_name);
-            // Create a default StrategyConfig if needed, or handle error
-             StrategyConfig { planning_provider: None, execution_provider: None }
-        });
-
-    // Create the chosen strategy instance
-    // Need to handle UI generic parameter correctly
-    // We need to define the Agent type first to know the UI type for the Strategy trait object
-    type CliAgent = Agent<CliUserInteraction>; // Define agent type with concrete UI
-
-    let mut strategy_instance: Box<dyn volition_agent_core::Strategy<CliUserInteraction> + Send + Sync> =
-        if strategy_name == "plan_execute" {
-             // Ensure required providers are configured for PlanExecute
-             if strategy_config.planning_provider.is_none() || strategy_config.execution_provider.is_none() {
-                 error!("'plan_execute' strategy requires 'planning_provider' and 'execution_provider' in config.");
-                 // Fallback to CompleteTask or return error?
-                 warn!("Falling back to 'CompleteTask' strategy.");
-                 Box::new(CompleteTaskStrategy::default())
-             } else {
-                 info!("Using PlanExecute strategy.");
-                 Box::new(PlanExecuteStrategy::new(strategy_config))
-             }
-        } else {
-            info!("Using CompleteTask strategy.");
-            Box::new(CompleteTaskStrategy::default())
-        };
-
 
     loop {
         println!("
@@ -193,30 +190,34 @@ async fn main() -> Result<()> {
         if trimmed_input.to_lowercase() == "new" {
             println!("{}", "Starting a new conversation...".cyan());
             conversation_state = None;
-            // Re-initialize strategy? Or assume Agent::new handles it?
-            // For simplicity, let Agent::new handle state reset.
             continue;
         }
 
-        // --- Agent Creation ---
-        // We now create the agent inside the loop if conversation_state is None,
-        // otherwise we need a way to update the agent's state or create a new one
-        // with the existing history. The current Agent::new doesn't support history.
-        // Let's simplify: always create a new agent, but potentially pass history
-        // to the strategy initialization if we adapt ConversationStrategy.
+        let base_strategy = select_base_strategy(&config);
 
-        // For now, using the selected strategy directly without ConversationStrategy wrapper
-        let mut agent = CliAgent::new( // Use type alias CliAgent
-            config.clone(), // Clone config for each loop iteration
+        // Wrap with ConversationStrategy if history exists
+        let agent_strategy: CliStrategy = if let Some(state) = conversation_state.take() {
+            info!("Continuing conversation.");
+            Box::new(ConversationStrategy::with_history(
+                base_strategy,
+                state.messages,
+            ))
+        } else {
+            info!("Starting new conversation.");
+            Box::new(ConversationStrategy::new(base_strategy))
+        };
+
+        // --- Agent Creation ---
+        let mut agent = CliAgent::new(
+            config.clone(),
             Arc::clone(&ui_handler),
-            strategy_instance, // Pass the strategy instance directly
+            agent_strategy, // Pass the wrapped strategy
             trimmed_input.to_string(),
         )
-        .context("Failed to create agent instance")?; // Use context for better error
+        .map_err(|e| AgentError::Config(format!("Failed to create agent instance: {}", e)))?;
 
-        // Agent::run now takes working_dir, which we have
         match agent.run(&project_root).await {
-            Ok((final_message, _updated_state)) => { // Ignore updated_state for now
+            Ok((final_message, updated_state)) => {
                 info!("Agent session completed successfully.");
                 println!("{}", "--- Agent Response ---".bold());
                 if let Err(e) = print_formatted(&final_message) {
@@ -226,34 +227,87 @@ async fn main() -> Result<()> {
                     );
                     println!("{}", final_message);
                 } else {
-                    println!(); // Add newline after formatted output
+                    println!();
                 }
                 println!("----------------------");
-
-                // Re-assign the strategy instance back for the next loop iteration
-                // This assumes the strategy's internal state is correctly managed across runs
-                strategy_instance = agent.strategy;
-
-                // TODO: Handle conversation history persistence if needed
-                // conversation_state = Some(updated_state);
+                // Store state for next loop iteration
+                conversation_state = Some(updated_state);
             }
             Err(e) => {
-                // Use Display formatting for AgentError
                 println!(
                     "{}: {}
-", // Use Display format
+",
                     "Agent run encountered an error".red(),
-                    e
+                    e // Display AgentError directly
                 );
-                // Optionally reset strategy or state on error?
-                 // For now, just continue the loop.
+                // Reset conversation state on error
+                conversation_state = None;
             }
         }
     }
-
     println!("
 {}", "Thanks!".cyan());
     Ok(())
 }
 
-""
+// Use Tokio main, but return ExitCode on error
+#[tokio::main]
+async fn main() -> ExitCode {
+    dotenvy::dotenv().ok();
+    let cli = Cli::parse();
+
+    // Initialize logging (same as before)
+    let default_level = match cli.verbose {
+        0 => Level::INFO,
+        1 => Level::DEBUG,
+        _ => Level::TRACE,
+    };
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::default().add_directive(default_level.into()));
+    let time_format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
+    let local_timer = LocalTime::new(time_format);
+    let subscriber = tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(false) // Don't include module paths
+        .with_timer(local_timer)
+        .finish();
+    if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+         eprintln!("Failed to set global tracing subscriber: {}", e);
+         return ExitCode::FAILURE;
+    }
+    info!(
+        "Logging initialized. Level determined by RUST_LOG or -v flags (default: {}).",
+        default_level
+    );
+    debug!("Debug logging enabled.");
+    trace!("Trace logging enabled.");
+
+
+    // Load config (common step)
+    let (config, project_root) = match load_cli_config() {
+         Ok(c) => c,
+         Err(e) => {
+              error!("Failed to load configuration: {}", e);
+              return ExitCode::FAILURE;
+         }
+    };
+
+    let ui_handler: Arc<CliUserInteraction> = Arc::new(CliUserInteraction);
+
+    // Decide mode based on --task flag
+    let result = if let Some(task) = cli.task {
+        run_non_interactive(task, config, project_root, ui_handler).await
+    } else {
+        run_interactive(config, project_root, ui_handler).await
+    };
+
+    // Return appropriate exit code
+    match result {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(e) => {
+            // Error should have already been logged by run_non_interactive/run_interactive
+            eprintln!("Operation failed: {}", e); // Print final error summary
+            ExitCode::FAILURE
+        }
+    }
+}

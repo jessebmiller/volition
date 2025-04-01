@@ -150,6 +150,7 @@ impl Service<RoleServer> for FileSystemServer {
         *self.peer.lock().unwrap() = Some(peer);
     }
 
+    #[allow(refining_impl_trait)] // Allow Pin<Box<dyn Future>> where trait uses impl Future
     fn handle_request(
         &self,
         request: ClientRequest,
@@ -175,6 +176,7 @@ impl Service<RoleServer> for FileSystemServer {
         })
     }
 
+    #[allow(refining_impl_trait)] // Allow Pin<Box<dyn Future>> where trait uses impl Future
     fn handle_notification(
         &self,
         _notification: ClientNotification,
@@ -189,12 +191,21 @@ async fn main() -> Result<()> {
     let transport = io::stdio();
     let ct = CancellationToken::new();
 
-    println!("Starting filesystem MCP server...");
+    // Print startup message to stderr
+    eprintln!("Starting filesystem MCP server...");
 
-    server.serve_with_ct(transport, ct.clone()).await
-        .map_err(|e| anyhow!("Server failed: {}", e))?;
+    // Run the server loop. This might return if the client disconnects.
+    if let Err(e) = server.serve_with_ct(transport, ct.clone()).await {
+         eprintln!("Server loop failed: {}", e); // Log error to stderr
+         // Decide if the error is fatal or if we should wait for cancellation anyway
+         // For now, we'll proceed to wait for cancellation.
+    }
+    
+    // Keep the process alive until cancellation is requested.
+    ct.cancelled().await;
 
-    println!("Filesystem MCP server stopped.");
+    // Print stopped message to stderr
+    eprintln!("Filesystem MCP server stopped.");
 
     Ok(())
 }

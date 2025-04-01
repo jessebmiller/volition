@@ -5,7 +5,7 @@
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 [![Stars](https://img.shields.io/github/stars/jessebmiller/volition?style=social)](https://github.com/jessebmiller/volition/stargazers)
 
-**Volition is a contextually-aware AI assistant that supercharges your Rust development workflow.**
+**Volition is a contextually-aware AI assistant designed for Rust development workflows, built with a modular architecture.**
 
 [Getting Started](#getting-started) •
 [Features](#key-features) •
@@ -21,154 +21,281 @@
 
 ## What is Volition?
 
-Volition is an open-source CLI tool that brings the power of advanced AI assistants directly into your development workflow. Unlike many existing tools that either generate new code in isolation or offer general programming advice, Volition deeply integrates with your codebase and development tools to provide contextually-aware assistance.
+Volition is an open-source CLI tool that brings the power of advanced AI assistants directly into your development workflow. Unlike many existing tools that either generate new code in isolation or offer general programming advice, Volition leverages a modular architecture to integrate deeply with your codebase and development tools, providing contextually-aware assistance.
 
-> 💡 **Built for Rust developers by Rust developers** - Volition understands Rust idioms and best practices.
+It consists of:
+*   **`volition-agent-core`**: A library handling agent logic, AI model interaction (via Providers), strategies, and communication with tool servers.
+*   **Tool Servers**: Separate processes (e.g., for filesystem, git, shell commands) exposing capabilities via the Multi-Component Protocol (MCP).
+*   **`volition-cli`**: The command-line interface that uses the core library to interact with the user and orchestrate tasks.
+
+> 💡 **Built for Rust developers** - Volition understands Rust idioms and best practices.
 
 ```ignore
-$ volition "Find references to RuntimeConfig across the codebase and explain how it's used"
+$ volition
 
-Volition - AI Assistant
-Searching for references to RuntimeConfig in the codebase...
+Volition - AI Assistant (MCP Refactor)
+Type 'exit' or press Enter on an empty line to quit.
+Type 'new' to start a fresh conversation.
 
-I found 12 references to RuntimeConfig across 5 files. The struct is defined in src/config.rs
-and represents configuration loaded from Volition.toml plus environment variables.
+How can I help you?
+> Find references to AgentConfig across the codebase and explain how it's used
+INFO  volition_cli                      > Starting new conversation.
+INFO  volition_agent_core::agent        > Initializing MCP Agent with strategy. strategy="Conversation" default_provider="gemini"
+INFO  volition_agent_core::agent        > Starting MCP agent run. strategy="Conversation"
+# ... (Agent uses MCP servers like search, filesystem) ...
+INFO  volition_agent_core::agent        > Agent session completed successfully.
+--- Agent Response ---
+I found several references to `AgentConfig` in `volition-agent-core` and `volition-cli`:
 
-Key usage patterns:
-1. In src/api.rs: Used to access API credentials and retrieve model configuration
-2. In src/tools/mod.rs: Passed to tool implementations that need project context
-3. In src/main.rs: Loaded at startup via load_runtime_config()
+1.  **Definition (`volition-agent-core/src/config.rs`):** Defines the main configuration structure, loading settings for providers, MCP servers, and strategies from `Volition.toml`.
+2.  **Loading (`volition-cli/src/main.rs`):** Loaded at startup using `load_cli_config()` which reads and parses `Volition.toml`.
+3.  **Agent Initialization (`volition-agent-core/src/agent.rs`):** An `AgentConfig` instance is required by `Agent::new` to configure providers and locate MCP servers.
 
-The struct centralizes access to:
-- System prompts
-- API credentials
-- Model configurations
-- Project root path
+It centralizes configuration for the agent's components. Let me know if you want details on a specific part!
+----------------------
 
-Need more details or would you like me to explain a specific aspect?
-```
+How can I help you?
+>
 
-## Key Features
+Key Features
 
-- **Tool-based Interaction**: Execute shell commands, read/write files, search codebases, and more through a unified interface.
-- **Multiple Model Support**: Works with OpenAI, Google Gemini, and Ollama models through a consistent interface.
-- **Deep Code Understanding**: Contextually search and modify codebases with precise tools.
-- **Git and Cargo Integration**: Safely use git and cargo commands within your AI workflow.
-- **Conversation Recovery**: Automatically saves conversation state for recovery if interrupted.
-- **Privacy Focused**: Your code stays on your machine. Only queries are sent to API providers.
-- **Advanced Problem Solving**: Implements strategies like simulated annealing for complex problems.
+• Modular Architecture: Core agent logic separated from tool implementations (filesystem, git, shell, search) running as distinct MCP servers.
+• Multi-Provider Support: Interact with various AI models (Gemini, Ollama, potentially others) through a unified Provider interface in volition-agent-core.
+• Extensible Strategies: Implement different agent behaviors (e.g., CompleteTask, PlanExecute, Conversation) using the Strategy trait.
+• Contextual Tool Use
+  : The agent intelligently calls tools exposed by MCP servers based on the AI's requests (e.g., reading files, running git commands, searching code).
+• Conversation Management: The CLI wrapper maintains conversation history across turns.
+• Privacy Focused: Your code stays on your machine. Only necessary queries and tool arguments/results are exchanged.
 
-## Installation
+Installation
 
-### Prerequisites
+Prerequisites
 
-- **Rust**: [Install Rust](https://www.rust-lang.org/tools/install) (required to build from source)
-- **ripgrep**: Required for code search functionality
-  - macOS: `brew install ripgrep`
-  - Ubuntu/Debian: `apt install ripgrep`
-  - Windows: `scoop install ripgrep` or `choco install ripgrep`
+• Rust: [Install Rust](https://www.rust-lang.org/tools/install) (required to build from source)
+• ripgrep (rg): Required for the code search server (volition-search-server)
+  • macOS: brew install ripgrep
+  • Ubuntu/Debian: apt install ripgrep
+  • Windows: scoop install ripgrep or choco install ripgrep
+• git: Required for the git server (volition-git-server)
+  • Install via your system's package manager (e.g., brew install git, apt install git).
 
-### Build from Source
+Build from Source
 
-```bash
 # Clone the repository
 git clone https://github.com/jessebmiller/volition.git
 cd volition
 
-# Build the project
-cargo build --release
+# Build the entire workspace (core, servers, cli)
+cargo build --release --workspace
 
-# Optional: Add to your PATH
-cp target/release/volition ~/.local/bin/   # Unix
+# Optional: Add the main CLI binary to your PATH
+# The servers will be run automatically by the agent core as needed.
+cp target/release/volition ~/.local/bin/   # Adjust for your preferred bin directory (Unix)
 # or
-copy target\release\volition.exe %USERPROFILE%\bin\   # Windows
-```
+# copy target\\release\\volition.exe %USERPROFILE%\\bin\\   # Adjust for your preferred bin directory (Windows)
 
-## Configuration
+Configuration
 
-1. Create a `Volition.toml` configuration file (see example below)
-2. Set your API key as an environment variable: `export API_KEY=your_api_key_here`
+Volition uses a Volition.toml file placed at the root of your project (it searches upwards from the current directory).
 
-Example `Volition.toml`:
+1. Create Volition.toml in your project root.
+1. Configure API keys via environment variables specified in the config file.
 
-```toml
-# System prompt defining the AI's role and capabilities
-system_prompt = '''
-You are Volition, an AI-powered software engineering assistant specializing in code analysis, refactoring, and product engineering.
-...
-'''
+Example Volition.toml:
 
-# Selected model (must match a key in the [models] section)
-selected_model = "gemini-2-5-pro"
+# Default AI provider to use if not specified otherwise
+default_provider = "gemini" # Must match a key under [providers]
 
-# Available models
-[models]
-  [models.gpt-4o]
-  model_name = "gpt-4o"
-  endpoint = "https://api.openai.com/v1/chat/completions"
-  parameters = { temperature = 0.2 }
+# --- AI Model Providers ---
+[providers]
+  # Configuration for a Google Gemini provider instance
+  [providers.gemini]
+  provider_type = "gemini" # Type identifier ("gemini" or "ollama")
+  # Environment variable containing the API key
+  api_key_env_var = "GEMINI_API_KEY"
+  # Model-specific configuration
+  [providers.gemini.model_config]
+    # Actual model name for the API call (e.g., "gemini-1.5-flash-latest")
+    model_name = "gemini-1.5-flash-latest"
+    # API endpoint URL
+    endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
+    # Optional parameters like temperature, max_tokens etc.
+    # parameters = { temperature = 0.7, maxOutputTokens = 1024 }
 
-  [models.gemini-2-5-pro]
-  model_name = "gemini-2.5-pro-exp-03-25"
-  endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-  parameters = { temperature = 0.7 }
-```
+  # Configuration for a local Ollama provider instance
+  [providers.ollama_llama3]
+  provider_type = "ollama"
+  api_key_env_var = "" # Ollama typically doesn't require an API key
+  [providers.ollama_llama3.model_config]
+    model_name = "llama3" # Model name known to your Ollama instance
+    endpoint = "http://localhost:11434/api/chat" # Default Ollama endpoint
+    # parameters = { temperature = 0.5 }
 
-## Usage
+# --- MCP Tool Servers ---
+# Configure how the agent should run the tool servers.
+[mcp_servers]
+  [mcp_servers.filesystem]
+  # Command to execute the filesystem server binary
+  command = "volition-filesystem-server"
+  # Arguments to pass (usually none needed)
+  # args = []
 
-### Basic Usage
+  [mcp_servers.git]
+  command = "volition-git-server"
 
-```bash
-# Start an interactive session
+  [mcp_servers.search]
+  command = "volition-search-server"
+
+  # Add other servers like 'shell' if implemented
+
+# --- Strategy Configurations ---
+# Define settings for different agent strategies
+[strategies]
+  [strategies.plan_execute]
+  # Provider to use for the planning phase
+  planning_provider = "gemini" # Must match a key under [providers]
+  # Provider to use for the execution phase
+  execution_provider = "gemini" # Must match a key under [providers]
+  # Optional: Add other strategy-specific settings here
+  # max_steps = 10
+
+# You can define configs for other strategies here too
+# [strategies.another_strategy]
+# setting = "value"
+# Default AI provider to use if not specified otherwise
+default_provider = "gemini" # Must match a key under [providers]
+
+# --- AI Model Providers ---
+[providers]
+  # Configuration for a Google Gemini provider instance
+  [providers.gemini]
+  provider_type = "gemini" # Type identifier ("gemini" or "ollama")
+  # Environment variable containing the API key
+  api_key_env_var = "GEMINI_API_KEY"
+  # Model-specific configuration
+  [providers.gemini.model_config]
+    # Actual model name for the API call (e.g., "gemini-1.5-flash-latest")
+    model_name = "gemini-1.5-flash-latest"
+    # API endpoint URL
+    endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
+    # Optional parameters like temperature, max_tokens etc.
+    # parameters = { temperature = 0.7, maxOutputTokens = 1024 }
+
+  # Configuration for a local Ollama provider instance
+  [providers.ollama_llama3]
+  provider_type = "ollama"
+  api_key_env_var = "" # Ollama typically doesn't require an API key
+  [providers.ollama_llama3.model_config]
+    model_name = "llama3" # Model name known to your Ollama instance
+    endpoint = "http://localhost:11434/api/chat" # Default Ollama endpoint
+    # parameters = { temperature = 0.5 }
+
+# --- MCP Tool Servers ---
+# Configure how the agent should run the tool servers.
+[mcp_servers]
+  [mcp_servers.filesystem]
+  # Command to execute the filesystem server binary
+  command = "volition-filesystem-server"
+  # Arguments to pass (usually none needed)
+  # args = []
+
+  [mcp_servers.git]
+  command = "volition-git-server"
+
+  [mcp_servers.search]
+  command = "volition-search-server"
+
+  # Add other servers like 'shell' if implemented
+
+# --- Strategy Configurations ---
+# Define settings for different agent strategies
+[strategies]
+  [strategies.plan_execute]
+  # Provider to use for the planning phase
+  planning_provider = "gemini" # Must match a key under [providers]
+  # Provider to use for the execution phase
+  execution_provider = "gemini" # Must match a key under [providers]
+  # Optional: Add other strategy-specific settings here
+  # max_steps = 10
+
+# You can define configs for other strategies here too
+# [strategies.another_strategy]
+# setting = "value"
+
+Explanation:
+
+• default_provider: Specifies which provider configuration under [providers] to use by default.
+• [providers]: Defines different AI model services.
+  • Each sub-section (e.g., [providers.gemini]) needs a provider_type ("gemini" or "ollama").
+  • api_key_env_var: The name of the environment variable holding the API key (e.g., export GEMINI_API_KEY=your_key_here). Leave empty if no key is needed.
+  • [providers.*.model_config]: Contains the model_name (specific model identifier for the API) and the API endpoint. parameters are optional model-specific
+    settings.
+• [mcp_servers]: Tells the agent how to launch the required tool servers. The command should be the name of the server binary (assuming it's in your PATH).
+• [strategies]: Configures specific strategies. For plan_execute, you define which providers handle planning and execution.
+
+Usage
+
+Basic Usage
+
+# Navigate to your project directory (where Volition.toml is or in a subdirectory)
+cd /path/to/your/project
+
+# Set required environment variables (if not already set in your shell profile)
+export GEMINI_API_KEY=your_gemini_key_here
+
+# Start an interactive session with an initial task
 volition "Help me understand the architecture of this codebase"
 
-# Increase verbosity for debugging
-volition -v "Refactor the error handling in src/tools/shell.rs"
-```
+# Increase verbosity for debugging (-v, -vv)
+volition -v "Refactor the error handling in src/utils.rs"
 
-### Advanced Features
+Agent Operation
 
-Volition gives you access to powerful tools through natural language requests:
+When you provide a task:
 
-- **Code Search**: "Find all usages of the `handle_tool_calls` function"
-- **Code Analysis**: "Analyze the error handling pattern in this project"
-- **Refactoring**: "Extract the API response parsing logic into a separate function"
-- **Git Integration**: "Commit my changes with a descriptive message"
+1. The volition-cli starts the Agent from volition-agent-core.
+1. The Agent selects a Strategy (e.g., PlanExecute or CompleteTask, potentially wrapped by Conversation).
+1. The Strategy interacts with the configured Provider (e.g., "gemini").
+1. The Provider sends requests to the AI model API.
+1. If the AI requests a tool call (e.g., "read file src/main.rs"), the Agent identifies the responsible MCP server (e.g., "filesystem").
+1. The Agent ensures the required MCP server is running (launching it via the configured command if necessary) and establishes a connection.
+1. The tool call is sent to the MCP server, executed, and the result is returned to the Agent.
+1. The result is passed back to the AI model via the Provider.
+1. This loop continues until the Strategy determines the task is complete.
+1. The final response is displayed by volition-cli.
 
-## Philosophy
+Philosophy
 
-Volition is committed to remaining **free and open-source forever**. While some services may be built around it in the future (such as hosted vector databases for improved context), the core tool will always be free to use, with users only paying for their own API costs.
+Volition is committed to remaining free and open-source forever. While some services may be built around it in the future (such as hosted vector databases
+for improved context), the core tool will always be free to use, with users only paying for their own API costs.
 
 We believe AI assistants should:
-1. **Augment workflows** rather than replace developers
-2. **Respect privacy** by keeping code on your machine
-3. **Integrate deeply** with existing development tools
-4. **Remain transparent** in how they work
 
-## Community
+1. Augment workflows rather than replace developers
+1. Respect privacy by keeping code on your machine
+1. Integrate deeply with existing development tools
+1. Remain transparent in how they work
 
-- **GitHub Discussions**: [Join the conversation](https://github.com/jessebmiller/volition/discussions)
-- **Discord**: [Join our community](https://discord.gg/example)
-- **Twitter**: Follow [@VolitionAI](https://twitter.com/example) for updates
+Community
 
-## Contributing
+• GitHub Discussions: [Join the conversation](https://github.com/jessebmiller/volition/discussions)
+• Discord: [Join our community](https://discord.gg/example) <!-- Replace with actual link -->
+• Twitter: Follow [@VolitionAI](https://twitter.com/example) for updates <!-- Replace with actual link -->
+
+Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for more details on how to get involved.
 
-## License
+License
 
 Volition is released under the Apache-2.0 License. See [LICENSE](LICENSE) for details.
 
-## License Change Notice
+License Change Notice
 
-**Important:** This project was previously released under the MIT License. As of 2025-03-28, the license has been changed to Apache License 2.0.
+Important: This project was previously released under the MIT License. As of 2025-03-28, the license has been changed to Apache License 2.0.
 
-The Apache 2.0 license provides additional patent protections not present in the MIT license. This change was made to better protect contributors and users of this project while maintaining the open source nature of the code.
+The Apache 2.0 license provides additional patent protections not present in the MIT license. This change was made to better protect contributors and users
+of this project while maintaining the open source nature of the code.
 
-Any copies or forks of this repository created prior to this change date would still be under the MIT license terms. All new contributions and usage will be governed by the Apache License 2.0.
-
----
-
-<div align="center">
-<i>Volition: Your AI-powered software engineering partner.</i>
-</div>
+Any copies or forks of this repository created prior to this change date would still be under the MIT license terms. All new contributions and usage will be
+governed by the Apache License 2.0.

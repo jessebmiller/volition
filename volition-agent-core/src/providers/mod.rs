@@ -1,16 +1,22 @@
 // volition-agent-core/src/providers/mod.rs
 use crate::models::chat::{ApiResponse, ChatMessage};
+use crate::models::tools::ToolDefinition; // Import ToolDefinition
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-// Removed unused Value import
 use std::collections::HashMap;
 
 #[async_trait]
 pub trait Provider: Send + Sync {
-    async fn get_completion(&self, messages: Vec<ChatMessage>) -> Result<ApiResponse>; 
+    // Add tools argument
+    async fn get_completion(
+        &self, 
+        messages: Vec<ChatMessage>,
+        tools: Option<&[ToolDefinition]> // Add tools argument
+    ) -> Result<ApiResponse>; 
     fn name(&self) -> &str;
 }
 
+// Add ProviderRegistry back
 pub struct ProviderRegistry {
     providers: HashMap<String, Box<dyn Provider>>,
     default_provider: String,
@@ -45,7 +51,4 @@ impl ProviderRegistry {
 }
 
 pub mod gemini;
-// Add ollama module
-pub mod ollama; 
-// pub mod openai;
-// pub mod anthropic;
+pub mod ollama;
