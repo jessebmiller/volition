@@ -9,6 +9,7 @@ use rmcp::{
 use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::sync::Arc;
+use std::fs::File;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -48,7 +49,17 @@ impl McpConnection {
         // Ensure stdio is piped for MCP communication
         cmd.stdin(std::process::Stdio::piped());
         cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped()); // Capture stderr too
+        // Redirect stderr to a file
+        match File::create("/tmp/volition-shell-server.stderr.log") {
+            Ok(stderr_file) => {
+                cmd.stderr(stderr_file);
+            }
+            Err(e) => {
+                error!(error = %e, path = "/tmp/volition-shell-server.stderr.log", "Failed to open stderr log file, using pipe instead");
+                // Fallback to piped if file creation fails
+                cmd.stderr(std::process::Stdio::piped());
+            }
+        }
         
         debug!(command = ?cmd, "Prepared command for MCP server.");
 
@@ -105,7 +116,7 @@ impl McpConnection {
     pub async fn call_tool(&self, name: &str, args: Value) -> Result<Value> {
         trace!(tool_name = %name, "Attempting to call tool...");
         let guard = self.get_peer_guard().await?;
-        let peer = guard.as_ref().ok_or_else(|| anyhow!("Peer unavailable after lock"))?;
+        let peer = guard.as_ref().ok_or_else(|| anyhow!("Peer unavailable after lock"))?; 
         let arguments: Option<Map<String, Value>> = match args {
             Value::Object(map) => Some(map),
             Value::Null => None,

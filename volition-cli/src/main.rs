@@ -29,9 +29,11 @@ use crate::rendering::print_formatted;
 use clap::Parser;
 use time::macros::format_description;
 use tracing::{debug, error, info, trace, Level, warn};
-use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
+// Removed Layer from imports
+use tracing_subscriber::{fmt, fmt::time::LocalTime, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 const CONFIG_FILENAME: &str = "Volition.toml";
+const LOG_FILE_NAME: &str = "volition-app.log"; // Define log file name
 
 type CliAgent = Agent<CliUserInteraction>;
 type CliStrategy = Box<dyn volition_agent_core::Strategy<CliUserInteraction> + Send + Sync>;
@@ -112,12 +114,14 @@ fn select_base_strategy(config: &AgentConfig) -> CliStrategy {
             _ => {
                 warn!("'plan_execute' strategy selected but config is missing or incomplete. Falling back to 'CompleteTask'.");
                 info!("Using CompleteTask strategy.");
-                Box::new(CompleteTaskStrategy::default())
+                // Clippy fix: Remove ::default()
+                Box::new(CompleteTaskStrategy)
             }
         }
     } else {
         info!("Using CompleteTask strategy.");
-        Box::new(CompleteTaskStrategy::default())
+        // Clippy fix: Remove ::default()
+        Box::new(CompleteTaskStrategy)
     }
 }
 
@@ -161,7 +165,7 @@ async fn run_non_interactive(
 async fn run_interactive(
     config: AgentConfig,
     project_root: PathBuf,
-    ui_handler: Arc<CliUserInteraction>,
+    ui_handler: Arc<CliUserInteraction>
 ) -> Result<()> {
     print_welcome_message();
     let mut conversation_messages: Option<Vec<ChatMessage>> = None;
@@ -239,6 +243,7 @@ async fn main() -> ExitCode {
     dotenvy::dotenv().ok();
     let cli = Cli::parse();
 
+    // Determine log level from verbosity flags or RUST_LOG
     let default_level = match cli.verbose {
         0 => Level::INFO,
         1 => Level::DEBUG,
@@ -246,20 +251,41 @@ async fn main() -> ExitCode {
     };
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::default().add_directive(default_level.into()));
+
+    // Setup file logging (non-blocking)
+    let log_dir = env::temp_dir();
+    let log_path = log_dir.join(LOG_FILE_NAME);
+    let file_appender = tracing_appender::rolling::never(log_dir, LOG_FILE_NAME);
+    let (non_blocking_writer, _guard) = tracing_appender::non_blocking(file_appender);
+    let file_layer = fmt::layer()
+        .with_writer(non_blocking_writer)
+        .with_ansi(false) // No colors in file
+        .with_target(true) // Include module targets
+        .with_line_number(true); // Include line numbers
+
+    // Setup stderr logging
     let time_format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
     let local_timer = LocalTime::new(time_format);
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
-        .with_target(false)
+    let stderr_layer = fmt::layer()
+        .with_writer(io::stderr) // Log to stderr
         .with_timer(local_timer)
-        .finish();
-    if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+        .with_target(false); // Don't include module targets in stderr for cleaner output
+
+    // Combine layers and initialize subscriber
+    if let Err(e) = tracing_subscriber::registry()
+        .with(env_filter) // Apply the filter to all layers
+        .with(stderr_layer)
+        .with(file_layer)
+        .try_init() // Use try_init to avoid panic if already initialized
+    {
          eprintln!("Failed to set global tracing subscriber: {}", e);
          return ExitCode::FAILURE;
     }
+
     info!(
-        "Logging initialized. Level determined by RUST_LOG or -v flags (default: {}).",
-        default_level
+        "Logging initialized. Level determined by RUST_LOG or -v flags (default: {}). Logging to stderr and {}",
+        default_level,
+        log_path.display() // Log the file path
     );
     debug!("Debug logging enabled.");
     trace!("Trace logging enabled.");

@@ -35,7 +35,8 @@ tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 # Enable env-filter and time features for tracing-subscriber
-tracing-subscriber = { workspace = true, features = ["env-filter", "time", "local-time"] } # Added local-time feature
+tracing-subscriber = { workspace = true, features = ["env-filter", "time", "local-time", "registry", "fmt"] } # Added registry and fmt features
+tracing-appender = "0.2" # Added for file logging
 uuid = { workspace = true }
 url = { workspace = true }
 

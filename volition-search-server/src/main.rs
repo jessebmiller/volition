@@ -86,7 +86,8 @@ impl SearchServer {
             for result in walker {
                 match result {
                     Ok(entry) => {
-                        if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                        // Clippy fix: Use is_some_and
+                        if entry.file_type().is_some_and(|ft| ft.is_file()) {
                             let file_path = entry.path();
                             // Use blocking read for simplicity, consider spawn_blocking for large files/searches
                             if let Ok(file) = File::open(file_path) {
@@ -199,7 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> { // Return Box<dyn Er
     if let Err(e) = server.serve_with_ct(transport, ct.clone()).await {
          eprintln!("Server loop failed: {}", e);
     }
-    
+
     ct.cancelled().await;
 
     eprintln!("Search MCP server stopped.");

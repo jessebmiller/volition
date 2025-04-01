@@ -33,18 +33,12 @@ It consists of:
 ```ignore
 $ volition
 
-Volition - AI Assistant (MCP Refactor)
+Volition - AI Assistant
 Type 'exit' or press Enter on an empty line to quit.
 Type 'new' to start a fresh conversation.
 
 How can I help you?
 > Find references to AgentConfig across the codebase and explain how it's used
-INFO  volition_cli                      > Starting new conversation.
-INFO  volition_agent_core::agent        > Initializing MCP Agent with strategy. strategy="Conversation" default_provider="gemini"
-INFO  volition_agent_core::agent        > Starting MCP agent run. strategy="Conversation"
-# ... (Agent uses MCP servers like search, filesystem) ...
-INFO  volition_agent_core::agent        > Agent session completed successfully.
---- Agent Response ---
 I found several references to `AgentConfig` in `volition-agent-core` and `volition-cli`:
 
 1.  **Definition (`volition-agent-core/src/config.rs`):** Defines the main configuration structure, loading settings for providers, MCP servers, and strategies from `Volition.toml`.
@@ -56,16 +50,17 @@ It centralizes configuration for the agent's components. Let me know if you want
 
 How can I help you?
 >
+```
 
-Key Features
+## Key Features
 
 • Modular Architecture: Core agent logic separated from tool implementations (filesystem, git, shell, search) running as distinct MCP servers.
-• Multi-Provider Support: Interact with various AI models (Gemini, Ollama, potentially others) through a unified Provider interface in volition-agent-core.
-• Extensible Strategies: Implement different agent behaviors (e.g., CompleteTask, PlanExecute, Conversation) using the Strategy trait.
+• Multi-Provider Support: Interact with various AI models (Gemini, Ollama, OpenAI, and potentially others) through a unified Provider interface in volition-agent-core.
+• Extensible Strategies: Implement different agent behaviors (e.g., CompleteTask, PlanExecute, more in the future) using the Strategy trait.
 • Contextual Tool Use
   : The agent intelligently calls tools exposed by MCP servers based on the AI's requests (e.g., reading files, running git commands, searching code).
 • Conversation Management: The CLI wrapper maintains conversation history across turns.
-• Privacy Focused: Your code stays on your machine. Only necessary queries and tool arguments/results are exchanged.
+• Privacy Focused: Your code stays on your machine. Only necessary queries and tool arguments/results are exchanged (this will often include much of the code sent to the API you are using. If this is Ollama running locally it's fully local, though Ollama models are often not powerful enough if you are running on consumer hardware).
 
 Installation
 

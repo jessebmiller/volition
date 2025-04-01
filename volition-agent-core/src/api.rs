@@ -69,7 +69,8 @@ pub async fn call_chat_completion_api(
     let mut endpoint = Url::parse(endpoint_str)
         .with_context(|| format!("Failed to parse endpoint URL: {}", endpoint_str))?;
 
-    let is_google_api = endpoint.host_str().map_or(false, |h| h.contains("googleapis.com"));
+    // Clippy fix: Use is_some_and
+    let is_google_api = endpoint.host_str().is_some_and(|h| h.contains("googleapis.com"));
 
     // --- Authentication Handling ---
     let mut use_query_param_key = false;
@@ -420,7 +421,8 @@ pub async fn call_chat_completion_api(
                                      let message = ChatMessage {
                                          role: message_role,
                                          content: combined_text,
-                                         tool_calls: tool_calls,
+                                         // Clippy fix: Use field init shorthand
+                                         tool_calls,
                                          tool_call_id: None,
                                      };
 
