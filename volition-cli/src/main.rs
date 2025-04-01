@@ -245,8 +245,9 @@ async fn main() -> ExitCode {
 
     // Determine log level from verbosity flags or RUST_LOG
     let default_level = match cli.verbose {
-        0 => Level::INFO,
-        1 => Level::DEBUG,
+        0 => Level::WARN,
+        1 => Level::INFO,
+        2 => Level::DEBUG,
         _ => Level::TRACE,
     };
     let env_filter = EnvFilter::try_from_default_env()
