@@ -8,10 +8,9 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::ExitCode; // For returning error codes
+use std::process::ExitCode;
 use std::sync::Arc;
 
-// Import new core types
 use volition_agent_core::{
     agent::Agent,
     config::AgentConfig,
@@ -34,9 +33,7 @@ use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 const CONFIG_FILENAME: &str = "Volition.toml";
 
-// Define agent type with concrete UI
 type CliAgent = Agent<CliUserInteraction>;
-// Define strategy trait object type with concrete UI
 type CliStrategy = Box<dyn volition_agent_core::Strategy<CliUserInteraction> + Send + Sync>;
 
 struct CliUserInteraction;
@@ -100,9 +97,7 @@ fn print_welcome_message() {
     println!();
 }
 
-/// Selects the base strategy based on config and potentially CLI args (future).
 fn select_base_strategy(config: &AgentConfig) -> CliStrategy {
-    // TODO: Allow selecting strategy via CLI arg or config
     let strategy_name = "plan_execute"; // Hardcoded for now
 
     if strategy_name == "plan_execute" {
@@ -121,13 +116,11 @@ fn select_base_strategy(config: &AgentConfig) -> CliStrategy {
             }
         }
     } else {
-        // Default to CompleteTask if plan_execute isn't the chosen strategy
         info!("Using CompleteTask strategy.");
         Box::new(CompleteTaskStrategy::default())
     }
 }
 
-/// Runs the agent non-interactively for a single task.
 async fn run_non_interactive(
     task: String,
     config: AgentConfig,
@@ -138,12 +131,10 @@ async fn run_non_interactive(
 
     let base_strategy = select_base_strategy(&config);
 
-    // --- Agent Creation (No Conversation Wrapper) ---
-    // Fix: Add None for override arguments
     let mut agent = CliAgent::new(
         config.clone(),
         ui_handler,
-        base_strategy, // Use the base strategy directly
+        base_strategy,
         task,
         None, // provider_registry_override
         None, // mcp_connections_override
@@ -154,28 +145,23 @@ async fn run_non_interactive(
         Ok((final_message, _updated_state)) => {
             info!("Agent session completed successfully.");
             println!("{}", "--- Agent Response ---".bold());
-            // Print raw output in non-interactive mode for easier parsing/piping
             println!("{}", final_message);
             println!("----------------------");
-            Ok(()) // Indicate success
+            Ok(())
         }
         Err(e) => {
             error!("Agent run encountered an error: {}", e);
-            // Return the error to indicate failure
             Err(anyhow!(e))
         }
     }
 }
 
-/// Runs the agent in interactive mode.
 async fn run_interactive(
     config: AgentConfig,
     project_root: PathBuf,
     ui_handler: Arc<CliUserInteraction>,
 ) -> Result<()> {
     print_welcome_message();
-    // We only store the message history for conversation strategy.
-    // PlanExecute manages its own state per run.
     let mut conversation_messages: Option<Vec<ChatMessage>> = None;
 
     loop {
@@ -200,10 +186,9 @@ async fn run_interactive(
 
         let user_message = trimmed_input.to_string();
         let base_strategy = select_base_strategy(&config);
-        let is_plan_execute = base_strategy.name() == "PlanExecute";
-
-        // Wrap with ConversationStrategy only if it's NOT PlanExecute
-        let agent_strategy: CliStrategy = if !is_plan_execute {
+        
+        // Always wrap the base strategy with ConversationStrategy in interactive mode
+        let agent_strategy: CliStrategy = 
              if let Some(messages) = conversation_messages.take() {
                 info!("Continuing conversation.");
                 Box::new(ConversationStrategy::with_history(
@@ -213,19 +198,13 @@ async fn run_interactive(
              } else {
                 info!("Starting new conversation.");
                 Box::new(ConversationStrategy::new(base_strategy))
-             }
-        } else {
-            info!("Using PlanExecute strategy directly (no conversation history passed).");
-            base_strategy // Use PlanExecute directly
-        };
+             };
 
-        // --- Agent Creation ---
-        // Fix: Add None for override arguments
         let mut agent = CliAgent::new(
             config.clone(),
             Arc::clone(&ui_handler),
-            agent_strategy, // Pass the potentially wrapped strategy
-            user_message.clone(), // Pass the user input as the initial task
+            agent_strategy,
+            user_message.clone(),
             None, // provider_registry_override
             None, // mcp_connections_override
         )
@@ -245,22 +224,16 @@ async fn run_interactive(
                     println!();
                 }
                 println!("----------------------");
-                // Store message history only if not using PlanExecute
-                if !is_plan_execute {
-                    conversation_messages = Some(updated_state.messages);
-                } else {
-                     // Discard state for PlanExecute, it starts fresh each time
-                     conversation_messages = None;
-                }
+                // Always store the message history returned by the agent (managed by ConversationStrategy)
+                conversation_messages = Some(updated_state.messages);
             }
             Err(e) => {
                 println!(
                     "{}: {}
 ",
                     "Agent run encountered an error".red(),
-                    e // Display AgentError directly
+                    e
                 );
-                // Reset conversation history on error
                 conversation_messages = None;
             }
         }
@@ -270,13 +243,11 @@ async fn run_interactive(
     Ok(())
 }
 
-// Use Tokio main, but return ExitCode on error
 #[tokio::main]
 async fn main() -> ExitCode {
     dotenvy::dotenv().ok();
     let cli = Cli::parse();
 
-    // Initialize logging (same as before)
     let default_level = match cli.verbose {
         0 => Level::INFO,
         1 => Level::DEBUG,
@@ -288,7 +259,7 @@ async fn main() -> ExitCode {
     let local_timer = LocalTime::new(time_format);
     let subscriber = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
-        .with_target(false) // Don't include module paths
+        .with_target(false)
         .with_timer(local_timer)
         .finish();
     if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
@@ -303,7 +274,6 @@ async fn main() -> ExitCode {
     trace!("Trace logging enabled.");
 
 
-    // Load config (common step)
     let (config, project_root) = match load_cli_config() {
          Ok(c) => c,
          Err(e) => {
@@ -314,19 +284,16 @@ async fn main() -> ExitCode {
 
     let ui_handler: Arc<CliUserInteraction> = Arc::new(CliUserInteraction);
 
-    // Decide mode based on --task flag
     let result = if let Some(task) = cli.task {
         run_non_interactive(task, config, project_root, ui_handler).await
     } else {
         run_interactive(config, project_root, ui_handler).await
     };
 
-    // Return appropriate exit code
     match result {
         Ok(_) => ExitCode::SUCCESS,
         Err(e) => {
-            // Error should have already been logged by run_non_interactive/run_interactive
-            eprintln!("Operation failed: {}", e); // Print final error summary
+            eprintln!("Operation failed: {}", e);
             ExitCode::FAILURE
         }
     }

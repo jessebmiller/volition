@@ -1,12 +1,10 @@
 // volition-agent-core/src/strategies/plan_execute.rs
-// Removed unused Agent import
+use super::{DelegationResult, NextStep, Strategy, StrategyConfig};
 use crate::errors::AgentError;
 use crate::models::chat::{ApiResponse, ChatMessage};
-use crate::strategies::{NextStep, Strategy, StrategyConfig};
 use crate::UserInteraction;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-// Removed unused Value import
 use tracing::{debug, info, instrument};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -45,9 +43,11 @@ impl<UI: UserInteraction + 'static> Strategy<UI> for PlanExecuteStrategy {
         let _planning_provider = self.config.planning_provider.as_deref()
             .ok_or_else(|| AgentError::Strategy("Missing planning_provider in strategy config".to_string()))?;
 
-        let initial_task = agent_state.messages.first()
+        // Get the last user message as the current task, assuming ConversationStrategy placed it there.
+        let current_task = agent_state.messages.last()
+            .filter(|m| m.role == "user") // Ensure it's a user message
             .and_then(|m| m.content.as_ref())
-            .ok_or_else(|| AgentError::Strategy("Initial task message not found in state".to_string()))?;
+            .ok_or_else(|| AgentError::Strategy("Current user task message not found in state".to_string()))?;
 
         let planning_messages = vec![
             ChatMessage {
@@ -57,12 +57,13 @@ impl<UI: UserInteraction + 'static> Strategy<UI> for PlanExecuteStrategy {
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: Some(initial_task.clone()),
+                content: Some(format!("Create a plan for this task: {}", current_task)), // Rephrase slightly
                 ..Default::default()
             },
         ];
 
-        agent_state.messages = planning_messages;
+        // Append planning context instead of overwriting
+        agent_state.messages.extend(planning_messages);
         agent_state.pending_tool_calls.clear();
         Ok(NextStep::CallApi(agent_state.clone()))
     }
@@ -103,8 +104,9 @@ impl<UI: UserInteraction + 'static> Strategy<UI> for PlanExecuteStrategy {
                         ..Default::default()
                     },
                 ];
-                
-                agent_state.messages = execution_messages;
+
+                // Append execution context instead of overwriting
+                agent_state.messages.extend(execution_messages);
                 agent_state.pending_tool_calls.clear();
                 Ok(NextStep::CallApi(agent_state.clone()))
             }
@@ -143,7 +145,7 @@ impl<UI: UserInteraction + 'static> Strategy<UI> for PlanExecuteStrategy {
      fn process_delegation_result(
         &mut self,
         _agent_state: &mut crate::AgentState,
-        _delegation_result: crate::DelegationResult,
+        _delegation_result: DelegationResult,
     ) -> Result<NextStep, AgentError> {
         Err(AgentError::Strategy("Delegation not supported by PlanExecuteStrategy".to_string()))
     }
