@@ -5,3 +5,6 @@ history.log
 
 # Test artifacts
 nested/
+
+# Backup files
+*.backup
