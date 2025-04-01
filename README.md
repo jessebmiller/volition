@@ -161,6 +161,6 @@ Distributed under the Apache License 2.0. See [LICENSE](LICENSE) for more inform
 
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/username/volition)
-- [Issue Tracker](https://github.com/username/volition/issues)
+- [GitHub Repository](https://github.com/jessebmiller/volition)
+- [Issue Tracker](https://github.com/jessebmiller/volition/issues)
 - [MCP Protocol Specification](https://github.com/modelcontextprotocol/mcp)
