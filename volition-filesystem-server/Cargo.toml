@@ -1,7 +1,14 @@
 [package]
 name = "volition-filesystem-server"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+authors = { workspace = true }
+description = "Filesystem server for the Volition AI assistant using MCP protocol"
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+keywords = ["ai", "mcp", "filesystem", "server"]
+categories = ["development-tools"]
 
 [dependencies]
 anyhow = { workspace = true }

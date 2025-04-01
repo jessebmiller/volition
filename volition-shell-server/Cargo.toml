@@ -1,7 +1,14 @@
 [package]
 name = "volition-shell-server"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+authors = { workspace = true }
+description = "Shell server for the Volition AI assistant using MCP protocol"
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+keywords = ["ai", "mcp", "shell", "server"]
+categories = ["development-tools"]
 
 [dependencies]
 anyhow = { workspace = true }

@@ -1,9 +1,14 @@
 [package]
 name = "volition-agent-core"
 version = "0.1.0"
-edition = "2021"
-authors = ["Jesse B. Miller <jesse@jessebmiller.com>"]
+edition = "2024"
+authors = { workspace = true }
 description = "Core library for the Volition AI agent"
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+keywords = ["ai", "library", "llm", "agent", "mcp"]
+categories = ["development-tools"]
 
 [lib]
 name = "volition_agent_core"

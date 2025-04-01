@@ -1,19 +1,20 @@
-# Cargo.toml for the volition-cli crate
-
 [package]
 name = "volition-cli"
 version = "0.1.0"
 edition = "2021"
-authors = ["Jesse B. Miller <jesse@jessebmiller.com>"]
-description = "An AI-powered Linux CLI assistant (CLI frontend)"
+authors = { workspace = true }
+description = "An AI-powered software engineering assistant (CLI frontend)"
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+keywords = ["ai", "cli", "assistant", "rust", "llm", "vibecoding"]
+categories = ["command-line-utilities", "development-tools"]
 
-# Ensure this is recognized as the main binary
 [[bin]]
 name = "volition"
 path = "src/main.rs"
 
 [dependencies]
-# Use workspace dependencies
 anyhow = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
