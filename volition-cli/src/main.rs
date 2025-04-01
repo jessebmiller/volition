@@ -21,7 +21,7 @@ use volition_agent_core::{
         conversation::ConversationStrategy,
         plan_execute::PlanExecuteStrategy,
     },
-    AgentState, UserInteraction, async_trait,
+    UserInteraction, async_trait, ChatMessage, // Removed unused AgentState
 };
 
 use crate::models::cli::Cli;
@@ -171,7 +171,9 @@ async fn run_interactive(
     ui_handler: Arc<CliUserInteraction>,
 ) -> Result<()> {
     print_welcome_message();
-    let mut conversation_state: Option<AgentState> = None;
+    // We only store the message history for conversation strategy.
+    // PlanExecute manages its own state per run.
+    let mut conversation_messages: Option<Vec<ChatMessage>> = None;
 
     loop {
         println!("
@@ -189,30 +191,37 @@ async fn run_interactive(
 
         if trimmed_input.to_lowercase() == "new" {
             println!("{}", "Starting a new conversation...".cyan());
-            conversation_state = None;
+            conversation_messages = None;
             continue;
         }
 
+        let user_message = trimmed_input.to_string();
         let base_strategy = select_base_strategy(&config);
+        let is_plan_execute = base_strategy.name() == "PlanExecute";
 
-        // Wrap with ConversationStrategy if history exists
-        let agent_strategy: CliStrategy = if let Some(state) = conversation_state.take() {
-            info!("Continuing conversation.");
-            Box::new(ConversationStrategy::with_history(
-                base_strategy,
-                state.messages,
-            ))
+        // Wrap with ConversationStrategy only if it's NOT PlanExecute
+        let agent_strategy: CliStrategy = if !is_plan_execute {
+             if let Some(messages) = conversation_messages.take() {
+                info!("Continuing conversation.");
+                Box::new(ConversationStrategy::with_history(
+                    base_strategy,
+                    messages, // Pass previous messages
+                ))
+             } else {
+                info!("Starting new conversation.");
+                Box::new(ConversationStrategy::new(base_strategy))
+             }
         } else {
-            info!("Starting new conversation.");
-            Box::new(ConversationStrategy::new(base_strategy))
+            info!("Using PlanExecute strategy directly (no conversation history passed).");
+            base_strategy // Use PlanExecute directly
         };
 
         // --- Agent Creation ---
         let mut agent = CliAgent::new(
             config.clone(),
             Arc::clone(&ui_handler),
-            agent_strategy, // Pass the wrapped strategy
-            trimmed_input.to_string(),
+            agent_strategy, // Pass the potentially wrapped strategy
+            user_message.clone(), // Pass the user input as the initial task
         )
         .map_err(|e| AgentError::Config(format!("Failed to create agent instance: {}", e)))?;
 
@@ -230,8 +239,13 @@ async fn run_interactive(
                     println!();
                 }
                 println!("----------------------");
-                // Store state for next loop iteration
-                conversation_state = Some(updated_state);
+                // Store message history only if not using PlanExecute
+                if !is_plan_execute {
+                    conversation_messages = Some(updated_state.messages);
+                } else {
+                     // Discard state for PlanExecute, it starts fresh each time
+                     conversation_messages = None;
+                }
             }
             Err(e) => {
                 println!(
@@ -240,8 +254,8 @@ async fn run_interactive(
                     "Agent run encountered an error".red(),
                     e // Display AgentError directly
                 );
-                // Reset conversation state on error
-                conversation_state = None;
+                // Reset conversation history on error
+                conversation_messages = None;
             }
         }
     }
