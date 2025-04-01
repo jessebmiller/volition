@@ -1,6 +1,6 @@
 // volition-agent-core/src/lib.rs
 
-#![doc = include_str!("../../README.md")]
+// #![doc = include_str!("../../../../README.md")]
 
 pub mod agent;
 pub mod api;
