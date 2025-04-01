@@ -17,7 +17,7 @@ use volition_agent_core::{
     errors::AgentError,
     strategies::{
         complete_task::CompleteTaskStrategy,
-        conversation::ConversationStrategy,
+        // Removed: conversation::ConversationStrategy,
         plan_execute::PlanExecuteStrategy,
     },
     UserInteraction, async_trait, ChatMessage,
@@ -131,11 +131,13 @@ async fn run_non_interactive(
 
     let base_strategy = select_base_strategy(&config);
 
+    // Call Agent::new with None history
     let mut agent = CliAgent::new(
         config.clone(),
         ui_handler,
         base_strategy,
-        task,
+        None, // history
+        task, // current_user_input
         None, // provider_registry_override
         None, // mcp_connections_override
     )
@@ -185,26 +187,15 @@ async fn run_interactive(
         }
 
         let user_message = trimmed_input.to_string();
-        let base_strategy = select_base_strategy(&config);
+        let agent_strategy = select_base_strategy(&config);
         
-        // Always wrap the base strategy with ConversationStrategy in interactive mode
-        let agent_strategy: CliStrategy = 
-             if let Some(messages) = conversation_messages.take() {
-                info!("Continuing conversation.");
-                Box::new(ConversationStrategy::with_history(
-                    base_strategy,
-                    messages, // Pass previous messages
-                ))
-             } else {
-                info!("Starting new conversation.");
-                Box::new(ConversationStrategy::new(base_strategy))
-             };
-
+        // Agent::new now handles history initialization via AgentState::new_turn
         let mut agent = CliAgent::new(
             config.clone(),
             Arc::clone(&ui_handler),
-            agent_strategy,
-            user_message.clone(),
+            agent_strategy, // Pass the base strategy directly
+            conversation_messages.take(), // Pass the stored history (or None)
+            user_message.clone(), // Pass the current user input
             None, // provider_registry_override
             None, // mcp_connections_override
         )
@@ -224,7 +215,7 @@ async fn run_interactive(
                     println!();
                 }
                 println!("----------------------");
-                // Always store the message history returned by the agent (managed by ConversationStrategy)
+                // Always store the message history returned by the agent
                 conversation_messages = Some(updated_state.messages);
             }
             Err(e) => {
@@ -285,6 +276,7 @@ async fn main() -> ExitCode {
     let ui_handler: Arc<CliUserInteraction> = Arc::new(CliUserInteraction);
 
     let result = if let Some(task) = cli.task {
+        // Pass None history for non-interactive mode
         run_non_interactive(task, config, project_root, ui_handler).await
     } else {
         run_interactive(config, project_root, ui_handler).await

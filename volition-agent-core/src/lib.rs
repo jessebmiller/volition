@@ -15,10 +15,8 @@ pub mod agent;
 #[cfg(test)]
 mod agent_tests;
 
-use anyhow::Result; // Removed unused Context
+use anyhow::Result;
 use std::path::Path;
-// Removed unused Arc
-// Removed unused tracing imports
 
 pub use config::{AgentConfig, ModelConfig};
 pub use models::chat::{ApiResponse, ChatMessage, Choice};
@@ -29,8 +27,6 @@ pub use models::tools::{ // These are likely unused by MCP agent
 pub use strategies::{DelegationInput, DelegationOutput, Strategy};
 
 pub use async_trait::async_trait;
-
-// Removed unused AgentError, NextStep imports
 
 /// Trait defining the interface for providing tools to the [`Agent`].
 /// **NOTE:** This is unused by the MCP agent.
@@ -61,16 +57,25 @@ pub struct AgentState {
 }
 
 impl AgentState {
-    pub fn new(initial_task: String) -> Self {
-        Self {
-            messages: vec![ChatMessage {
+    // New constructor for interactive turns or starting with history
+    pub fn new_turn(history: Option<Vec<ChatMessage>>, current_user_input: String) -> Self {
+        let mut messages = history.unwrap_or_default(); // Start with history or empty vec
+        // Only add user message if input is not empty
+        if !current_user_input.is_empty() {
+            messages.push(ChatMessage {
                 role: "user".to_string(),
-                content: Some(initial_task),
+                content: Some(current_user_input),
                 ..Default::default()
-            }],
+            });
+        }
+        Self {
+            messages,
             pending_tool_calls: Vec::new(),
         }
     }
+
+    // Keep the old `new` for compatibility? Or rename? Let's remove it for now.
+    // pub fn new(initial_task: String) -> Self { ... }
 
     pub fn add_message(&mut self, message: ChatMessage) {
         self.messages.push(message);

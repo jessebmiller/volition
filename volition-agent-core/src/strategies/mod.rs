@@ -1,13 +1,12 @@
 // volition-agent-core/src/strategies/mod.rs
 use crate::errors::AgentError;
-// Removed unused Agent import
 use crate::{AgentState, ApiResponse, DelegationResult, ToolResult, UserInteraction};
 
 pub mod complete_task;
-pub mod conversation;
+// Removed: mod conversation;
 pub mod plan_execute;
 
-pub use conversation::ConversationStrategy;
+// Removed: pub use conversation::ConversationStrategy;
 pub use plan_execute::PlanExecuteStrategy;
 pub use crate::config::StrategyConfig;
 
@@ -15,7 +14,7 @@ pub use crate::config::StrategyConfig;
 pub enum StrategyType {
     CompleteTask,
     PlanReviseExecute,
-    Conversation,
+    // Removed: Conversation,
     PlanExecute,
 }
 

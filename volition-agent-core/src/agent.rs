@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::AgentState;
+use crate::AgentState; // Keep AgentState import
 
 pub struct Agent<UI: UserInteraction> {
     provider_registry: ProviderRegistry,
@@ -99,13 +99,14 @@ impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
 }
 
 impl<UI: UserInteraction + 'static> Agent<UI> {
-    #[allow(clippy::too_many_arguments)] // Allow more args for testability
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: AgentConfig,
         ui_handler: Arc<UI>,
         strategy: Box<dyn Strategy<UI> + Send + Sync>,
-        initial_task: String,
-        // Optional pre-built components for testing
+        // Replace initial_task with history + current input
+        history: Option<Vec<ChatMessage>>,
+        current_user_input: String,
         provider_registry_override: Option<ProviderRegistry>,
         mcp_connections_override: Option<HashMap<String, Arc<Mutex<McpConnection>>>>,
     ) -> Result<Self> {
@@ -113,7 +114,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
             .build()
             .context("Failed to build HTTP client for Agent")?;
 
-        // Use override if provided, otherwise build from config
         let provider_registry = match provider_registry_override {
             Some(registry) => registry,
             None => {
@@ -150,7 +150,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
             }
         };
 
-        // Use override if provided, otherwise build from config
         let mcp_connections = match mcp_connections_override {
             Some(connections) => connections,
             None => {
@@ -163,7 +162,8 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
             }
         };
 
-        let initial_state = AgentState::new(initial_task);
+        // Use the new AgentState constructor
+        let initial_state = AgentState::new_turn(history, current_user_input);
         let default_provider_id = provider_registry.default_provider_id().to_string();
 
         info!(
@@ -244,6 +244,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     pub async fn run(&mut self, _working_dir: &Path) -> Result<(String, AgentState), AgentError> {
         info!(strategy = self.strategy.name(), "Starting MCP agent run.");
 
+        // Initialize interaction using the state created in Agent::new
         let mut next_step = self.strategy.initialize_interaction(&mut self.state)?;
 
         loop {
