@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main  # Or your default branch
+
+permissions:
+  contents: write # To create release tags
+  issues: write # To comment on issues/PRs
+  pull-requests: write # To comment on issues/PRs
+  id-token: write # Needed for semantic-release provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for semantic-release
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Install semantic-release and plugins
+        run: npm install --save-dev semantic-release @semantic-release/git @semantic-release/github conventional-changelog-conventionalcommits
+
+      - name: Configure Git user
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          
+      - name: Run semantic-release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
