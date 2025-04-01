@@ -109,13 +109,21 @@ pub async fn call_chat_completion_api(
                     if let Some(role) = map_role_to_gemini(&message.role) {
                         if let Some(tool_call_id) = message.tool_call_id {
                              let response_content = message.content.unwrap_or_else(|| {
-                                warn!(tool_call_id=%tool_call_id, "Tool response message has no content, sending empty object.");
-                                "{}".to_string()
+                                warn!(tool_call_id=%tool_call_id, "Tool response message has no content, sending empty string.");
+                                "".to_string() // Send empty string content if tool output is None
                              });
+                             // Try to parse as JSON, otherwise treat as plain string.
                              let response_json: Value = serde_json::from_str(&response_content).unwrap_or_else(|_| json!(response_content));
+                             // *** FIX: Wrap the response_json in the required structure {"content": ...} ***
+                             let gemini_response_object = json!({ "content": response_json });
                              gemini_contents.push(json!({
                                  "role": role,
-                                 "parts": [{ "functionResponse": { "name": tool_call_id, "response": response_json } }]
+                                 "parts": [{
+                                     "functionResponse": {
+                                         "name": tool_call_id,
+                                         "response": gemini_response_object // Use the wrapped object
+                                     }
+                                 }]
                              }));
                              trace!(role=role, tool_call_id=%tool_call_id, "Added tool response to contents.");
                         } else {
