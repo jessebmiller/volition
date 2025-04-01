@@ -2,6 +2,8 @@
 #![cfg(test)]
 
 use super::*;
+use crate::agent::Agent; // Added import
+use crate::config::RuntimeConfig; // Added import
 // use crate::errors::AgentError; // Removed unused import
 use crate::strategies::complete_task::CompleteTaskStrategy;
 use std::collections::HashMap;
@@ -123,8 +125,8 @@ fn create_test_config(mock_server_base_url: &str) -> RuntimeConfig {
         "test-model-key".to_string(),
         ModelConfig {
             model_name: "test-model".to_string(),
-            endpoint: mock_endpoint,
-            parameters: toml::Value::Table(Default::default()),
+            endpoint: Some(mock_endpoint), // Wrapped in Some()
+            parameters: Some(toml::Value::Table(Default::default())), // Wrapped in Some()
         },
     );
     RuntimeConfig {
@@ -146,7 +148,7 @@ async fn test_agent_initialization() {
         config,
         mock_provider,
         mock_ui,
-        Box::new(CompleteTaskStrategy::new()),
+        Box::new(CompleteTaskStrategy), // Removed ::new()
         initial_task,
     );
     assert!(agent_result.is_ok());
@@ -174,7 +176,7 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
         config.clone(),
         mock_provider.clone(),
         mock_ui,
-        Box::new(CompleteTaskStrategy::new()),
+        Box::new(CompleteTaskStrategy), // Removed ::new()
         initial_task.clone(),
     )?;
 

@@ -1,5 +1,5 @@
 // volition-servers/git/src/main.rs
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use rmcp::{
     model::*,
     service::*,

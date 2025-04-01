@@ -1,7 +1,7 @@
 // volition-servers/shell/src/main.rs
 // Removed unused anyhow import
 use rmcp::{
-    model::{self, *}, // Keep model::*
+    model::{*}, // Keep model::*
     service::*,
     transport::io,
     Error as McpError,
