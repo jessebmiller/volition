@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
+use std::process::Command; // Added for git commit
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 use git2::{Repository, StatusOptions};
@@ -45,7 +46,9 @@ impl GitServer {
     fn new() -> Self {
         let mut tools = HashMap::new();
         let path_schema_prop = ("path", json!({ "type": "string", "description": "Optional path to the repository (defaults to current directory)." }));
+        let message_schema_prop = ("message", json!({ "type": "string", "description": "Commit message." }));
 
+        // --- Git Diff ---
         let diff_schema = create_schema_object(
             vec![
                 path_schema_prop.clone(),
@@ -62,6 +65,7 @@ impl GitServer {
             },
         );
 
+        // --- Git Status ---
         let status_schema = create_schema_object(
             vec![path_schema_prop.clone()],
             vec![], // No required args for status
@@ -74,6 +78,24 @@ impl GitServer {
                 input_schema: status_schema,
             },
         );
+
+        // --- Git Commit ---
+        let commit_schema = create_schema_object(
+            vec![
+                path_schema_prop.clone(), // Optional path
+                message_schema_prop,    // Required message
+            ],
+            vec!["message"], // message is required
+        );
+        tools.insert(
+            "git_commit".to_string(),
+            Tool {
+                name: "git_commit".into(),
+                description: Some("Creates a git commit with the provided message.".into()),
+                input_schema: commit_schema,
+            },
+        );
+
 
         Self {
             peer: Arc::new(Mutex::new(None)),
@@ -129,11 +151,64 @@ impl GitServer {
         Ok(CallToolResult { content: vec![annotated], is_error: Some(false) })
     }
 
+    // --- New handle_git_commit function ---
+    async fn handle_git_commit(&self, args_map: Map<String, Value>) -> Result<CallToolResult, McpError> {
+        let message = args_map.get("message")
+            .and_then(Value::as_str)
+            .ok_or_else(|| McpError::invalid_params("Missing required argument: message", None))?;
+
+        let path_str = args_map.get("path").and_then(Value::as_str);
+        let repo_path = path_str.map(Path::new); // Option<&Path>
+
+        let mut command = Command::new("git");
+        command.arg("commit").arg("-m").arg(message);
+
+        if let Some(dir) = repo_path {
+            // Check if path exists and is a directory before setting current_dir
+             if dir.exists() && dir.is_dir() {
+                 command.current_dir(dir);
+             } else if let Some(parent_dir) = dir.parent() {
+                 // If path is a file, maybe try the parent? Or just default to CWD?
+                 // For now, let's default to CWD if path isn't a valid directory.
+                  if parent_dir.exists() && parent_dir.is_dir() {
+                      command.current_dir(parent_dir);
+                      eprintln!("Warning: Provided path '{}' is not a directory. Running git commit in parent '{}'.", dir.display(), parent_dir.display());
+                  } else {
+                     eprintln!("Warning: Provided path '{}' is not a valid directory or its parent does not exist. Running git commit in current working directory.", dir.display());
+                 }
+             } else {
+                 eprintln!("Warning: Provided path '{}' is not a valid directory. Running git commit in current working directory.", dir.display());
+             }
+        }
+
+
+        let output = command.output().map_err(|e| {
+            McpError::internal_error(format!("Failed to execute git commit: {}", e), None)
+        })?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let exit_code = output.status.code().unwrap_or(-1); // Use -1 if no exit code
+
+        let result_text = format!("Exit Code: {}
+--- STDOUT ---
+{}
+--- STDERR ---
+{}", exit_code, stdout, stderr);
+
+        let raw_content = RawContent::Text(RawTextContent { text: result_text });
+        let annotated = Annotated { raw: raw_content, annotations: None };
+
+        Ok(CallToolResult { content: vec![annotated], is_error: Some(!output.status.success()) })
+    }
+
+
     fn handle_tool_call(&self, params: CallToolRequestParam) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpError>> + Send + '_>> {
         let args_map = params.arguments.unwrap_or_default();
         match params.name.as_ref() {
             "git_diff" => Box::pin(self.handle_git_diff(args_map)),
             "git_status" => Box::pin(self.handle_git_status(args_map)),
+            "git_commit" => Box::pin(self.handle_git_commit(args_map)), // Added commit handler
             _ => Box::pin(async { Err(McpError::method_not_found::<CallToolRequestMethod>()) })
         }
     }
