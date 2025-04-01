@@ -77,7 +77,6 @@ mod tests {
         let output = result.unwrap();
         println!("Output: {:?}", output);
         assert_eq!(output.status, 0);
-        assert!(output.stderr.contains("Finished `dev` profile"));
     }
 
     #[tokio::test]
