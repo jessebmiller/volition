@@ -43,11 +43,11 @@ impl<UI: UserInteraction + 'static> Strategy<UI> for PlanExecuteStrategy {
         let _planning_provider = self.config.planning_provider.as_deref()
             .ok_or_else(|| AgentError::Strategy("Missing planning_provider in strategy config".to_string()))?;
 
-        // Get the last user message as the current task, assuming ConversationStrategy placed it there.
-        let current_task = agent_state.messages.last()
-            .filter(|m| m.role == "user") // Ensure it's a user message
+        // Find the most recent user message in the history provided.
+        let current_task = agent_state.messages.iter().rev()
+            .find(|m| m.role == "user")
             .and_then(|m| m.content.as_ref())
-            .ok_or_else(|| AgentError::Strategy("Current user task message not found in state".to_string()))?;
+            .ok_or_else(|| AgentError::Strategy("Could not find the current user task message in the provided state history".to_string()))?;
 
         let planning_messages = vec![
             ChatMessage {
