@@ -1,6 +1,6 @@
 // volition-agent-core/src/lib.rs
 
-#![doc = include_str!("../README.md")] // Adjusted path
+#![doc = include_str!("../../README.md")]
 
 pub mod agent;
 pub mod api;
@@ -9,7 +9,7 @@ pub mod errors;
 pub mod mcp;
 pub mod providers;
 pub mod strategies;
-pub mod tools; // Still present but unused by MCP agent
+pub mod tools;
 pub mod utils;
 
 #[cfg(test)]
@@ -21,7 +21,6 @@ use std::path::Path;
 pub use config::{AgentConfig, ModelConfig};
 pub use models::chat::{ApiResponse, ChatMessage, Choice};
 pub use models::tools::{
-    // These are likely unused by MCP agent
     ToolCall,
     ToolDefinition,
     ToolFunction,
