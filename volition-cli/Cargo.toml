@@ -42,7 +42,7 @@ uuid = { workspace = true }
 url = { workspace = true }
 
 # Add path dependency to the core library
-volition-agent-core = { path = "../volition-agent-core" }
+volition-agent-core = { version = "0.1.0", path = "../volition-agent-core" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
