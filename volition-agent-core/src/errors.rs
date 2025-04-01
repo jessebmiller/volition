@@ -19,7 +19,7 @@ pub enum AgentError {
     /// Error related to tool definition or execution (Old system).
     #[error("Tool Error: {0}")]
     Tool(String),
-    
+
     /// Error related to MCP connection or tool call (New system).
     #[error("MCP Error: {0}")]
     Mcp(#[source] anyhow::Error), // Added Mcp variant

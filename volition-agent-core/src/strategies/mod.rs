@@ -7,8 +7,8 @@ pub mod complete_task;
 pub mod plan_execute;
 
 // Removed: pub use conversation::ConversationStrategy;
-pub use plan_execute::PlanExecuteStrategy;
 pub use crate::config::StrategyConfig;
+pub use plan_execute::PlanExecuteStrategy;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StrategyType {
@@ -39,7 +39,10 @@ pub enum NextStep {
 pub trait Strategy<UI: UserInteraction + 'static>: Send + Sync {
     fn name(&self) -> &'static str;
 
-    fn initialize_interaction(&mut self, agent_state: &mut AgentState) -> Result<NextStep, AgentError>;
+    fn initialize_interaction(
+        &mut self,
+        agent_state: &mut AgentState,
+    ) -> Result<NextStep, AgentError>;
 
     fn process_api_response(
         &mut self,

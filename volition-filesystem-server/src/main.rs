@@ -1,12 +1,12 @@
 // volition-servers/filesystem/src/main.rs
 // Removed unused anyhow import
 use rmcp::{
+    Error as McpError,
     model::*, // Import model::*
     service::*,
     transport::io, // Import transport::io module for stdio()
-    Error as McpError,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -15,11 +15,18 @@ use tokio::fs;
 use tokio_util::sync::CancellationToken;
 
 // Helper to create JSON schema object
-fn create_schema_object(properties: Vec<(&str, Value)>, required: Vec<&str>) -> Arc<Map<String, Value>> {
-    let props_map: Map<String, Value> = properties.into_iter()
+fn create_schema_object(
+    properties: Vec<(&str, Value)>,
+    required: Vec<&str>,
+) -> Arc<Map<String, Value>> {
+    let props_map: Map<String, Value> = properties
+        .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-    let req_vec: Vec<Value> = required.into_iter().map(|s| Value::String(s.to_string())).collect();
+    let req_vec: Vec<Value> = required
+        .into_iter()
+        .map(|s| Value::String(s.to_string()))
+        .collect();
 
     let schema = json!({
         "type": "object",
@@ -44,12 +51,13 @@ struct FileSystemServer {
 impl FileSystemServer {
     fn new() -> Self {
         let mut tools = HashMap::new();
-        
+
         // read_file schema
         let read_file_schema = create_schema_object(
-            vec![
-                ("path", json!({ "type": "string", "description": "Path to the file to read." })),
-            ],
+            vec![(
+                "path",
+                json!({ "type": "string", "description": "Path to the file to read." }),
+            )],
             vec!["path"],
         );
         tools.insert(
@@ -60,12 +68,18 @@ impl FileSystemServer {
                 input_schema: read_file_schema,
             },
         );
-        
+
         // write_file schema
-         let write_file_schema = create_schema_object(
+        let write_file_schema = create_schema_object(
             vec![
-                ("path", json!({ "type": "string", "description": "Path to the file to write." })),
-                ("content", json!({ "type": "string", "description": "Content to write to the file." })),
+                (
+                    "path",
+                    json!({ "type": "string", "description": "Path to the file to write." }),
+                ),
+                (
+                    "content",
+                    json!({ "type": "string", "description": "Content to write to the file." }),
+                ),
             ],
             vec!["path", "content"],
         );
@@ -73,7 +87,9 @@ impl FileSystemServer {
             "write_file".to_string(),
             Tool {
                 name: "write_file".into(),
-                description: Some("Writes the given content to a file at the specified path.".into()),
+                description: Some(
+                    "Writes the given content to a file at the specified path.".into(),
+                ),
                 input_schema: write_file_schema,
             },
         );
@@ -84,43 +100,75 @@ impl FileSystemServer {
         }
     }
 
-    fn handle_tool_call(&self, params: CallToolRequestParam) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpError>> + Send + '_>> {
+    fn handle_tool_call(
+        &self,
+        params: CallToolRequestParam,
+    ) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpError>> + Send + '_>> {
         Box::pin(async move {
             match params.name.as_ref() {
                 "read_file" => {
-                    let args_map: Map<String, Value> = params.arguments
+                    let args_map: Map<String, Value> = params
+                        .arguments
                         .ok_or_else(|| McpError::invalid_params("Missing arguments", None))?;
-                    let path = args_map.get("path").and_then(Value::as_str)
+                    let path = args_map
+                        .get("path")
+                        .and_then(Value::as_str)
                         .ok_or_else(|| McpError::invalid_params("Missing 'path' argument", None))?;
-                    let content_string = fs::read_to_string(path).await
-                        .map_err(|e| McpError::internal_error(format!("Failed to read file: {}", e), None))?;
-                    let raw_content = RawContent::Text(RawTextContent { text: content_string });
-                    let annotated_content = Annotated { raw: raw_content, annotations: None };
-                    Ok(CallToolResult { content: vec![annotated_content], is_error: Some(false) })
+                    let content_string = fs::read_to_string(path).await.map_err(|e| {
+                        McpError::internal_error(format!("Failed to read file: {}", e), None)
+                    })?;
+                    let raw_content = RawContent::Text(RawTextContent {
+                        text: content_string,
+                    });
+                    let annotated_content = Annotated {
+                        raw: raw_content,
+                        annotations: None,
+                    };
+                    Ok(CallToolResult {
+                        content: vec![annotated_content],
+                        is_error: Some(false),
+                    })
                 }
                 "write_file" => {
-                    let args_map: Map<String, Value> = params.arguments
+                    let args_map: Map<String, Value> = params
+                        .arguments
                         .ok_or_else(|| McpError::invalid_params("Missing arguments", None))?;
-                    let path = args_map.get("path").and_then(Value::as_str)
+                    let path = args_map
+                        .get("path")
+                        .and_then(Value::as_str)
                         .ok_or_else(|| McpError::invalid_params("Missing 'path' argument", None))?;
-                    let content_string = args_map.get("content").and_then(Value::as_str)
-                        .ok_or_else(|| McpError::invalid_params("Missing 'content' argument", None))?;
-                    fs::write(path, content_string).await
-                        .map_err(|e| McpError::internal_error(format!("Failed to write file: {}", e), None))?;
-                    Ok(CallToolResult { content: vec![], is_error: Some(false) })
+                    let content_string = args_map
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            McpError::invalid_params("Missing 'content' argument", None)
+                        })?;
+                    fs::write(path, content_string).await.map_err(|e| {
+                        McpError::internal_error(format!("Failed to write file: {}", e), None)
+                    })?;
+                    Ok(CallToolResult {
+                        content: vec![],
+                        is_error: Some(false),
+                    })
                 }
-                _ => Err(McpError::method_not_found::<CallToolRequestMethod>())
+                _ => Err(McpError::method_not_found::<CallToolRequestMethod>()),
             }
         })
     }
 
-    fn handle_read_resource(&self, params: ReadResourceRequestParam) -> Pin<Box<dyn Future<Output = Result<ReadResourceResult, McpError>> + Send + '_>> {
+    fn handle_read_resource(
+        &self,
+        params: ReadResourceRequestParam,
+    ) -> Pin<Box<dyn Future<Output = Result<ReadResourceResult, McpError>> + Send + '_>> {
         let path = params.uri;
         Box::pin(async move {
-            let content_string = fs::read_to_string(&path).await
-                .map_err(|e| McpError::internal_error(format!("Failed to read resource (file): {}", e), None))?;
+            let content_string = fs::read_to_string(&path).await.map_err(|e| {
+                McpError::internal_error(format!("Failed to read resource (file): {}", e), None)
+            })?;
             let contents_item = ResourceContents::text(content_string, path);
-            Ok(ReadResourceResult { contents: vec![contents_item] })
+            Ok(ReadResourceResult {
+                contents: vec![contents_item],
+            })
         })
     }
 }
@@ -130,8 +178,13 @@ impl Service<RoleServer> for FileSystemServer {
         ServerInfo {
             protocol_version: ProtocolVersion::LATEST,
             capabilities: ServerCapabilities {
-                tools: Some(ToolsCapability { list_changed: Some(true) }),
-                resources: Some(ResourcesCapability { subscribe: Some(true), list_changed: Some(true) }),
+                tools: Some(ToolsCapability {
+                    list_changed: Some(true),
+                }),
+                resources: Some(ResourcesCapability {
+                    subscribe: Some(true),
+                    list_changed: Some(true),
+                }),
                 ..Default::default()
             },
             server_info: Implementation {
@@ -165,12 +218,14 @@ impl Service<RoleServer> for FileSystemServer {
                         next_cursor: None,
                     }))
                 }
-                ClientRequest::CallToolRequest(Request { params, .. }) => {
-                    self_clone.handle_tool_call(params).await.map(ServerResult::CallToolResult)
-                }
-                ClientRequest::ReadResourceRequest(Request { params, .. }) => {
-                    self_clone.handle_read_resource(params).await.map(ServerResult::ReadResourceResult)
-                }
+                ClientRequest::CallToolRequest(Request { params, .. }) => self_clone
+                    .handle_tool_call(params)
+                    .await
+                    .map(ServerResult::CallToolResult),
+                ClientRequest::ReadResourceRequest(Request { params, .. }) => self_clone
+                    .handle_read_resource(params)
+                    .await
+                    .map(ServerResult::ReadResourceResult),
                 _ => Err(McpError::method_not_found::<InitializeResultMethod>()),
             }
         })
@@ -186,7 +241,8 @@ impl Service<RoleServer> for FileSystemServer {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> { // Return Box<dyn Error>
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Return Box<dyn Error>
     let server = FileSystemServer::new();
     let transport = io::stdio();
     let ct = CancellationToken::new();
@@ -194,9 +250,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> { // Return Box<dyn Er
     eprintln!("Starting filesystem MCP server...");
 
     if let Err(e) = server.serve_with_ct(transport, ct.clone()).await {
-         eprintln!("Server loop failed: {}", e);
+        eprintln!("Server loop failed: {}", e);
     }
-    
+
     ct.cancelled().await;
 
     eprintln!("Filesystem MCP server stopped.");

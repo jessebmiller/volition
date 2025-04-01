@@ -1,12 +1,12 @@
 // volition-servers/search/src/main.rs
 // Removed unused anyhow import
 use rmcp::{
-    model::{*}, // Keep model::*
+    Error as McpError,
+    model::*, // Keep model::*
     service::*,
     transport::io,
-    Error as McpError,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::fs::File;
 use std::future::Future;
@@ -18,11 +18,18 @@ use tokio_util::sync::CancellationToken;
 use ignore::WalkBuilder;
 
 // Helper to create JSON schema object
-fn create_schema_object(properties: Vec<(&str, Value)>, required: Vec<&str>) -> Arc<Map<String, Value>> {
-    let props_map: Map<String, Value> = properties.into_iter()
+fn create_schema_object(
+    properties: Vec<(&str, Value)>,
+    required: Vec<&str>,
+) -> Arc<Map<String, Value>> {
+    let props_map: Map<String, Value> = properties
+        .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-    let req_vec: Vec<Value> = required.into_iter().map(|s| Value::String(s.to_string())).collect();
+    let req_vec: Vec<Value> = required
+        .into_iter()
+        .map(|s| Value::String(s.to_string()))
+        .collect();
 
     let schema = json!({
         "type": "object",
@@ -48,9 +55,18 @@ impl SearchServer {
         let mut tools = HashMap::new();
         let search_schema = create_schema_object(
             vec![
-                ("pattern", json!({ "type": "string", "description": "Text or regex pattern to search for." })),
-                ("path", json!({ "type": "string", "description": "Optional directory or file path to search in (defaults to current directory)." })),
-                ("case_sensitive", json!({ "type": "boolean", "description": "Perform case-sensitive search (defaults to false)." })),
+                (
+                    "pattern",
+                    json!({ "type": "string", "description": "Text or regex pattern to search for." }),
+                ),
+                (
+                    "path",
+                    json!({ "type": "string", "description": "Optional directory or file path to search in (defaults to current directory)." }),
+                ),
+                (
+                    "case_sensitive",
+                    json!({ "type": "boolean", "description": "Perform case-sensitive search (defaults to false)." }),
+                ),
                 // TODO: context_lines, file_glob, max_results
             ],
             vec!["pattern"],
@@ -59,7 +75,9 @@ impl SearchServer {
             "search_text".to_string(),
             Tool {
                 name: "search_text".into(),
-                description: Some("Search for text patterns in files, respecting .gitignore.".into()),
+                description: Some(
+                    "Search for text patterns in files, respecting .gitignore.".into(),
+                ),
                 input_schema: search_schema,
             },
         );
@@ -70,15 +88,24 @@ impl SearchServer {
         }
     }
 
-    fn handle_search_call(&self, params: CallToolRequestParam) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpError>> + Send + '_>> {
+    fn handle_search_call(
+        &self,
+        params: CallToolRequestParam,
+    ) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpError>> + Send + '_>> {
         Box::pin(async move {
-            let args_map: Map<String, Value> = params.arguments
+            let args_map: Map<String, Value> = params
+                .arguments
                 .ok_or_else(|| McpError::invalid_params("Missing arguments", None))?;
 
-            let pattern = args_map.get("pattern").and_then(Value::as_str)
+            let pattern = args_map
+                .get("pattern")
+                .and_then(Value::as_str)
                 .ok_or_else(|| McpError::invalid_params("Missing 'pattern' argument", None))?;
             let path = args_map.get("path").and_then(Value::as_str).unwrap_or(".");
-            let case_sensitive = args_map.get("case_sensitive").and_then(Value::as_bool).unwrap_or(false);
+            let case_sensitive = args_map
+                .get("case_sensitive")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
 
             let mut results = Vec::new();
             let walker = WalkBuilder::new(path).build();
@@ -123,8 +150,14 @@ impl SearchServer {
             };
 
             let raw_content = RawContent::Text(RawTextContent { text: result_text });
-            let annotated = Annotated { raw: raw_content, annotations: None };
-            Ok(CallToolResult { content: vec![annotated], is_error: Some(false) })
+            let annotated = Annotated {
+                raw: raw_content,
+                annotations: None,
+            };
+            Ok(CallToolResult {
+                content: vec![annotated],
+                is_error: Some(false),
+            })
         })
     }
 }
@@ -134,7 +167,9 @@ impl Service<RoleServer> for SearchServer {
         ServerInfo {
             protocol_version: ProtocolVersion::LATEST,
             capabilities: ServerCapabilities {
-                tools: Some(ToolsCapability { list_changed: Some(true) }),
+                tools: Some(ToolsCapability {
+                    list_changed: Some(true),
+                }),
                 ..Default::default()
             },
             server_info: Implementation {
@@ -170,9 +205,12 @@ impl Service<RoleServer> for SearchServer {
                 }
                 ClientRequest::CallToolRequest(Request { params, .. }) => {
                     if params.name == "search_text" {
-                         self_clone.handle_search_call(params).await.map(ServerResult::CallToolResult)
+                        self_clone
+                            .handle_search_call(params)
+                            .await
+                            .map(ServerResult::CallToolResult)
                     } else {
-                         Err(McpError::method_not_found::<CallToolRequestMethod>())
+                        Err(McpError::method_not_found::<CallToolRequestMethod>())
                     }
                 }
                 _ => Err(McpError::method_not_found::<InitializeResultMethod>()),
@@ -190,7 +228,8 @@ impl Service<RoleServer> for SearchServer {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> { // Return Box<dyn Error>
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Return Box<dyn Error>
     let server = SearchServer::new();
     let transport = io::stdio();
     let ct = CancellationToken::new();
@@ -198,7 +237,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> { // Return Box<dyn Er
     eprintln!("Starting search MCP server...");
 
     if let Err(e) = server.serve_with_ct(transport, ct.clone()).await {
-         eprintln!("Server loop failed: {}", e);
+        eprintln!("Server loop failed: {}", e);
     }
 
     ct.cancelled().await;

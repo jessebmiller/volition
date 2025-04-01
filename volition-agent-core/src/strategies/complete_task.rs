@@ -2,10 +2,10 @@
 // Removed unused Agent import
 use crate::errors::AgentError;
 // Removed unused ChatMessage import
+use crate::UserInteraction;
 use crate::models::chat::ApiResponse;
 use crate::strategies::{NextStep, Strategy};
-use crate::UserInteraction;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use tracing::info;
 

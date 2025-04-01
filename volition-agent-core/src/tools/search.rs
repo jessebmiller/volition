@@ -1,7 +1,7 @@
 // volition-agent-core/src/tools/search.rs
 
-use super::shell::execute_shell_command;
 use super::CommandOutput;
+use super::shell::execute_shell_command;
 use crate::utils::truncate_string; // <-- Import the helper
 use anyhow::Result;
 use std::path::Path;

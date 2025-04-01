@@ -96,9 +96,11 @@ mod tests {
             let output = result.unwrap();
             println!("Output: {:?}", output);
             assert_ne!(output.status, 0);
-            assert!(output
-                .stderr
-                .contains("no targets specified in the manifest"));
+            assert!(
+                output
+                    .stderr
+                    .contains("no targets specified in the manifest")
+            );
         }
     }
 }

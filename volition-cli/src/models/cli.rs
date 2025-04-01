@@ -18,11 +18,10 @@ pub struct Cli {
     /// Run a single task non-interactively.
     #[arg(short, long)]
     pub task: Option<String>,
+    // Removed debug field
 
-                     // Removed debug field
-
-                     // Removed command field
-                     // Removed rest field
+    // Removed command field
+    // Removed rest field
 }
 
 // Removed Commands enum

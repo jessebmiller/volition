@@ -5,7 +5,7 @@ use anyhow::Result;
 #[derive(Debug)]
 pub struct McpSession {
     // Removed unused field
-    // session_id: String, 
+    // session_id: String,
 }
 
 impl McpSession {

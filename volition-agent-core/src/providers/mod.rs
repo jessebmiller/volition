@@ -1,7 +1,7 @@
 // volition-agent-core/src/providers/mod.rs
 use crate::models::chat::{ApiResponse, ChatMessage};
 use crate::models::tools::ToolDefinition; // Import ToolDefinition
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use std::collections::HashMap;
 
@@ -9,10 +9,10 @@ use std::collections::HashMap;
 pub trait Provider: Send + Sync {
     // Add tools argument
     async fn get_completion(
-        &self, 
+        &self,
         messages: Vec<ChatMessage>,
-        tools: Option<&[ToolDefinition]> // Add tools argument
-    ) -> Result<ApiResponse>; 
+        tools: Option<&[ToolDefinition]>, // Add tools argument
+    ) -> Result<ApiResponse>;
     fn name(&self) -> &str;
 }
 

@@ -11,12 +11,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use tracing::info;
 use tracing_subscriber;
 
-use crate::providers::{Provider, ProviderRegistry};
 use crate::models::chat::{ApiResponse, ChatMessage, Choice};
+use crate::providers::{Provider, ProviderRegistry};
 // Removed: use crate::strategies::conversation::ConversationStrategy;
 use crate::mcp::McpConnection;
 use tokio::sync::Mutex as TokioMutex;
@@ -87,7 +87,6 @@ fn generate_id(prefix: &str) -> String {
     format!("{}_{}", prefix, nanos)
 }
 
-
 // Implement Provider trait for MockToolProvider
 #[async_trait]
 impl Provider for MockToolProvider {
@@ -98,9 +97,12 @@ impl Provider for MockToolProvider {
     async fn get_completion(
         &self,
         messages: Vec<ChatMessage>,
-        _tools: Option<&[ToolDefinition]>
+        _tools: Option<&[ToolDefinition]>,
     ) -> Result<ApiResponse> {
-        self.received_histories.lock().unwrap().push(messages.clone());
+        self.received_histories
+            .lock()
+            .unwrap()
+            .push(messages.clone());
         Ok(ApiResponse {
             id: "mock_resp_".to_string() + &generate_id(""),
             choices: vec![Choice {
@@ -119,33 +121,32 @@ impl Provider for MockToolProvider {
 // ToolProvider implementation remains the same
 #[async_trait]
 impl ToolProvider for MockToolProvider {
-     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
-         self.definitions.clone()
-     }
+    fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
+        self.definitions.clone()
+    }
 
-     async fn execute_tool(
-         &self,
-         tool_name: &str,
-         input: ToolInput,
-         _working_dir: &Path,
-     ) -> Result<String> {
-         let input_json = serde_json::to_string(&input.arguments).unwrap_or_default();
-         self.call_log
-             .lock()
-             .unwrap()
-             .push((tool_name.to_string(), input_json));
+    async fn execute_tool(
+        &self,
+        tool_name: &str,
+        input: ToolInput,
+        _working_dir: &Path,
+    ) -> Result<String> {
+        let input_json = serde_json::to_string(&input.arguments).unwrap_or_default();
+        self.call_log
+            .lock()
+            .unwrap()
+            .push((tool_name.to_string(), input_json));
 
-         match self.outputs.get(tool_name) {
-             Some(Ok(output)) => Ok(output.clone()),
-             Some(Err(e)) => Err(anyhow!("Tool execution failed: {}", e.clone())), // Simplified error
-             None => Err(anyhow!(
-                 "MockToolProvider: No output defined for tool '{}'",
-                 tool_name
-             )),
-         }
-     }
- }
-
+        match self.outputs.get(tool_name) {
+            Some(Ok(output)) => Ok(output.clone()),
+            Some(Err(e)) => Err(anyhow!("Tool execution failed: {}", e.clone())), // Simplified error
+            None => Err(anyhow!(
+                "MockToolProvider: No output defined for tool '{}'",
+                tool_name
+            )),
+        }
+    }
+}
 
 // --- Test Config Helper (Minimal config for tests) ---
 fn create_minimal_agent_config(default_provider_id: String) -> AgentConfig {
@@ -160,7 +161,7 @@ fn create_minimal_agent_config(default_provider_id: String) -> AgentConfig {
 
 // --- Agent Test Helper (Removed Agent::new_with_registry) ---
 
-// --- Existing Tests --- 
+// --- Existing Tests ---
 
 #[tokio::test]
 async fn test_agent_initialization() -> Result<(), AgentError> {
@@ -170,7 +171,10 @@ async fn test_agent_initialization() -> Result<(), AgentError> {
 
     let default_provider_id = "mock-provider-id".to_string();
     let mut provider_registry = ProviderRegistry::new(default_provider_id.clone());
-    provider_registry.register(default_provider_id.clone(), Box::new(mock_provider.as_ref().clone()));
+    provider_registry.register(
+        default_provider_id.clone(),
+        Box::new(mock_provider.as_ref().clone()),
+    );
 
     let mcp_connections: HashMap<String, Arc<TokioMutex<McpConnection>>> = HashMap::new();
     let config = create_minimal_agent_config(default_provider_id.clone());
@@ -180,11 +184,12 @@ async fn test_agent_initialization() -> Result<(), AgentError> {
         config,
         mock_ui,
         Box::new(CompleteTaskStrategy::default()),
-        None, // history (starting fresh)
+        None,         // history (starting fresh)
         initial_task, // current_user_input
         Some(provider_registry),
         Some(mcp_connections),
-    ).map_err(|e| AgentError::Config(e.to_string()))?;
+    )
+    .map_err(|e| AgentError::Config(e.to_string()))?;
 
     let _ = agent;
     Ok(())
@@ -196,8 +201,7 @@ async fn test_agent_run_single_tool_call_success() -> Result<()> {
     Ok(())
 }
 
-
-// --- New Test Case --- 
+// --- New Test Case ---
 
 #[tokio::test]
 async fn test_conversation_history_persistence() -> Result<(), AgentError> {
@@ -210,7 +214,10 @@ async fn test_conversation_history_persistence() -> Result<(), AgentError> {
 
     // Create registry for Turn 1
     let mut provider_registry1 = ProviderRegistry::new(default_provider_id.clone());
-    provider_registry1.register(default_provider_id.clone(), Box::new(mock_provider.as_ref().clone()));
+    provider_registry1.register(
+        default_provider_id.clone(),
+        Box::new(mock_provider.as_ref().clone()),
+    );
 
     let mcp_connections1: HashMap<String, Arc<TokioMutex<McpConnection>>> = HashMap::new();
     let config = create_minimal_agent_config(default_provider_id.clone());
@@ -227,11 +234,12 @@ async fn test_conversation_history_persistence() -> Result<(), AgentError> {
         config.clone(),
         mock_ui.clone(),
         agent_strategy_1,
-        None, // history (starting fresh)
+        None,                   // history (starting fresh)
         initial_task_1.clone(), // current_user_input
         Some(provider_registry1),
         Some(mcp_connections1),
-    ).map_err(|e| AgentError::Config(e.to_string()))?;
+    )
+    .map_err(|e| AgentError::Config(e.to_string()))?;
 
     let (response1, state1) = agent1.run(&PathBuf::from(".")).await?;
     info!(response1 = %response1, "Turn 1 completed.");
@@ -239,19 +247,32 @@ async fn test_conversation_history_persistence() -> Result<(), AgentError> {
 
     // --- Turn 2 Setup ---
     // History now includes the user message + assistant response from turn 1
-    let history_turn_2 = state1.messages.clone(); 
-    assert_eq!(history_turn_2.len(), 2, "State after Turn 1 should have 2 messages");
+    let history_turn_2 = state1.messages.clone();
+    assert_eq!(
+        history_turn_2.len(),
+        2,
+        "State after Turn 1 should have 2 messages"
+    );
     assert_eq!(history_turn_2[0].role, "user");
-    assert_eq!(history_turn_2[0].content.as_deref(), Some(initial_task_1.as_str()));
+    assert_eq!(
+        history_turn_2[0].content.as_deref(),
+        Some(initial_task_1.as_str())
+    );
     assert_eq!(history_turn_2[1].role, "assistant");
     assert_eq!(history_turn_2[1].content.as_deref(), Some("Mock response"));
 
-    info!(num_messages = history_turn_2.len(), "Prepared history for Turn 2 input");
+    info!(
+        num_messages = history_turn_2.len(),
+        "Prepared history for Turn 2 input"
+    );
 
     // --- Turn 2 Execution ---
     info!("Starting Turn 2");
     let mut provider_registry2 = ProviderRegistry::new(default_provider_id.clone());
-    provider_registry2.register(default_provider_id.clone(), Box::new(mock_provider.as_ref().clone()));
+    provider_registry2.register(
+        default_provider_id.clone(),
+        Box::new(mock_provider.as_ref().clone()),
+    );
     let mcp_connections2: HashMap<String, Arc<TokioMutex<McpConnection>>> = HashMap::new();
     let agent_strategy_2 = Box::new(CompleteTaskStrategy::default()); // Use base strategy directly
 
@@ -261,10 +282,11 @@ async fn test_conversation_history_persistence() -> Result<(), AgentError> {
         mock_ui.clone(),
         agent_strategy_2,
         Some(history_turn_2.clone()), // Pass history from turn 1
-        user_message_2.clone(), // current_user_input
+        user_message_2.clone(),       // current_user_input
         Some(provider_registry2),
         Some(mcp_connections2),
-    ).map_err(|e| AgentError::Config(e.to_string()))?;
+    )
+    .map_err(|e| AgentError::Config(e.to_string()))?;
 
     let (response2, _state2) = agent2.run(&PathBuf::from(".")).await?;
     info!(response2 = %response2, "Turn 2 completed.");
@@ -272,32 +294,67 @@ async fn test_conversation_history_persistence() -> Result<(), AgentError> {
 
     // --- Verification ---
     let histories_received = mock_provider.received_histories.lock().unwrap();
-    assert_eq!(histories_received.len(), 2, "Expected exactly two calls to the provider");
+    assert_eq!(
+        histories_received.len(),
+        2,
+        "Expected exactly two calls to the provider"
+    );
 
     // History sent during Turn 1 (AgentState::new_turn creates [User1])
     let history_sent_1 = &histories_received[0];
     info!(?history_sent_1, "History sent to provider during Turn 1");
-    assert_eq!(history_sent_1.len(), 1, "Turn 1 history sent should have 1 message");
+    assert_eq!(
+        history_sent_1.len(),
+        1,
+        "Turn 1 history sent should have 1 message"
+    );
     assert_eq!(history_sent_1[0].role, "user");
-    assert_eq!(history_sent_1[0].content.as_deref(), Some(initial_task_1.as_str()));
+    assert_eq!(
+        history_sent_1[0].content.as_deref(),
+        Some(initial_task_1.as_str())
+    );
 
     // History sent during Turn 2 (AgentState::new_turn creates [User1, Asst1, User2])
     let history_sent_2 = &histories_received[1];
     info!(?history_sent_2, "History sent to provider during Turn 2");
-    assert_eq!(history_sent_2.len(), 3, "Turn 2 history sent should have 3 messages"); 
+    assert_eq!(
+        history_sent_2.len(),
+        3,
+        "Turn 2 history sent should have 3 messages"
+    );
 
-    assert_eq!(history_sent_2[0].role, "user", "Turn 2 history[0] role mismatch");
-    assert_eq!(history_sent_2[0].content.as_deref(), Some(initial_task_1.as_str()), "Turn 2 history[0] content mismatch");
+    assert_eq!(
+        history_sent_2[0].role, "user",
+        "Turn 2 history[0] role mismatch"
+    );
+    assert_eq!(
+        history_sent_2[0].content.as_deref(),
+        Some(initial_task_1.as_str()),
+        "Turn 2 history[0] content mismatch"
+    );
 
-    assert_eq!(history_sent_2[1].role, "assistant", "Turn 2 history[1] role mismatch");
-    assert_eq!(history_sent_2[1].content.as_deref(), Some("Mock response"), "Turn 2 history[1] content mismatch");
+    assert_eq!(
+        history_sent_2[1].role, "assistant",
+        "Turn 2 history[1] role mismatch"
+    );
+    assert_eq!(
+        history_sent_2[1].content.as_deref(),
+        Some("Mock response"),
+        "Turn 2 history[1] content mismatch"
+    );
 
-    assert_eq!(history_sent_2[2].role, "user", "Turn 2 history[2] role mismatch");
-    assert_eq!(history_sent_2[2].content.as_deref(), Some(user_message_2.as_str()), "Turn 2 history[2] content mismatch");
+    assert_eq!(
+        history_sent_2[2].role, "user",
+        "Turn 2 history[2] role mismatch"
+    );
+    assert_eq!(
+        history_sent_2[2].content.as_deref(),
+        Some(user_message_2.as_str()),
+        "Turn 2 history[2] content mismatch"
+    );
 
     Ok(())
 }
-
 
 // TODO: Add tests for error handling (API errors, tool errors)
 // TODO: Add tests for scenarios without tool calls

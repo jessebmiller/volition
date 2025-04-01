@@ -1,13 +1,15 @@
 // volition-agent-core/src/agent.rs
+use crate::UserInteraction;
 use crate::config::AgentConfig;
 use crate::errors::AgentError;
 use crate::mcp::McpConnection;
 use crate::models::chat::{ApiResponse, ChatMessage};
-use crate::models::tools::{ToolDefinition, ToolParameter, ToolParameterType, ToolParametersDefinition};
+use crate::models::tools::{
+    ToolDefinition, ToolParameter, ToolParameterType, ToolParametersDefinition,
+};
 use crate::providers::{Provider, ProviderRegistry};
 use crate::strategies::{NextStep, Strategy};
-use crate::UserInteraction;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use rmcp::model::Tool as McpTool;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -46,8 +48,15 @@ fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolPar
     if let Some(props_map) = props_val {
         for (key, val) in props_map {
             if let Some(prop_obj) = val.as_object() {
-                let param_type_str = prop_obj.get("type").and_then(Value::as_str).unwrap_or("string");
-                let description = prop_obj.get("description").and_then(Value::as_str).unwrap_or("").to_string();
+                let param_type_str = prop_obj
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("string");
+                let description = prop_obj
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 let param_type = match param_type_str {
                     "string" => ToolParameterType::String,
                     "integer" => ToolParameterType::Integer,
@@ -57,17 +66,25 @@ fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolPar
                     "object" => ToolParameterType::Object,
                     _ => ToolParameterType::String,
                 };
-                properties.insert(key.clone(), ToolParameter {
-                    param_type,
-                    description,
-                    enum_values: None,
-                    items: None,
-                });
+                properties.insert(
+                    key.clone(),
+                    ToolParameter {
+                        param_type,
+                        description,
+                        enum_values: None,
+                        items: None,
+                    },
+                );
             }
         }
     }
     let required = required_val
-        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect()
+        })
         .unwrap_or_default();
     ToolParametersDefinition {
         param_type: "object".to_string(),
@@ -83,8 +100,16 @@ impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
         &self,
         _request: rmcp::model::ServerRequest,
         _context: rmcp::service::RequestContext<rmcp::service::RoleClient>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<rmcp::model::ClientResult, rmcp::Error>> + Send>> {
-        Box::pin(async { Err(rmcp::Error::method_not_found::<rmcp::model::InitializeResultMethod>()) })
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<rmcp::model::ClientResult, rmcp::Error>> + Send,
+        >,
+    > {
+        Box::pin(async {
+            Err(rmcp::Error::method_not_found::<
+                rmcp::model::InitializeResultMethod,
+            >())
+        })
     }
     #[allow(refining_impl_trait)] // Allow Pin<Box<dyn Future>> where trait uses impl Future
     fn handle_notification(
@@ -93,9 +118,13 @@ impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), rmcp::Error>> + Send>> {
         Box::pin(async { Ok(()) })
     }
-    fn get_peer(&self) -> Option<rmcp::service::Peer<rmcp::service::RoleClient>> { None }
+    fn get_peer(&self) -> Option<rmcp::service::Peer<rmcp::service::RoleClient>> {
+        None
+    }
     fn set_peer(&mut self, _peer: rmcp::service::Peer<rmcp::service::RoleClient>) {}
-    fn get_info(&self) -> rmcp::model::ClientInfo { rmcp::model::ClientInfo::default() }
+    fn get_info(&self) -> rmcp::model::ClientInfo {
+        rmcp::model::ClientInfo::default()
+    }
 }
 
 impl<UI: UserInteraction + 'static> Agent<UI> {
@@ -120,13 +149,13 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                 let mut registry = ProviderRegistry::new(config.default_provider.clone());
                 for (id, provider_conf) in config.providers {
                     let api_key = if !provider_conf.api_key_env_var.is_empty() {
-                         match std::env::var(&provider_conf.api_key_env_var) {
-                             Ok(key) => key,
-                             Err(e) => {
-                                 warn!(provider_id = %id, env_var = %provider_conf.api_key_env_var, error = %e, "API key environment variable not set or invalid");
-                                 String::new()
-                             }
-                         }
+                        match std::env::var(&provider_conf.api_key_env_var) {
+                            Ok(key) => key,
+                            Err(e) => {
+                                warn!(provider_id = %id, env_var = %provider_conf.api_key_env_var, error = %e, "API key environment variable not set or invalid");
+                                String::new()
+                            }
+                        }
                     } else {
                         String::new()
                     };
@@ -137,12 +166,17 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                             http_client.clone(),
                             api_key,
                         )),
-                         "ollama" => Box::new(crate::providers::ollama::OllamaProvider::new(
+                        "ollama" => Box::new(crate::providers::ollama::OllamaProvider::new(
                             model_config,
                             http_client.clone(),
                             api_key,
                         )),
-                        _ => return Err(anyhow!("Unsupported provider type: {}", provider_conf.provider_type)),
+                        _ => {
+                            return Err(anyhow!(
+                                "Unsupported provider type: {}",
+                                provider_conf.provider_type
+                            ));
+                        }
                     };
                     registry.register(id, provider);
                 }
@@ -184,29 +218,42 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     }
 
     async fn ensure_mcp_connection(&self, server_id: &str) -> Result<()> {
-        let conn_mutex = self.mcp_connections.get(server_id)
+        let conn_mutex = self
+            .mcp_connections
+            .get(server_id)
             .ok_or_else(|| anyhow!("MCP server config not found: {}", server_id))?;
         let conn_guard = conn_mutex.lock().await;
         let ct = tokio_util::sync::CancellationToken::new();
-        conn_guard.establish_connection_external(DummyClientService, ct).await
+        conn_guard
+            .establish_connection_external(DummyClientService, ct)
+            .await
     }
 
     pub fn switch_provider(&mut self, provider_id: &str) -> Result<()> {
         self.provider_registry.get(provider_id)?;
         if self.current_provider_id != provider_id {
-             debug!(old_provider = %self.current_provider_id, new_provider = %provider_id, "Switching provider");
-             self.current_provider_id = provider_id.to_string();
+            debug!(old_provider = %self.current_provider_id, new_provider = %provider_id, "Switching provider");
+            self.current_provider_id = provider_id.to_string();
         }
         Ok(())
     }
 
-    pub async fn get_completion(&self, messages: Vec<ChatMessage>, tools: Option<&[ToolDefinition]>) -> Result<ApiResponse> {
+    pub async fn get_completion(
+        &self,
+        messages: Vec<ChatMessage>,
+        tools: Option<&[ToolDefinition]>,
+    ) -> Result<ApiResponse> {
         let provider = self.provider_registry.get(&self.current_provider_id)?;
         debug!(provider = %self.current_provider_id, num_messages = messages.len(), "Getting completion from provider");
         provider.get_completion(messages, tools).await
     }
 
-    pub async fn call_mcp_tool(&self, server_id: &str, tool_name: &str, args: Value) -> Result<Value> {
+    pub async fn call_mcp_tool(
+        &self,
+        server_id: &str,
+        tool_name: &str,
+        args: Value,
+    ) -> Result<Value> {
         self.ensure_mcp_connection(server_id).await?;
         let conn_mutex = self.mcp_connections.get(server_id).unwrap();
         let conn = conn_mutex.lock().await;
@@ -214,7 +261,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         conn.call_tool(tool_name, args).await
     }
 
-     pub async fn get_mcp_resource(&self, server_id: &str, uri: &str) -> Result<Value> {
+    pub async fn get_mcp_resource(&self, server_id: &str, uri: &str) -> Result<Value> {
         self.ensure_mcp_connection(server_id).await?;
         let conn_mutex = self.mcp_connections.get(server_id).unwrap();
         let conn = conn_mutex.lock().await;
@@ -226,16 +273,18 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         let mut all_tools = Vec::new();
         for (id, conn_mutex) in &self.mcp_connections {
             match self.ensure_mcp_connection(id).await {
-                 Ok(_) => {
-                      let conn = conn_mutex.lock().await;
-                      match conn.list_tools().await {
-                           Ok(tools) => all_tools.extend(tools),
-                           Err(e) => warn!(server_id = %id, error = ?e, "Failed to list tools from MCP server (post-connection)"),
-                      }
-                 },
-                 Err(e) => {
-                      warn!(server_id = %id, error = ?e, "Failed to ensure MCP connection for listing tools");
-                 }
+                Ok(_) => {
+                    let conn = conn_mutex.lock().await;
+                    match conn.list_tools().await {
+                        Ok(tools) => all_tools.extend(tools),
+                        Err(e) => {
+                            warn!(server_id = %id, error = ?e, "Failed to list tools from MCP server (post-connection)")
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(server_id = %id, error = ?e, "Failed to ensure MCP connection for listing tools");
+                }
             }
         }
         Ok(all_tools)
@@ -252,17 +301,26 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
             match next_step {
                 NextStep::CallApi(state_from_strategy) => {
                     self.state = state_from_strategy;
-                    let mcp_tools = self.list_mcp_tools().await
+                    let mcp_tools = self
+                        .list_mcp_tools()
+                        .await
                         .map_err(|e| AgentError::Mcp(e.context("Failed to list MCP tools")))?;
 
-                    let tool_definitions: Vec<ToolDefinition> = mcp_tools.iter().map(|mcp_tool| {
-                        let schema_map = mcp_tool.input_schema.as_ref();
-                        ToolDefinition {
-                            name: mcp_tool.name.to_string(),
-                            description: mcp_tool.description.clone().map(|s| s.to_string()).unwrap_or_default(),
-                            parameters: mcp_schema_to_tool_params(Some(schema_map)),
-                        }
-                    }).collect();
+                    let tool_definitions: Vec<ToolDefinition> = mcp_tools
+                        .iter()
+                        .map(|mcp_tool| {
+                            let schema_map = mcp_tool.input_schema.as_ref();
+                            ToolDefinition {
+                                name: mcp_tool.name.to_string(),
+                                description: mcp_tool
+                                    .description
+                                    .clone()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_default(),
+                                parameters: mcp_schema_to_tool_params(Some(schema_map)),
+                            }
+                        })
+                        .collect();
 
                     debug!(
                         provider = %self.current_provider_id,
@@ -271,16 +329,26 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         "Sending request to AI provider."
                     );
 
-                    let api_response = self.get_completion(
-                        self.state.messages.clone(),
-                        if tool_definitions.is_empty() { None } else { Some(&tool_definitions) }
-                    ).await
-                        .map_err(|e| AgentError::Api(e.context("API call failed during agent run")))?;
+                    let api_response = self
+                        .get_completion(
+                            self.state.messages.clone(),
+                            if tool_definitions.is_empty() {
+                                None
+                            } else {
+                                Some(&tool_definitions)
+                            },
+                        )
+                        .await
+                        .map_err(|e| {
+                            AgentError::Api(e.context("API call failed during agent run"))
+                        })?;
 
                     debug!("Received response from AI.");
                     trace!(response = %serde_json::to_string_pretty(&api_response).unwrap_or_default(), "Full API Response");
 
-                    next_step = self.strategy.process_api_response(&mut self.state, api_response)?;
+                    next_step = self
+                        .strategy
+                        .process_api_response(&mut self.state, api_response)?;
                 }
                 NextStep::CallTools(state_from_strategy) => {
                     self.state = state_from_strategy;
@@ -288,10 +356,17 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
 
                     if tool_calls.is_empty() {
                         warn!("Strategy requested tool calls, but none were pending.");
-                        return Err(AgentError::Strategy("Strategy requested tool calls, but none were pending in state".to_string()));
+                        return Err(AgentError::Strategy(
+                            "Strategy requested tool calls, but none were pending in state"
+                                .to_string(),
+                        ));
                     }
 
-                    info!(count = tool_calls.len(), "Executing {} requested tool call(s) via MCP.", tool_calls.len());
+                    info!(
+                        count = tool_calls.len(),
+                        "Executing {} requested tool call(s) via MCP.",
+                        tool_calls.len()
+                    );
 
                     let mut tool_results = Vec::new();
                     for tool_call in tool_calls {
@@ -320,12 +395,18 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 info!(tool_call_id = %tool_call.id, tool_name = %tool_name, server_id = %server_id, "MCP Tool executed successfully.");
                                 let output_str = match output_value {
                                     Value::String(s) => s,
-                                    Value::Object(map) if map.contains_key("text") => {
-                                        map.get("text").and_then(Value::as_str).unwrap_or("").to_string()
+                                    Value::Object(map) if map.contains_key("text") => map
+                                        .get("text")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    Value::Array(arr) if arr.is_empty() => {
+                                        "<empty result>".to_string()
                                     }
-                                    Value::Array(arr) if arr.is_empty() => "<empty result>".to_string(),
-                                    Value::Array(arr) => serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "<invalid JSON array>".to_string()),
-                                    Value::Object(map) => serde_json::to_string_pretty(&map).unwrap_or_else(|_| "<invalid JSON object>".to_string()),
+                                    Value::Array(arr) => serde_json::to_string_pretty(&arr)
+                                        .unwrap_or_else(|_| "<invalid JSON array>".to_string()),
+                                    Value::Object(map) => serde_json::to_string_pretty(&map)
+                                        .unwrap_or_else(|_| "<invalid JSON object>".to_string()),
                                     Value::Null => "<no output>".to_string(),
                                     other => other.to_string(),
                                 };
@@ -339,22 +420,33 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 error!(tool_call_id = %tool_call.id, tool_name = %tool_name, server_id = %server_id, error = ?e, "MCP Tool execution failed.");
                                 tool_results.push(crate::ToolResult {
                                     tool_call_id: tool_call.id.clone(),
-                                    output: format!("Error executing MCP tool '{}' on server '{}': {}", tool_name, server_id, e),
+                                    output: format!(
+                                        "Error executing MCP tool '{}' on server '{}': {}",
+                                        tool_name, server_id, e
+                                    ),
                                     status: crate::ToolExecutionStatus::Failure,
                                 });
                             }
                         }
                     }
 
-                    debug!(count = tool_results.len(), "Passing {} tool result(s) back to strategy.", tool_results.len());
-                    next_step = self.strategy.process_tool_results(&mut self.state, tool_results)?;
+                    debug!(
+                        count = tool_results.len(),
+                        "Passing {} tool result(s) back to strategy.",
+                        tool_results.len()
+                    );
+                    next_step = self
+                        .strategy
+                        .process_tool_results(&mut self.state, tool_results)?;
                 }
                 NextStep::DelegateTask(delegation_input) => {
                     warn!(task = ?delegation_input.task_description, "Delegation requested, but not yet implemented.");
                     let delegation_result = crate::DelegationResult {
                         result: "Delegation is not implemented.".to_string(),
                     };
-                    next_step = self.strategy.process_delegation_result(&mut self.state, delegation_result)?;
+                    next_step = self
+                        .strategy
+                        .process_delegation_result(&mut self.state, delegation_result)?;
                 }
                 NextStep::Completed(final_message) => {
                     info!("Strategy indicated completion.");

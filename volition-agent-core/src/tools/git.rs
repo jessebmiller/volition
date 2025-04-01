@@ -86,9 +86,11 @@ mod tests {
         let output = result.unwrap();
         println!("Output: {:?}", output);
         assert_eq!(output.status, 0);
-        assert!(output
-            .stdout
-            .contains("nothing to commit, working tree clean"));
+        assert!(
+            output
+                .stdout
+                .contains("nothing to commit, working tree clean")
+        );
     }
 
     #[tokio::test]

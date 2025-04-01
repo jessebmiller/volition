@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use volition_agent_core::{
     agent::Agent,
+    async_trait,
     config::AgentConfig,
     errors::AgentError,
     strategies::{
@@ -20,7 +21,7 @@ use volition_agent_core::{
         // Removed: conversation::ConversationStrategy,
         plan_execute::PlanExecuteStrategy,
     },
-    UserInteraction, async_trait, ChatMessage,
+    ChatMessage, UserInteraction,
 };
 
 use crate::models::cli::Cli;
@@ -28,9 +29,11 @@ use crate::rendering::print_formatted;
 
 use clap::Parser;
 use time::macros::format_description;
-use tracing::{debug, error, info, trace, Level, warn};
+use tracing::{debug, error, info, trace, warn, Level};
 // Removed Layer from imports
-use tracing_subscriber::{fmt, fmt::time::LocalTime, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{
+    fmt, fmt::time::LocalTime, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
+};
 
 const CONFIG_FILENAME: &str = "Volition.toml";
 const LOG_FILE_NAME: &str = "volition-app.log"; // Define log file name
@@ -165,14 +168,17 @@ async fn run_non_interactive(
 async fn run_interactive(
     config: AgentConfig,
     project_root: PathBuf,
-    ui_handler: Arc<CliUserInteraction>
+    ui_handler: Arc<CliUserInteraction>,
 ) -> Result<()> {
     print_welcome_message();
     let mut conversation_messages: Option<Vec<ChatMessage>> = None;
 
     loop {
-        println!("
-{}", "How can I help you?".cyan());
+        println!(
+            "
+{}",
+            "How can I help you?".cyan()
+        );
         print!("{} ", ">".green().bold());
         io::stdout().flush()?;
 
@@ -233,8 +239,11 @@ async fn run_interactive(
             }
         }
     }
-    println!("
-{}", "Thanks!".cyan());
+    println!(
+        "
+{}",
+        "Thanks!".cyan()
+    );
     Ok(())
 }
 
@@ -277,10 +286,11 @@ async fn main() -> ExitCode {
         .with(env_filter) // Apply the filter to all layers
         .with(stderr_layer)
         .with(file_layer)
-        .try_init() // Use try_init to avoid panic if already initialized
+        .try_init()
+    // Use try_init to avoid panic if already initialized
     {
-         eprintln!("Failed to set global tracing subscriber: {}", e);
-         return ExitCode::FAILURE;
+        eprintln!("Failed to set global tracing subscriber: {}", e);
+        return ExitCode::FAILURE;
     }
 
     info!(
@@ -291,13 +301,12 @@ async fn main() -> ExitCode {
     debug!("Debug logging enabled.");
     trace!("Trace logging enabled.");
 
-
     let (config, project_root) = match load_cli_config() {
-         Ok(c) => c,
-         Err(e) => {
-              error!("Failed to load configuration: {}", e);
-              return ExitCode::FAILURE;
-         }
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to load configuration: {}", e);
+            return ExitCode::FAILURE;
+        }
     };
 
     let ui_handler: Arc<CliUserInteraction> = Arc::new(CliUserInteraction);

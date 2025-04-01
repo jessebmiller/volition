@@ -43,7 +43,7 @@ uuid = { version = "1.0", features = ["v4"] }
 url = "2.5"
 ignore = "0.4"
 regex = "1"
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main" }
+rmcp = { version = "0.1.5", git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main" }
 git2 = "0.19"
 tempfile = "3.6"
 httpmock = "0.7"

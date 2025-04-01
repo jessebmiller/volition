@@ -2,15 +2,15 @@
 
 #![doc = include_str!("../../README.md")]
 
+pub mod agent;
 pub mod api;
 pub mod config;
 pub mod errors;
+pub mod mcp;
+pub mod providers;
 pub mod strategies;
 pub mod tools; // Still present but unused by MCP agent
 pub mod utils;
-pub mod mcp;
-pub mod providers;
-pub mod agent;
 
 #[cfg(test)]
 mod agent_tests;
@@ -20,8 +20,14 @@ use std::path::Path;
 
 pub use config::{AgentConfig, ModelConfig};
 pub use models::chat::{ApiResponse, ChatMessage, Choice};
-pub use models::tools::{ // These are likely unused by MCP agent
-    ToolCall, ToolDefinition, ToolFunction, ToolInput, ToolParameter, ToolParameterType,
+pub use models::tools::{
+    // These are likely unused by MCP agent
+    ToolCall,
+    ToolDefinition,
+    ToolFunction,
+    ToolInput,
+    ToolParameter,
+    ToolParameterType,
     ToolParametersDefinition,
 };
 pub use strategies::{DelegationInput, DelegationOutput, Strategy};

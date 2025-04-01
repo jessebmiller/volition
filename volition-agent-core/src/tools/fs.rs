@@ -1,7 +1,7 @@
 // volition-agent-core/src/tools/fs.rs
 
 use crate::utils::truncate_string; // <-- Import the helper
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use ignore::WalkBuilder;
 use std::fs;
 use std::path::{Path, PathBuf};
