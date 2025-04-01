@@ -159,8 +159,18 @@ Contributions are welcome! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for
 
 Distributed under the Apache License 2.0. See [LICENSE](LICENSE) for more information.
 
+### License Change Notice
+ 
+ **Important:** This project was previously released under the MIT License. As of 2025-03-28, the license has been changed to Apache License 2.0.
+ 
+ The Apache 2.0 license provides additional patent protections not present in the MIT license. This change was made to better protect contributors and users
+ of this project while maintaining the open source nature of the code.
+ 
+ Any copies or forks of this repository created prior to this change date would still be under the MIT license terms. All new contributions and usage will be
+ governed by the Apache License 2.0.
+
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/username/volition)
-- [Issue Tracker](https://github.com/username/volition/issues)
+- [GitHub Repository](https://github.com/jessebmiller/volition)
+- [Issue Tracker](https://github.com/jessebmiller/volition/issues)
 - [MCP Protocol Specification](https://github.com/modelcontextprotocol/mcp)
