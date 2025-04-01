@@ -3,12 +3,12 @@
 
 use super::*;
 use crate::agent::Agent;
-use crate::config::{AgentConfig, McpServerConfig}; // Removed ModelConfig, ProviderConfig
+use crate::config::AgentConfig; // Removed McpServerConfig, ModelConfig, ProviderConfig
 use crate::errors::AgentError;
 use crate::strategies::complete_task::CompleteTaskStrategy;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex}; // Use StdMutex for MockToolProvider fields
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
@@ -17,10 +17,9 @@ use tracing_subscriber;
 
 use crate::providers::{Provider, ProviderRegistry};
 use crate::models::chat::{ApiResponse, ChatMessage, Choice};
-use crate::strategies::conversation::ConversationStrategy;
-// use crate::AgentState; // Removed unused import
+// Removed: use crate::strategies::conversation::ConversationStrategy;
 use crate::mcp::McpConnection;
-use tokio::sync::Mutex as TokioMutex; // Import Tokio Mutex for Agent field
+use tokio::sync::Mutex as TokioMutex;
 
 // --- Mock UI (Keep existing) ---
 #[derive(Default)]
@@ -152,10 +151,10 @@ impl ToolProvider for MockToolProvider {
 fn create_minimal_agent_config(default_provider_id: String) -> AgentConfig {
     AgentConfig {
         default_provider: default_provider_id,
-        providers: HashMap::new(), // Providers will be injected via override
-        mcp_servers: HashMap::new(), // MCP servers will be injected via override
-        strategies: HashMap::new(), // Strategies not needed for these tests
-        system_prompt: String::new(), // Fix: Added missing field
+        providers: HashMap::new(),
+        mcp_servers: HashMap::new(),
+        strategies: HashMap::new(),
+        system_prompt: String::new(),
     }
 }
 
@@ -164,7 +163,7 @@ fn create_minimal_agent_config(default_provider_id: String) -> AgentConfig {
 // --- Existing Tests --- 
 
 #[tokio::test]
-async fn test_agent_initialization() -> Result<(), AgentError> { // Fix: Corrected typo async
+async fn test_agent_initialization() -> Result<(), AgentError> {
     let mock_provider = Arc::new(MockToolProvider::new(vec![], HashMap::new()));
     let mock_ui = Arc::new(MockUI::default());
     let initial_task = "Test task".to_string();
@@ -174,14 +173,15 @@ async fn test_agent_initialization() -> Result<(), AgentError> { // Fix: Correct
     provider_registry.register(default_provider_id.clone(), Box::new(mock_provider.as_ref().clone()));
 
     let mcp_connections: HashMap<String, Arc<TokioMutex<McpConnection>>> = HashMap::new();
-
     let config = create_minimal_agent_config(default_provider_id.clone());
 
+    // Fix: Correct argument order for Agent::new
     let agent = Agent::new(
         config,
         mock_ui,
         Box::new(CompleteTaskStrategy::default()),
-        initial_task,
+        None, // history (starting fresh)
+        initial_task, // current_user_input
         Some(provider_registry),
         Some(mcp_connections),
     ).map_err(|e| AgentError::Config(e.to_string()))?;
@@ -220,14 +220,15 @@ async fn test_conversation_history_persistence() -> Result<(), AgentError> {
 
     // --- Turn 1 ---
     info!("Starting Turn 1");
-    let base_strategy_1 = Box::new(CompleteTaskStrategy::default());
-    let conversation_strategy_1 = Box::new(ConversationStrategy::new(base_strategy_1));
+    let agent_strategy_1 = Box::new(CompleteTaskStrategy::default()); // Use base strategy directly
 
+    // Fix: Correct argument order for Agent::new
     let mut agent1 = Agent::new(
         config.clone(),
         mock_ui.clone(),
-        conversation_strategy_1,
-        initial_task_1.clone(),
+        agent_strategy_1,
+        None, // history (starting fresh)
+        initial_task_1.clone(), // current_user_input
         Some(provider_registry1),
         Some(mcp_connections1),
     ).map_err(|e| AgentError::Config(e.to_string()))?;
@@ -237,35 +238,30 @@ async fn test_conversation_history_persistence() -> Result<(), AgentError> {
     assert_eq!(response1, "Mock response", "Unexpected response in Turn 1");
 
     // --- Turn 2 Setup ---
-    assert!(state1.messages.len() >= 2, "State after Turn 1 should have at least 2 messages");
-    assert_eq!(state1.messages[0].role, "user");
-    assert_eq!(state1.messages[0].content.as_deref(), Some(initial_task_1.as_str()));
-    assert_eq!(state1.messages.last().unwrap().role, "assistant");
-    assert_eq!(state1.messages.last().unwrap().content.as_deref(), Some("Mock response"));
+    // History now includes the user message + assistant response from turn 1
+    let history_turn_2 = state1.messages.clone(); 
+    assert_eq!(history_turn_2.len(), 2, "State after Turn 1 should have 2 messages");
+    assert_eq!(history_turn_2[0].role, "user");
+    assert_eq!(history_turn_2[0].content.as_deref(), Some(initial_task_1.as_str()));
+    assert_eq!(history_turn_2[1].role, "assistant");
+    assert_eq!(history_turn_2[1].content.as_deref(), Some("Mock response"));
 
-    let mut messages_turn_2_input = state1.messages.clone();
-    messages_turn_2_input.push(ChatMessage { // Add the next user message
-        role: "user".to_string(),
-        content: Some(user_message_2.clone()),
-        ..Default::default()
-    });
-    info!(num_messages = messages_turn_2_input.len(), "Prepared messages for Turn 2 input");
+    info!(num_messages = history_turn_2.len(), "Prepared history for Turn 2 input");
 
     // --- Turn 2 Execution ---
     info!("Starting Turn 2");
     let mut provider_registry2 = ProviderRegistry::new(default_provider_id.clone());
     provider_registry2.register(default_provider_id.clone(), Box::new(mock_provider.as_ref().clone()));
-
     let mcp_connections2: HashMap<String, Arc<TokioMutex<McpConnection>>> = HashMap::new();
+    let agent_strategy_2 = Box::new(CompleteTaskStrategy::default()); // Use base strategy directly
 
-    let base_strategy_2 = Box::new(CompleteTaskStrategy::default());
-    let conversation_strategy_2 = Box::new(ConversationStrategy::with_history(base_strategy_2, messages_turn_2_input.clone()));
-
+    // Fix: Correct argument order for Agent::new
     let mut agent2 = Agent::new(
         config.clone(),
         mock_ui.clone(),
-        conversation_strategy_2,
-        user_message_2.clone(),
+        agent_strategy_2,
+        Some(history_turn_2.clone()), // Pass history from turn 1
+        user_message_2.clone(), // current_user_input
         Some(provider_registry2),
         Some(mcp_connections2),
     ).map_err(|e| AgentError::Config(e.to_string()))?;
@@ -275,30 +271,29 @@ async fn test_conversation_history_persistence() -> Result<(), AgentError> {
     assert_eq!(response2, "Mock response", "Unexpected response in Turn 2");
 
     // --- Verification ---
-    let histories = mock_provider.received_histories.lock().unwrap();
-    assert_eq!(histories.len(), 2, "Expected exactly two calls to the provider");
+    let histories_received = mock_provider.received_histories.lock().unwrap();
+    assert_eq!(histories_received.len(), 2, "Expected exactly two calls to the provider");
 
-    // History sent during Turn 1
-    let history_turn_1 = &histories[0];
-    info!(?history_turn_1, "History received by provider during Turn 1");
-    assert_eq!(history_turn_1.len(), 1, "Turn 1 history should only have the initial user message");
-    assert_eq!(history_turn_1[0].role, "user");
-    assert_eq!(history_turn_1[0].content.as_deref(), Some(initial_task_1.as_str()));
+    // History sent during Turn 1 (AgentState::new_turn creates [User1])
+    let history_sent_1 = &histories_received[0];
+    info!(?history_sent_1, "History sent to provider during Turn 1");
+    assert_eq!(history_sent_1.len(), 1, "Turn 1 history sent should have 1 message");
+    assert_eq!(history_sent_1[0].role, "user");
+    assert_eq!(history_sent_1[0].content.as_deref(), Some(initial_task_1.as_str()));
 
-    // History sent during Turn 2
-    let history_turn_2 = &histories[1];
-    info!(?history_turn_2, "History received by provider during Turn 2");
-    assert_eq!(history_turn_2.len(), messages_turn_2_input.len(), "Turn 2 history length mismatch");
-    assert_eq!(history_turn_2.len(), 3, "Turn 2 history should have 3 messages (User1, Asst1, User2)");
+    // History sent during Turn 2 (AgentState::new_turn creates [User1, Asst1, User2])
+    let history_sent_2 = &histories_received[1];
+    info!(?history_sent_2, "History sent to provider during Turn 2");
+    assert_eq!(history_sent_2.len(), 3, "Turn 2 history sent should have 3 messages"); 
 
-    assert_eq!(history_turn_2[0].role, "user", "Turn 2 history[0] role mismatch");
-    assert_eq!(history_turn_2[0].content.as_deref(), Some(initial_task_1.as_str()), "Turn 2 history[0] content mismatch");
+    assert_eq!(history_sent_2[0].role, "user", "Turn 2 history[0] role mismatch");
+    assert_eq!(history_sent_2[0].content.as_deref(), Some(initial_task_1.as_str()), "Turn 2 history[0] content mismatch");
 
-    assert_eq!(history_turn_2[1].role, "assistant", "Turn 2 history[1] role mismatch");
-    assert_eq!(history_turn_2[1].content.as_deref(), Some("Mock response"), "Turn 2 history[1] content mismatch");
+    assert_eq!(history_sent_2[1].role, "assistant", "Turn 2 history[1] role mismatch");
+    assert_eq!(history_sent_2[1].content.as_deref(), Some("Mock response"), "Turn 2 history[1] content mismatch");
 
-    assert_eq!(history_turn_2[2].role, "user", "Turn 2 history[2] role mismatch");
-    assert_eq!(history_turn_2[2].content.as_deref(), Some(user_message_2.as_str()), "Turn 2 history[2] content mismatch");
+    assert_eq!(history_sent_2[2].role, "user", "Turn 2 history[2] role mismatch");
+    assert_eq!(history_sent_2[2].content.as_deref(), Some(user_message_2.as_str()), "Turn 2 history[2] content mismatch");
 
     Ok(())
 }
