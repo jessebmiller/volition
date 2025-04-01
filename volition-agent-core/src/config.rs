@@ -23,11 +23,11 @@ pub struct AgentConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ProviderInstanceConfig {
-    #[serde(rename = "type")] // Keep rename for TOML consistency
+    // Use `type` in TOML, map to `provider_type`
+    #[serde(rename = "type")]
     pub provider_type: String,
     pub api_key_env_var: String,
-    // REMOVED #[serde(flatten)]
-    pub model_config: ModelConfig, // Expect a [providers.name.model_config] table
+    pub model_config: ModelConfig,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -46,7 +46,6 @@ pub struct StrategyConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
     pub model_name: String, 
-    // Restore parameters field
     #[serde(default)]
     pub parameters: Option<toml::Value>,
     #[serde(default)]
@@ -58,7 +57,6 @@ impl AgentConfig {
         let config: AgentConfig = match toml::from_str(config_toml_content) {
             Ok(cfg) => cfg,
             Err(e) => {
-                // Log the detailed TOML parsing error
                 tracing::error!(error=%e, content=%config_toml_content, "Failed to parse TOML content");
                 return Err(anyhow!(e)).context("Failed to parse configuration TOML content. Check TOML syntax.");
             }
@@ -80,11 +78,10 @@ impl AgentConfig {
 
         // --- Provider Validation ---
         for (key, provider) in &config.providers {
+            // Check provider_type (which corresponds to `type` in TOML)
             if provider.provider_type.trim().is_empty() {
-                // Use rename value in error message if applicable
                 return Err(anyhow!("Provider '{}' is missing 'type' (provider_type).", key));
             }
-            // Validate fields within the nested model_config
             if provider.model_config.model_name.trim().is_empty() {
                  return Err(anyhow!("Provider '{}' is missing 'model_config.model_name'.", key));
             }
@@ -98,11 +95,10 @@ impl AgentConfig {
                  Url::parse(endpoint).with_context(|| {
                     format!("Invalid URL format for endpoint ('{}') in provider '{}'.", endpoint, key)
                  })?;
-            } else if provider.provider_type != "ollama" { // Endpoint is generally required unless it's ollama with defaults
+            } else if provider.provider_type != "ollama" { 
                  // Allow missing endpoint if type is ollama (it has a default)
-                 // return Err(anyhow!("Provider '{}' is missing 'model_config.endpoint'.", key));
+                 // Consider adding validation if endpoint is strictly required for other types
             }
-            // Restore parameter validation
             if let Some(params) = &provider.model_config.parameters {
                  if !params.is_table() && !params.is_str() {
                      return Err(anyhow!(
@@ -120,28 +116,24 @@ impl AgentConfig {
             }
         }
 
-        // --- Strategy Validation (Optional) ---
-        // Could add checks here, e.g., ensuring specified providers exist
-
         tracing::info!("Successfully parsed and validated agent configuration.");
         Ok(config)
     }
 }
 
-/* Old RuntimeConfig commented out */
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Updated test config to use nested model_config and restore parameters
+    // Ensure this fixture uses `type` as expected by the rename
     fn valid_mcp_config_content() -> String {
         r#"
             system_prompt = "You are Volition MCP."
             default_provider = "gemini_default"
 
             [providers.gemini_default]
-            provider_type = "gemini"
+            type = "gemini" # Use `type` here
             api_key_env_var = "GOOGLE_API_KEY"
             [providers.gemini_default.model_config]
                 model_name = "gemini-2.5-pro"
@@ -149,7 +141,7 @@ mod tests {
                 parameters = { temperature = 0.6 }
             
             [providers.openai_fast]
-            provider_type = "openai"
+            type = "openai" # Use `type` here
             api_key_env_var = "OPENAI_API_KEY"
             [providers.openai_fast.model_config]
                 model_name = "gpt-4o-mini"
@@ -175,11 +167,15 @@ mod tests {
     fn test_mcp_config_parse_success() {
         let content = valid_mcp_config_content();
         let result = AgentConfig::from_toml_str(&content);
-        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+        // Add context to the assertion
+        assert!(result.is_ok(), "Parse failed: {:?}\nContent:\n{}", result.err(), content);
         let config = result.unwrap();
         assert_eq!(config.default_provider, "gemini_default");
         assert_eq!(config.providers.len(), 2);
         assert!(config.providers.contains_key("gemini_default"));
+        // Check provider_type after rename
+        assert_eq!(config.providers["gemini_default"].provider_type, "gemini");
+        assert_eq!(config.providers["openai_fast"].provider_type, "openai");
         assert_eq!(config.providers["openai_fast"].model_config.model_name, "gpt-4o-mini"); 
         assert!(config.providers["gemini_default"].model_config.parameters.is_some());
         assert_eq!(config.mcp_servers.len(), 2);
@@ -190,11 +186,12 @@ mod tests {
 
      #[test]
     fn test_mcp_config_missing_default_provider_def() {
+        // Ensure this fixture also uses `type`
         let content = r#"
             system_prompt = "Valid"
             default_provider = "missing_provider"
             [providers.gemini_default]
-            provider_type = "gemini"
+            type = "gemini" # Use `type` here
             api_key_env_var = "GOOGLE_API_KEY"
             [providers.gemini_default.model_config]
                 model_name = "gemini-2.5-pro"
@@ -202,7 +199,9 @@ mod tests {
         "#;
         let result = AgentConfig::from_toml_str(content);
         assert!(result.is_err());
-        assert!(result.err().unwrap().to_string().contains("Default provider 'missing_provider' not found"));
+        // Check the specific error message
+        let error_string = result.err().unwrap().to_string();
+        assert!(error_string.contains("Default provider 'missing_provider' not found"), "Unexpected error message: {}", error_string);
     }
     
     // Add more tests for other validation rules

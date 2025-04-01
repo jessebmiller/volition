@@ -21,7 +21,7 @@ use volition_agent_core::{
         conversation::ConversationStrategy,
         plan_execute::PlanExecuteStrategy,
     },
-    UserInteraction, async_trait, ChatMessage, // Removed unused AgentState
+    UserInteraction, async_trait, ChatMessage,
 };
 
 use crate::models::cli::Cli;
@@ -139,11 +139,14 @@ async fn run_non_interactive(
     let base_strategy = select_base_strategy(&config);
 
     // --- Agent Creation (No Conversation Wrapper) ---
+    // Fix: Add None for override arguments
     let mut agent = CliAgent::new(
         config.clone(),
         ui_handler,
         base_strategy, // Use the base strategy directly
         task,
+        None, // provider_registry_override
+        None, // mcp_connections_override
     )
     .map_err(|e| AgentError::Config(format!("Failed to create agent instance: {}", e)))?;
 
@@ -217,11 +220,14 @@ async fn run_interactive(
         };
 
         // --- Agent Creation ---
+        // Fix: Add None for override arguments
         let mut agent = CliAgent::new(
             config.clone(),
             Arc::clone(&ui_handler),
             agent_strategy, // Pass the potentially wrapped strategy
             user_message.clone(), // Pass the user input as the initial task
+            None, // provider_registry_override
+            None, // mcp_connections_override
         )
         .map_err(|e| AgentError::Config(format!("Failed to create agent instance: {}", e)))?;
 

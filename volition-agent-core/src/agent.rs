@@ -1,5 +1,5 @@
 // volition-agent-core/src/agent.rs
-use crate::config::AgentConfig; // Removed ProviderInstanceConfig
+use crate::config::AgentConfig;
 use crate::errors::AgentError;
 use crate::mcp::McpConnection;
 use crate::models::chat::{ApiResponse, ChatMessage};
@@ -61,7 +61,7 @@ fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolPar
                     param_type,
                     description,
                     enum_values: None,
-                    items: None, 
+                    items: None,
                 });
             }
         }
@@ -99,55 +99,69 @@ impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
 }
 
 impl<UI: UserInteraction + 'static> Agent<UI> {
+    #[allow(clippy::too_many_arguments)] // Allow more args for testability
     pub fn new(
         config: AgentConfig,
         ui_handler: Arc<UI>,
         strategy: Box<dyn Strategy<UI> + Send + Sync>,
         initial_task: String,
+        // Optional pre-built components for testing
+        provider_registry_override: Option<ProviderRegistry>,
+        mcp_connections_override: Option<HashMap<String, Arc<Mutex<McpConnection>>>>,
     ) -> Result<Self> {
         let http_client = reqwest::Client::builder()
             .build()
             .context("Failed to build HTTP client for Agent")?;
 
-        let mut provider_registry = ProviderRegistry::new(config.default_provider.clone());
-        // Use into_iter to consume the config
-        for (id, provider_conf) in config.providers {
-            let api_key = if !provider_conf.api_key_env_var.is_empty() {
-                 match std::env::var(&provider_conf.api_key_env_var) {
-                     Ok(key) => key,
-                     Err(e) => {
-                         warn!(provider_id = %id, env_var = %provider_conf.api_key_env_var, error = %e, "API key environment variable not set or invalid");
-                         String::new() // Use empty string if env var is missing/invalid
-                     }
-                 }
-            } else {
-                String::new()
-            };
-            
-            // Extract model_config before matching
-            let model_config = provider_conf.model_config; 
-            
-            let provider: Box<dyn Provider> = match provider_conf.provider_type.as_str() {
-                "gemini" => Box::new(crate::providers::gemini::GeminiProvider::new(
-                    model_config, // Pass the extracted ModelConfig
-                    http_client.clone(),
-                    api_key,
-                )),
-                 "ollama" => Box::new(crate::providers::ollama::OllamaProvider::new(
-                    model_config, // Pass the extracted ModelConfig
-                    http_client.clone(),
-                    api_key,
-                )),
-                _ => return Err(anyhow!("Unsupported provider type: {}", provider_conf.provider_type)),
-            };
-            provider_registry.register(id, provider);
-        }
+        // Use override if provided, otherwise build from config
+        let provider_registry = match provider_registry_override {
+            Some(registry) => registry,
+            None => {
+                let mut registry = ProviderRegistry::new(config.default_provider.clone());
+                for (id, provider_conf) in config.providers {
+                    let api_key = if !provider_conf.api_key_env_var.is_empty() {
+                         match std::env::var(&provider_conf.api_key_env_var) {
+                             Ok(key) => key,
+                             Err(e) => {
+                                 warn!(provider_id = %id, env_var = %provider_conf.api_key_env_var, error = %e, "API key environment variable not set or invalid");
+                                 String::new()
+                             }
+                         }
+                    } else {
+                        String::new()
+                    };
+                    let model_config = provider_conf.model_config;
+                    let provider: Box<dyn Provider> = match provider_conf.provider_type.as_str() {
+                        "gemini" => Box::new(crate::providers::gemini::GeminiProvider::new(
+                            model_config,
+                            http_client.clone(),
+                            api_key,
+                        )),
+                         "ollama" => Box::new(crate::providers::ollama::OllamaProvider::new(
+                            model_config,
+                            http_client.clone(),
+                            api_key,
+                        )),
+                        _ => return Err(anyhow!("Unsupported provider type: {}", provider_conf.provider_type)),
+                    };
+                    registry.register(id, provider);
+                }
+                registry
+            }
+        };
 
-        let mut mcp_connections = HashMap::new();
-        for (id, server_conf) in config.mcp_servers {
-            let connection = McpConnection::new(server_conf.command, server_conf.args);
-            mcp_connections.insert(id, Arc::new(Mutex::new(connection)));
-        }
+        // Use override if provided, otherwise build from config
+        let mcp_connections = match mcp_connections_override {
+            Some(connections) => connections,
+            None => {
+                let mut connections = HashMap::new();
+                for (id, server_conf) in config.mcp_servers {
+                    let connection = McpConnection::new(server_conf.command, server_conf.args);
+                    connections.insert(id, Arc::new(Mutex::new(connection)));
+                }
+                connections
+            }
+        };
 
         let initial_state = AgentState::new(initial_task);
         let default_provider_id = provider_registry.default_provider_id().to_string();
@@ -173,7 +187,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         let conn_mutex = self.mcp_connections.get(server_id)
             .ok_or_else(|| anyhow!("MCP server config not found: {}", server_id))?;
         let conn_guard = conn_mutex.lock().await;
-        let ct = tokio_util::sync::CancellationToken::new(); 
+        let ct = tokio_util::sync::CancellationToken::new();
         conn_guard.establish_connection_external(DummyClientService, ct).await
     }
 
@@ -194,7 +208,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
 
     pub async fn call_mcp_tool(&self, server_id: &str, tool_name: &str, args: Value) -> Result<Value> {
         self.ensure_mcp_connection(server_id).await?;
-        let conn_mutex = self.mcp_connections.get(server_id).unwrap(); 
+        let conn_mutex = self.mcp_connections.get(server_id).unwrap();
         let conn = conn_mutex.lock().await;
         debug!(server = %server_id, tool = %tool_name, "Calling MCP tool");
         conn.call_tool(tool_name, args).await
@@ -202,7 +216,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
 
      pub async fn get_mcp_resource(&self, server_id: &str, uri: &str) -> Result<Value> {
         self.ensure_mcp_connection(server_id).await?;
-        let conn_mutex = self.mcp_connections.get(server_id).unwrap(); 
+        let conn_mutex = self.mcp_connections.get(server_id).unwrap();
         let conn = conn_mutex.lock().await;
         debug!(server = %server_id, uri = %uri, "Getting MCP resource");
         conn.get_resource(uri).await
@@ -239,13 +253,13 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     self.state = state_from_strategy;
                     let mcp_tools = self.list_mcp_tools().await
                         .map_err(|e| AgentError::Mcp(e.context("Failed to list MCP tools")))?;
-                    
+
                     let tool_definitions: Vec<ToolDefinition> = mcp_tools.iter().map(|mcp_tool| {
-                        let schema_map = mcp_tool.input_schema.as_ref(); 
+                        let schema_map = mcp_tool.input_schema.as_ref();
                         ToolDefinition {
                             name: mcp_tool.name.to_string(),
                             description: mcp_tool.description.clone().map(|s| s.to_string()).unwrap_or_default(),
-                            parameters: mcp_schema_to_tool_params(Some(schema_map)), 
+                            parameters: mcp_schema_to_tool_params(Some(schema_map)),
                         }
                     }).collect();
 
@@ -255,9 +269,9 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         num_tools = tool_definitions.len(),
                         "Sending request to AI provider."
                     );
-                    
+
                     let api_response = self.get_completion(
-                        self.state.messages.clone(), 
+                        self.state.messages.clone(),
                         if tool_definitions.is_empty() { None } else { Some(&tool_definitions) }
                     ).await
                         .map_err(|e| AgentError::Api(e.context("API call failed during agent run")))?;
@@ -299,13 +313,13 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 continue;
                             }
                         };
-                        
+
                         match self.call_mcp_tool(server_id, tool_name, args).await {
                             Ok(output_value) => {
                                 info!(tool_call_id = %tool_call.id, tool_name = %tool_name, server_id = %server_id, "MCP Tool executed successfully.");
                                 let output_str = match output_value {
                                     Value::String(s) => s,
-                                    Value::Object(map) if map.contains_key("text") => { 
+                                    Value::Object(map) if map.contains_key("text") => {
                                         map.get("text").and_then(Value::as_str).unwrap_or("").to_string()
                                     }
                                     Value::Array(arr) if arr.is_empty() => "<empty result>".to_string(),
