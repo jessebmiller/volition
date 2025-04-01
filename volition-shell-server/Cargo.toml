@@ -1,0 +1,13 @@
+[package]
+name = "volition-shell-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+rmcp = { workspace = true, features = ["server", "transport-io"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7"
+async-trait = { workspace = true } # Might need this if using async fn in trait impl later
+duct = { workspace = true } # For running shell commands

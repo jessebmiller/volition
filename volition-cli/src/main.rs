@@ -1,55 +1,54 @@
 // volition-cli/src/main.rs
 mod models;
 mod rendering;
-mod tools;
 
-// Simplified imports
 use anyhow::{anyhow, Context, Result};
 use colored::*;
-// Break down the std use statement
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf; // Removed unused Path
+use std::path::PathBuf;
+use std::process::ExitCode;
 use std::sync::Arc;
-// use tokio::time::Duration; // Removed unused Duration
 
-// Import items directly from volition_agent_core
-use volition_agent_core::async_trait;
-use volition_agent_core::config::RuntimeConfig;
-use volition_agent_core::errors::AgentError;
-use volition_agent_core::strategies::complete_task::CompleteTaskStrategy;
-use volition_agent_core::strategies::conversation::ConversationStrategy;
-use volition_agent_core::{Agent, AgentState, ToolProvider, UserInteraction};
-
+use volition_agent_core::{
+    agent::Agent,
+    config::AgentConfig,
+    errors::AgentError,
+    strategies::{
+        complete_task::CompleteTaskStrategy,
+        // Removed: conversation::ConversationStrategy,
+        plan_execute::PlanExecuteStrategy,
+    },
+    UserInteraction, async_trait, ChatMessage,
+};
 
 use crate::models::cli::Cli;
 use crate::rendering::print_formatted;
-use crate::tools::CliToolProvider;
 
 use clap::Parser;
-// use reqwest::Client; // Removed unused Client
 use time::macros::format_description;
-use tracing::{debug, error, info, trace, Level};
-use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
+use tracing::{debug, error, info, trace, Level, warn};
+// Removed Layer from imports
+use tracing_subscriber::{fmt, fmt::time::LocalTime, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 const CONFIG_FILENAME: &str = "Volition.toml";
+const LOG_FILE_NAME: &str = "volition-app.log"; // Define log file name
 
-/// Simple struct to handle CLI user interactions.
+type CliAgent = Agent<CliUserInteraction>;
+type CliStrategy = Box<dyn volition_agent_core::Strategy<CliUserInteraction> + Send + Sync>;
+
 struct CliUserInteraction;
 
 #[async_trait]
 impl UserInteraction for CliUserInteraction {
-    /// Asks the user a question via the command line.
     async fn ask(&self, prompt: String, _options: Vec<String>) -> Result<String> {
         print!("{} ", prompt.yellow().bold());
         io::stdout().flush().context("Failed to flush stdout")?;
-
         let mut buffer = String::new();
         io::stdin()
             .read_line(&mut buffer)
             .context("Failed to read line from stdin")?;
-
         Ok(buffer.trim().to_string())
     }
 }
@@ -75,72 +74,105 @@ fn find_project_root() -> Result<PathBuf> {
     }
 }
 
-fn load_cli_config() -> Result<(RuntimeConfig, PathBuf)> {
+fn load_cli_config() -> Result<(AgentConfig, PathBuf)> {
     let project_root = find_project_root()?;
     let config_path = project_root.join(CONFIG_FILENAME);
     let config_toml_content = fs::read_to_string(&config_path)
         .with_context(|| format!("Failed to read project config file: {:?}", config_path))?;
-    let api_key = env::var("API_KEY")
-        .context("Failed to read API_KEY environment variable. Please ensure it is set.")?;
-
-    let runtime_config = RuntimeConfig::from_toml_str(&config_toml_content, api_key)
+    let agent_config = AgentConfig::from_toml_str(&config_toml_content)
         .context("Failed to parse or validate configuration content")?;
-
-    Ok((runtime_config, project_root))
+    Ok((agent_config, project_root))
 }
 
 fn print_welcome_message() {
     println!(
-        "\n{}",
-        "Volition - AI Assistant".cyan().bold()
+        "
+{}",
+        "Volition - AI Assistant (MCP Refactor)".cyan().bold()
     );
     println!(
-        "{}\n{}",
+        "{}
+{}",
         "Type 'exit' or press Enter on an empty line to quit.".cyan(),
         "Type 'new' to start a fresh conversation.".cyan()
     );
     println!();
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
-    let cli = Cli::parse();
+fn select_base_strategy(config: &AgentConfig) -> CliStrategy {
+    let strategy_name = "plan_execute"; // Hardcoded for now
 
-    let default_level = match cli.verbose {
-        0 => Level::INFO,
-        1 => Level::DEBUG,
-        _ => Level::TRACE,
-    };
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::default().add_directive(default_level.into()));
-    let time_format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
-    let local_timer = LocalTime::new(time_format);
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
-        .with_target(false)
-        .with_timer(local_timer)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-    info!(
-        "Logging initialized. Level determined by RUST_LOG or -v flags (default: {}).",
-        default_level
-    );
-    debug!("Debug logging enabled.");
-    trace!("Trace logging enabled.");
+    if strategy_name == "plan_execute" {
+        match config.strategies.get(strategy_name) {
+            Some(strategy_config)
+                if strategy_config.planning_provider.is_some()
+                    && strategy_config.execution_provider.is_some() =>
+            {
+                info!("Using PlanExecute strategy with provided config.");
+                Box::new(PlanExecuteStrategy::new(strategy_config.clone()))
+            }
+            _ => {
+                warn!("'plan_execute' strategy selected but config is missing or incomplete. Falling back to 'CompleteTask'.");
+                info!("Using CompleteTask strategy.");
+                // Clippy fix: Remove ::default()
+                Box::new(CompleteTaskStrategy)
+            }
+        }
+    } else {
+        info!("Using CompleteTask strategy.");
+        // Clippy fix: Remove ::default()
+        Box::new(CompleteTaskStrategy)
+    }
+}
 
-    let (config, project_root) =
-        load_cli_config().context("Failed to load configuration and find project root")?;
+async fn run_non_interactive(
+    task: String,
+    config: AgentConfig,
+    project_root: PathBuf,
+    ui_handler: Arc<CliUserInteraction>,
+) -> Result<()> {
+    info!(task = %task, "Running non-interactive task.");
 
-    let tool_provider: Arc<dyn ToolProvider> = Arc::new(CliToolProvider::new());
-    let ui_handler = Arc::new(CliUserInteraction);
+    let base_strategy = select_base_strategy(&config);
 
+    // Call Agent::new with None history
+    let mut agent = CliAgent::new(
+        config.clone(),
+        ui_handler,
+        base_strategy,
+        None, // history
+        task, // current_user_input
+        None, // provider_registry_override
+        None, // mcp_connections_override
+    )
+    .map_err(|e| AgentError::Config(format!("Failed to create agent instance: {}", e)))?;
+
+    match agent.run(&project_root).await {
+        Ok((final_message, _updated_state)) => {
+            info!("Agent session completed successfully.");
+            println!("{}", "--- Agent Response ---".bold());
+            println!("{}", final_message);
+            println!("----------------------");
+            Ok(())
+        }
+        Err(e) => {
+            error!("Agent run encountered an error: {}", e);
+            Err(anyhow!(e))
+        }
+    }
+}
+
+async fn run_interactive(
+    config: AgentConfig,
+    project_root: PathBuf,
+    ui_handler: Arc<CliUserInteraction>
+) -> Result<()> {
     print_welcome_message();
-
-    let mut conversation_state: Option<AgentState> = None;
+    let mut conversation_messages: Option<Vec<ChatMessage>> = None;
 
     loop {
-        println!("\n{}", "How can I help you?".cyan());
+        println!("
+{}", "How can I help you?".cyan());
         print!("{} ", ">".green().bold());
         io::stdout().flush()?;
 
@@ -154,34 +186,28 @@ async fn main() -> Result<()> {
 
         if trimmed_input.to_lowercase() == "new" {
             println!("{}", "Starting a new conversation...".cyan());
-            conversation_state = None;
+            conversation_messages = None;
             continue;
         }
 
-        let mut agent = {
-            let inner_strategy = Box::new(CompleteTaskStrategy::new());
-            let conversation_strategy: Box<dyn volition_agent_core::Strategy + Send + Sync> =
-                if let Some(state) = conversation_state.take() {
-                    info!("Continuing conversation.");
-                    Box::new(ConversationStrategy::with_state(inner_strategy, state))
-                } else {
-                    info!("Starting new conversation.");
-                    Box::new(ConversationStrategy::new(inner_strategy))
-                };
+        let user_message = trimmed_input.to_string();
+        let agent_strategy = select_base_strategy(&config);
 
-            Agent::new(
-                config.clone(),
-                Arc::clone(&tool_provider),
-                Arc::clone(&ui_handler),
-                conversation_strategy,
-                trimmed_input.to_string(),
-            )
-            .map_err(|e| AgentError::Other(format!("Failed to create agent instance: {}", e)))?
-        };
+        // Agent::new now handles history initialization via AgentState::new_turn
+        let mut agent = CliAgent::new(
+            config.clone(),
+            Arc::clone(&ui_handler),
+            agent_strategy,
+            conversation_messages.take(),
+            user_message.clone(),
+            None, // provider_registry_override
+            None, // mcp_connections_override
+        )
+        .map_err(|e| AgentError::Config(format!("Failed to create agent instance: {}", e)))?;
 
         match agent.run(&project_root).await {
             Ok((final_message, updated_state)) => {
-                info!("Agent session completed successfully for user input.");
+                info!("Agent session completed successfully.");
                 println!("{}", "--- Agent Response ---".bold());
                 if let Err(e) = print_formatted(&final_message) {
                     error!(
@@ -193,19 +219,100 @@ async fn main() -> Result<()> {
                     println!();
                 }
                 println!("----------------------");
-
-                conversation_state = Some(updated_state);
+                // Always store the message history returned by the agent
+                conversation_messages = Some(updated_state.messages);
             }
             Err(e) => {
                 println!(
-                    "{}: {:?}\n",
+                    "{}: {}
+",
                     "Agent run encountered an error".red(),
                     e
                 );
+                conversation_messages = None;
             }
         }
     }
-
-    println!("\n{}", "Thanks!".cyan());
+    println!("
+{}", "Thanks!".cyan());
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    dotenvy::dotenv().ok();
+    let cli = Cli::parse();
+
+    // Determine log level from verbosity flags or RUST_LOG
+    let default_level = match cli.verbose {
+        0 => Level::INFO,
+        1 => Level::DEBUG,
+        _ => Level::TRACE,
+    };
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::default().add_directive(default_level.into()));
+
+    // Setup file logging (non-blocking)
+    let log_dir = env::temp_dir();
+    let log_path = log_dir.join(LOG_FILE_NAME);
+    let file_appender = tracing_appender::rolling::never(log_dir, LOG_FILE_NAME);
+    let (non_blocking_writer, _guard) = tracing_appender::non_blocking(file_appender);
+    let file_layer = fmt::layer()
+        .with_writer(non_blocking_writer)
+        .with_ansi(false) // No colors in file
+        .with_target(true) // Include module targets
+        .with_line_number(true); // Include line numbers
+
+    // Setup stderr logging
+    let time_format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
+    let local_timer = LocalTime::new(time_format);
+    let stderr_layer = fmt::layer()
+        .with_writer(io::stderr) // Log to stderr
+        .with_timer(local_timer)
+        .with_target(false); // Don't include module targets in stderr for cleaner output
+
+    // Combine layers and initialize subscriber
+    if let Err(e) = tracing_subscriber::registry()
+        .with(env_filter) // Apply the filter to all layers
+        .with(stderr_layer)
+        .with(file_layer)
+        .try_init() // Use try_init to avoid panic if already initialized
+    {
+         eprintln!("Failed to set global tracing subscriber: {}", e);
+         return ExitCode::FAILURE;
+    }
+
+    info!(
+        "Logging initialized. Level determined by RUST_LOG or -v flags (default: {}). Logging to stderr and {}",
+        default_level,
+        log_path.display() // Log the file path
+    );
+    debug!("Debug logging enabled.");
+    trace!("Trace logging enabled.");
+
+
+    let (config, project_root) = match load_cli_config() {
+         Ok(c) => c,
+         Err(e) => {
+              error!("Failed to load configuration: {}", e);
+              return ExitCode::FAILURE;
+         }
+    };
+
+    let ui_handler: Arc<CliUserInteraction> = Arc::new(CliUserInteraction);
+
+    let result = if let Some(task) = cli.task {
+        // Pass None history for non-interactive mode
+        run_non_interactive(task, config, project_root, ui_handler).await
+    } else {
+        run_interactive(config, project_root, ui_handler).await
+    };
+
+    match result {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Operation failed: {}", e);
+            ExitCode::FAILURE
+        }
+    }
 }

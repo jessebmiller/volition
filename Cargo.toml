@@ -4,6 +4,10 @@
 members = [
     "volition-cli",
     "volition-agent-core",
+    "volition-filesystem-server",
+    "volition-shell-server",
+    "volition-git-server",
+    "volition-search-server", # Added search server crate
 ]
 resolver = "2"
 
@@ -35,6 +39,12 @@ url = "2.5"
 # Added for core tools
 ignore = "0.4"
 regex = "1"
+
+# MCP Dependency (needed by servers and core)
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main" }
+
+# Git Server Dependency
+git2 = "0.19"
 
 # Dev dependencies needed by members
 tempfile = "3.6"

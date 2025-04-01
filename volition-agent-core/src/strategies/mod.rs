@@ -1,28 +1,31 @@
+// volition-agent-core/src/strategies/mod.rs
 use crate::errors::AgentError;
-use crate::{AgentState, ApiResponse, DelegationResult, ToolResult};
+use crate::{AgentState, ApiResponse, DelegationResult, ToolResult, UserInteraction};
 
 pub mod complete_task;
-pub mod conversation; // <-- ADDED
+// Removed: mod conversation;
+pub mod plan_execute;
 
-pub use conversation::ConversationStrategy; // <-- ADDED
+// Removed: pub use conversation::ConversationStrategy;
+pub use plan_execute::PlanExecuteStrategy;
+pub use crate::config::StrategyConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StrategyType {
     CompleteTask,
-    PlanReviseExecute, // Conceptual for now
-    Conversation,      // <-- ADDED (Optional, but good for clarity)
+    PlanReviseExecute,
+    // Removed: Conversation,
+    PlanExecute,
 }
 
 #[derive(Debug, Clone)]
 pub struct DelegationInput {
     pub task_description: String,
-    // Potentially add context, constraints, etc.
 }
 
 #[derive(Debug, Clone)]
 pub struct DelegationOutput {
     pub result: String,
-    // Potentially add artifacts, logs, etc.
 }
 
 #[derive(Debug)]
@@ -33,26 +36,26 @@ pub enum NextStep {
     Completed(String),
 }
 
-pub trait Strategy: Send + Sync {
+pub trait Strategy<UI: UserInteraction + 'static>: Send + Sync {
     fn name(&self) -> &'static str;
 
-    fn initialize_interaction(&self, state: &mut AgentState) -> Result<NextStep, AgentError>;
+    fn initialize_interaction(&mut self, agent_state: &mut AgentState) -> Result<NextStep, AgentError>;
 
     fn process_api_response(
-        &self,
-        state: &mut AgentState,
+        &mut self,
+        agent_state: &mut AgentState,
         response: ApiResponse,
     ) -> Result<NextStep, AgentError>;
 
     fn process_tool_results(
-        &self,
-        state: &mut AgentState,
+        &mut self,
+        agent_state: &mut AgentState,
         results: Vec<ToolResult>,
     ) -> Result<NextStep, AgentError>;
 
     fn process_delegation_result(
-        &self,
-        state: &mut AgentState,
+        &mut self,
+        agent_state: &mut AgentState,
         result: DelegationResult,
     ) -> Result<NextStep, AgentError>;
 }

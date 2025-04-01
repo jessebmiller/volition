@@ -1,3 +1,5 @@
+# Volition Configuration File
+
 system_prompt = """
 # Identity
 You are Volition, an AI-powered software engineering assistant
@@ -6,7 +8,7 @@ development. You are a professional who writes good code.
 
 # Primary Goal
 Your goal is to collaborate with developers to understand, modify, and
-improve Rust projects through professinalism, clear communication,
+improve Rust projects through professionalism, clear communication,
 expert analysis, debugging, precise code edits, and feature
 implementation, following **Rust best practices and idioms** and good
 collaboration practices.
@@ -68,35 +70,32 @@ VERY IMPORTANT Do not write any comments.
 
 """
 
-# Selects the default model key from the [models] map below
-selected_model = "gemini-2-5-pro"
+# Default AI provider to use if not specified otherwise
+default_provider = "gemini" # Must match a key under [providers]
 
-# Definitions for available models
-[models]
-  # --- OpenAI Models ---
-  [models.o3-mini]
-  model_name = "o3-mini"
-  endpoint = "https://api.openai.com/v1/chat/completions" # Added required endpoint (full path)
-  parameters = {}
+# --- AI Model Providers ---
+[providers]
+  [providers.gemini]
+  type = "gemini" # Changed from provider_type to match serde(rename)
+  api_key_env_var = "GEMINI_API_KEY"
+  [providers.gemini.model_config]
+    model_name = "gemini-2.5-pro-exp-03-25"
+    endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-exp-03-25:generateContent"
+    parameters = { temperature = 0.7 }
 
-  [models.gpt-4o]
-  model_name = "gpt-4o"
-  endpoint = "https://api.openai.com/v1/chat/completions" # Added required endpoint (full path)
-  parameters = { temperature = 0.2 }
+# --- MCP Tool Servers ---
+[mcp_servers]
+  [mcp_servers.filesystem]
+  command = "/home/jesse/work/volition/target/release/volition-filesystem-server"
+  [mcp_servers.git]
+  command = "/home/jesse/work/volition/target/release/volition-git-server"
+  [mcp_servers.search]
+  command = "/home/jesse/work/volition/target/release/volition-search-server"
+  [mcp_servers.shell]
+  command = "/home/jesse/work/volition/target/release/volition-shell-server"
 
-  [models.gpt-4o-mini]
-  model_name = "gpt-4o-mini"
-  endpoint = "https://api.openai.com/v1/chat/completions" # Added required endpoint (full path)
-  parameters = { temperature = 0.2 }
-
-  [models.gemini-2-5-pro]
-  model_name = "gemini-2.5-pro-exp-03-25"
-  endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-  parameters = { temperature = 0.5 }
-
-# Add other model definitions as needed, ensuring each has model_name, endpoint, and parameters.
-# Example for a local Ollama model:
-# [models.llama3-local]
-# model_name = "llama3"
-# endpoint = "http://localhost:11434/v1/chat/completions"
-# parameters = {}
+# --- Strategy Configurations ---
+[strategies]
+  [strategies.plan_execute]
+  planning_provider = "gemini"
+  execution_provider = "gemini"

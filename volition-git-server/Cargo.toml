@@ -1,0 +1,13 @@
+[package]
+name = "volition-git-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+rmcp = { workspace = true, features = ["server", "transport-io"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7"
+async-trait = { workspace = true }
+git2 = "0.19" # Added git2 crate
