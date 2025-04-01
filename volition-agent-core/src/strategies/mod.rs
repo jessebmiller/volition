@@ -1,7 +1,6 @@
 // volition-agent-core/src/strategies/mod.rs
 use crate::errors::AgentError;
-// Import Agent struct correctly
-use crate::agent::Agent;
+// Removed unused Agent import
 use crate::{AgentState, ApiResponse, DelegationResult, ToolResult, UserInteraction};
 
 pub mod complete_task;
@@ -38,7 +37,6 @@ pub enum NextStep {
     Completed(String),
 }
 
-// Add generic parameter <UI> to match Agent<UI>
 pub trait Strategy<UI: UserInteraction + 'static>: Send + Sync {
     fn name(&self) -> &'static str;
 

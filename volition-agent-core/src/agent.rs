@@ -1,5 +1,5 @@
 // volition-agent-core/src/agent.rs
-use crate::config::{AgentConfig, ProviderInstanceConfig}; // Import ProviderInstanceConfig
+use crate::config::AgentConfig; // Removed ProviderInstanceConfig
 use crate::errors::AgentError;
 use crate::mcp::McpConnection;
 use crate::models::chat::{ApiResponse, ChatMessage};

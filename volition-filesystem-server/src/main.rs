@@ -1,5 +1,5 @@
 // volition-servers/filesystem/src/main.rs
-use anyhow::{anyhow, Result};
+// Removed unused anyhow import
 use rmcp::{
     model::*, // Import model::*
     service::*,
@@ -186,25 +186,19 @@ impl Service<RoleServer> for FileSystemServer {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> { // Return Box<dyn Error>
     let server = FileSystemServer::new();
     let transport = io::stdio();
     let ct = CancellationToken::new();
 
-    // Print startup message to stderr
     eprintln!("Starting filesystem MCP server...");
 
-    // Run the server loop. This might return if the client disconnects.
     if let Err(e) = server.serve_with_ct(transport, ct.clone()).await {
-         eprintln!("Server loop failed: {}", e); // Log error to stderr
-         // Decide if the error is fatal or if we should wait for cancellation anyway
-         // For now, we'll proceed to wait for cancellation.
+         eprintln!("Server loop failed: {}", e);
     }
     
-    // Keep the process alive until cancellation is requested.
     ct.cancelled().await;
 
-    // Print stopped message to stderr
     eprintln!("Filesystem MCP server stopped.");
 
     Ok(())

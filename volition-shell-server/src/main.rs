@@ -1,17 +1,15 @@
 // volition-servers/shell/src/main.rs
-use anyhow::{anyhow, Result};
+// Removed unused anyhow import
 use rmcp::{
-    model::{self, *}, // Corrected import for ErrorData
+    model::{self, *}, // Keep model::*
     service::*,
     transport::io,
     Error as McpError,
-    // ErrorData, // Removed incorrect import
 };
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-// Removed unused Output import
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 use duct;
@@ -45,7 +43,7 @@ impl ShellServer {
         let shell_schema = create_schema_object(
             vec![
                 ("command", json!({ "type": "string", "description": "The shell command to execute." })),
-                ("workdir", json!({ "type": "string", "description": "Optional working directory." })), // Removed backslash
+                ("workdir", json!({ "type": "string", "description": "Optional working directory." })), 
             ],
             vec!["command"],
         );
@@ -59,7 +57,7 @@ impl ShellServer {
         );
         Self {
             peer: Arc::new(Mutex::new(None)),
-            tools: Arc::new(tools), // Removed backslash
+            tools: Arc::new(tools),
         }
     }
 
@@ -123,7 +121,7 @@ impl Service<RoleServer> for ShellServer {
     fn set_peer(&mut self, peer: Peer<RoleServer>) {
         *self.peer.lock().unwrap() = Some(peer);
     }
-    // Apply the fix suggested by the compiler - NOTE: This was likely incorrect, reverting to Pin<Box<...>>
+    
     #[allow(refining_impl_trait)]
     fn handle_request(
         &self,
@@ -143,14 +141,14 @@ impl Service<RoleServer> for ShellServer {
                     if params.name == "shell" {
                         self_clone.handle_shell_call(params).await.map(ServerResult::CallToolResult)
                     } else {
-                        Err(McpError::method_not_found::<CallToolRequestMethod>()) // Removed backslash
+                        Err(McpError::method_not_found::<CallToolRequestMethod>())
                     }
                 }
                 _ => Err(McpError::method_not_found::<InitializeResultMethod>()),
             }
         })
     }
-    // Apply the fix suggested by the compiler - NOTE: This was likely incorrect, reverting to Pin<Box<...>>
+    
     #[allow(refining_impl_trait)]
     fn handle_notification(
         &self,
@@ -161,25 +159,19 @@ impl Service<RoleServer> for ShellServer {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> { // Return Box<dyn Error>
     let server = ShellServer::new();
     let transport = io::stdio();
     let ct = CancellationToken::new();
     
-    // Print startup message to stderr
     eprintln!("Starting shell MCP server...");
     
-    // Run the server loop. This might return if the client disconnects.
     if let Err(e) = server.serve_with_ct(transport, ct.clone()).await {
-         eprintln!("Server loop failed: {}", e); // Log error to stderr
-         // Decide if the error is fatal or if we should wait for cancellation anyway
-         // For now, we'll proceed to wait for cancellation.
+         eprintln!("Server loop failed: {}", e); 
     }
         
-    // Keep the process alive until cancellation is requested.
     ct.cancelled().await;
     
-    // Print stopped message to stderr
     eprintln!("Shell MCP server stopped.");
     
     Ok(())

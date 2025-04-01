@@ -1,10 +1,11 @@
 // volition-agent-core/src/strategies/complete_task.rs
-use crate::agent::Agent;
+// Removed unused Agent import
 use crate::errors::AgentError;
-use crate::models::chat::{ApiResponse, ChatMessage};
+// Removed unused ChatMessage import
+use crate::models::chat::ApiResponse;
 use crate::strategies::{NextStep, Strategy};
 use crate::UserInteraction;
-use anyhow::{anyhow, Result}; // Import anyhow
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use tracing::info;
 

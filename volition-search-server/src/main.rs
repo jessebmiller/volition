@@ -1,7 +1,7 @@
 // volition-servers/search/src/main.rs
-use anyhow::{anyhow, Result};
+// Removed unused anyhow import
 use rmcp::{
-    model::{self, *}, // Import model module
+    model::{self, *}, // Keep model::*
     service::*,
     transport::io,
     Error as McpError,
@@ -152,7 +152,6 @@ impl Service<RoleServer> for SearchServer {
         *self.peer.lock().unwrap() = Some(peer);
     }
 
-    // Apply the fix suggested by the compiler - NOTE: This was likely incorrect, reverting to Pin<Box<...>>
     #[allow(refining_impl_trait)]
     fn handle_request(
         &self,
@@ -180,7 +179,6 @@ impl Service<RoleServer> for SearchServer {
         })
     }
 
-    // Apply the fix suggested by the compiler - NOTE: This was likely incorrect, reverting to Pin<Box<...>>
     #[allow(refining_impl_trait)]
     fn handle_notification(
         &self,
@@ -191,25 +189,19 @@ impl Service<RoleServer> for SearchServer {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> { // Return Box<dyn Error>
     let server = SearchServer::new();
     let transport = io::stdio();
     let ct = CancellationToken::new();
 
-    // Print startup message to stderr
     eprintln!("Starting search MCP server...");
 
-    // Run the server loop. This might return if the client disconnects.
     if let Err(e) = server.serve_with_ct(transport, ct.clone()).await {
-         eprintln!("Server loop failed: {}", e); // Log error to stderr
-         // Decide if the error is fatal or if we should wait for cancellation anyway
-         // For now, we'll proceed to wait for cancellation.
+         eprintln!("Server loop failed: {}", e);
     }
     
-    // Keep the process alive until cancellation is requested.
     ct.cancelled().await;
 
-    // Print stopped message to stderr
     eprintln!("Search MCP server stopped.");
 
     Ok(())

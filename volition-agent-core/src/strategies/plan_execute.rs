@@ -1,12 +1,12 @@
 // volition-agent-core/src/strategies/plan_execute.rs
-use crate::agent::Agent; // Corrected import path
+// Removed unused Agent import
 use crate::errors::AgentError;
 use crate::models::chat::{ApiResponse, ChatMessage};
 use crate::strategies::{NextStep, Strategy, StrategyConfig};
 use crate::UserInteraction;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use serde_json::Value;
+// Removed unused Value import
 use tracing::{debug, info, instrument};
 
 #[derive(Debug, PartialEq, Clone, Copy)]

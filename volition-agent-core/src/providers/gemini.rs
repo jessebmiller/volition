@@ -7,7 +7,7 @@ use crate::models::tools::ToolDefinition;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use reqwest::Client;
-use tracing::{info, warn, error, trace}; // Added info, error, trace
+use tracing::{error, trace}; // Removed info, warn
 
 #[derive(Clone)]
 pub struct GeminiProvider {
