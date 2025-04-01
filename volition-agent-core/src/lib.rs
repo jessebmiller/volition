@@ -55,7 +55,6 @@ pub trait UserInteraction: Send + Sync {
 
 // --- Structs for Strategy Interaction ---
 
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AgentState {
     pub messages: Vec<ChatMessage>,
@@ -83,7 +82,6 @@ impl AgentState {
 
     // Keep the old `new` for compatibility? Or rename? Let's remove it for now.
     // pub fn new(initial_task: String) -> Self { ... }
-
 
     pub fn add_message(&mut self, message: ChatMessage) {
         self.messages.push(message);
@@ -120,7 +118,6 @@ pub struct DelegationResult {
 }
 
 // --- Old AgentOutput Structs (Unused by MCP agent) ---
-
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AgentOutput {
