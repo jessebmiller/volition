@@ -61,7 +61,7 @@ impl GitServer {
                 input_schema: diff_schema,
             },
         );
-        
+
         let status_schema = create_schema_object(
             vec![path_schema_prop.clone()],
             vec![], // No required args for status
