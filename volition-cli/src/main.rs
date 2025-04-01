@@ -188,14 +188,14 @@ async fn run_interactive(
 
         let user_message = trimmed_input.to_string();
         let agent_strategy = select_base_strategy(&config);
-        
+
         // Agent::new now handles history initialization via AgentState::new_turn
         let mut agent = CliAgent::new(
             config.clone(),
             Arc::clone(&ui_handler),
-            agent_strategy, // Pass the base strategy directly
-            conversation_messages.take(), // Pass the stored history (or None)
-            user_message.clone(), // Pass the current user input
+            agent_strategy,
+            conversation_messages.take(),
+            user_message.clone(),
             None, // provider_registry_override
             None, // mcp_connections_override
         )
