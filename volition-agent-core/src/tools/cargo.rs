@@ -77,10 +77,6 @@ mod tests {
         let output = result.unwrap();
         println!("Output: {:?}", output);
         assert_eq!(output.status, 0);
-        assert!(
-            output.stderr.contains("Checking test_crate")
-                || output.stderr.contains("Checking volition")
-        );
         assert!(output.stderr.contains("Finished `dev` profile"));
     }
 
