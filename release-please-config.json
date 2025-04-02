@@ -10,30 +10,21 @@
   "packages": {
     "volition-cli": {
       "release-type": "rust",
-      "release-as": "0.1.0"
     },
     "volition-core": {
       "release-type": "rust",
-      "release-as": "0.1.0"
     },
     "volition-filesystem-server": {
       "release-type": "rust",
-      "release-as": "0.1.0"
     },
     "volition-shell-server": {
       "release-type": "rust",
-      "release-as": "0.1.0"
     },
     "volition-git-server": {
       "release-type": "rust",
-      "release-as": "0.1.0"
     },
     "volition-search-server": {
       "release-type": "rust",
-      "release-as": "0.1.0"
     }
-  },
-  "release-as": "0.1.0",
-  "bump-minor-pre-major": true,
-  "bump-patch-for-minor-pre-major": true
+  }
 }
