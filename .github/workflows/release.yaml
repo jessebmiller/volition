@@ -13,6 +13,9 @@ on:
 jobs:
   release:
     environment: release
-    uses: semantic-release-action/rust/.github/workflows/release-library.yml@v5
-    secrets:
-      cargo-registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Semantic Release
+        uses: semantic-release-action/rust/.github/workflows/release-library.yml@v5
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
