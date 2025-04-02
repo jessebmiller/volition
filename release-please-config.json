@@ -8,11 +8,6 @@
   "draft": false,
   "prerelease": false,
   "packages": {
-    ".": {
-      "name": "volition",
-      "release-type": "rust",
-      "release-as": "0.1.0"
-    },
     "volition-cli": {
       "release-type": "rust",
       "release-as": "0.1.0"
