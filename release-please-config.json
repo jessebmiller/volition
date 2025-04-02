@@ -11,11 +11,6 @@
     ".": {
       "release-as": "0.1.0",
       "release-type": "rust",
-      "changelog-path": "CHANGELOG.md",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
-      "draft": false,
-      "prerelease": false
     },
     "volition-cli": {
       "release-type": "rust",
