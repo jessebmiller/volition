@@ -5,8 +5,8 @@ use std::io::{self, Write};
 use std::path::Path;
 use tracing::warn;
 
-use volition_agent_core::tools::shell::execute_shell_command as execute_shell_command_core;
-use volition_agent_core::tools::CommandOutput;
+use volition_core::tools::shell::execute_shell_command as execute_shell_command_core;
+use volition_core::tools::CommandOutput;
 
 pub async fn run_shell_command(command: &str, working_dir: &Path) -> Result<String> {
     print!(

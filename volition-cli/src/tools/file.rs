@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
-use volition_agent_core::tools::fs::write_file as write_file_core;
+use volition_core::tools::fs::write_file as write_file_core;
 
 /// Wrapper for write_file, includes CLI-specific confirmation for writes outside working_dir.
 pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) -> Result<String> {

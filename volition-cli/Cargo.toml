@@ -1,7 +1,7 @@
 [package]
 name = "volition-cli"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = { workspace = true }
 description = "An AI-powered software engineering assistant (CLI frontend)"
 repository = { workspace = true }
@@ -42,7 +42,7 @@ uuid = { workspace = true }
 url = { workspace = true }
 
 # Add path dependency to the core library
-volition-agent-core = { version = "0.1.0", path = "../volition-agent-core" }
+volition-core = { version = "0.1.0", path = "../volition-core" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

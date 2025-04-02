@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use volition_agent_core::tools::fs::{list_directory_contents, read_file as read_file_core};
-use volition_agent_core::{async_trait, models::tools::*, ToolProvider};
+use volition_core::tools::fs::{list_directory_contents, read_file as read_file_core};
+use volition_core::{async_trait, models::tools::*, ToolProvider};
 
 use super::{cargo, file, git, search, shell, user_input};
 

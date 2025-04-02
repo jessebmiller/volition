@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use tracing::warn;
 
-use volition_agent_core::tools::git::execute_git_command as execute_git_command_core;
-use volition_agent_core::tools::CommandOutput;
+use volition_core::tools::git::execute_git_command as execute_git_command_core;
+use volition_core::tools::CommandOutput;
 
 fn is_git_command_denied(command_name: &str, args: &[String]) -> bool {
     let denied_commands: HashSet<&str> = [

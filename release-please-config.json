@@ -21,7 +21,7 @@
       "release-type": "rust",
       "release-as": "0.1.0"
     },
-    "volition-agent-core": {
+    "volition-core": {
       "release-type": "rust",
       "release-as": "0.1.0"
     },

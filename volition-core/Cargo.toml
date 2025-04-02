@@ -1,5 +1,5 @@
 [package]
-name = "volition-agent-core"
+name = "volition-core"
 version = "0.1.0"
 edition = "2024"
 authors = { workspace = true }
@@ -11,7 +11,7 @@ keywords = ["ai", "library", "llm", "agent", "mcp"]
 categories = ["development-tools"]
 
 [lib]
-name = "volition_agent_core"
+name = "volition_core"
 path = "src/lib.rs"
 
 [dependencies]

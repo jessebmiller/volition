@@ -116,7 +116,7 @@ volition -vvv  # Trace level
 Volition is built with a modular architecture:
 
 - **volition-cli**: Command-line interface
-- **volition-agent-core**: Core agent library with providers, strategies, and tools
+- **volition-core**: Core agent library with providers, strategies, and tools
 - **volition-*-server**: MCP server implementations for different tool domains
 
 ## 🛠️ Development

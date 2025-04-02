@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use tracing::warn;
 
-use volition_agent_core::tools::cargo::execute_cargo_command as execute_cargo_command_core;
-use volition_agent_core::tools::CommandOutput;
+use volition_core::tools::cargo::execute_cargo_command as execute_cargo_command_core;
+use volition_core::tools::CommandOutput;
 
 fn get_denied_cargo_commands() -> HashSet<String> {
     let mut denied = HashSet::new();

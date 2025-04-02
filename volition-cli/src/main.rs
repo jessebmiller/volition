@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use volition_agent_core::{
+use volition_core::{
     agent::Agent,
     async_trait,
     config::AgentConfig,
@@ -39,7 +39,7 @@ const CONFIG_FILENAME: &str = "Volition.toml";
 const LOG_FILE_NAME: &str = "volition-app.log"; // Define log file name
 
 type CliAgent = Agent<CliUserInteraction>;
-type CliStrategy = Box<dyn volition_agent_core::Strategy<CliUserInteraction> + Send + Sync>;
+type CliStrategy = Box<dyn volition_core::Strategy<CliUserInteraction> + Send + Sync>;
 
 struct CliUserInteraction;
 
@@ -103,7 +103,7 @@ fn print_welcome_message() {
 }
 
 fn select_base_strategy(config: &AgentConfig) -> CliStrategy {
-    let strategy_name = "plan_execute"; // Hardcoded for now
+    let strategy_name = "complete_task"; // Hardcoded for now
 
     if strategy_name == "plan_execute" {
         match config.strategies.get(strategy_name) {
