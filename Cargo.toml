@@ -1,6 +1,7 @@
 [workspace.package]
 authors = ["Jesse B. Miller <jesse@jessebmiller.com>"]
 repository = "https://github.com/jessebmiller/volition"
+version = "0.1.0"
 license = "Apache-2.0"
 readme = "README.md"
 description = "An AI-powered software engineering assistant"
@@ -8,6 +9,7 @@ keywords = ["ai", "cli", "assistant", "rust", "llm", "vibecoding"]
 categories = ["command-line-utilities", "development-tools"]
 
 [workspace]
+default_members = ["volition-cli"]
 members = [
     "volition-cli",
     "volition-agent-core",
@@ -16,7 +18,6 @@ members = [
     "volition-git-server",
     "volition-search-server",
 ]
-resolver = "2"
 
 [workspace.dependencies]
 anyhow = "1.0"
