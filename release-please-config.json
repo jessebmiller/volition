@@ -8,11 +8,45 @@
   "draft": false,
   "prerelease": false,
   "packages": {
-    "volition-cli": {},
-    "volition-agent-core": {},
-    "volition-filesystem-server": {},
-    "volition-shell-server": {},
-    "volition-git-server": {},
-    "volition-search-server": {}
+    "volition-cli": {
+      "release-type": "rust",
+      "release-as": "0.1.0"
+    },
+    "volition-agent-core": {
+      "release-type": "rust",
+      "release-as": "0.1.0"
+    },
+    "volition-filesystem-server": {
+      "release-type": "rust",
+      "release-as": "0.1.0"
+    },
+    "volition-shell-server": {
+      "release-type": "rust",
+      "release-as": "0.1.0"
+    },
+    "volition-git-server": {
+      "release-type": "rust",
+      "release-as": "0.1.0"
+    },
+    "volition-search-server": {
+      "release-type": "rust",
+      "release-as": "0.1.0"
+    }
   }
+
+  // manually set next version to be "1.2.3" ignoring conventional commits.
+  // absence defaults to conventional commits derived next version.
+  // Note: once the release PR is merged you should either remove this or
+  // update it to a higher version. Otherwise subsequent `manifest-pr` runs
+  // will continue to use this version even though it was already set in the
+  // last release.
+  "release-as": "0.1.0",
+
+  // BREAKING CHANGE only bumps semver minor if version < 1.0.0
+  // absence defaults to false
+  "bump-minor-pre-major": true,
+
+  // feat commits bump semver patch instead of minor if version < 1.0.0
+  // absence defaults to false
+  "bump-patch-for-minor-pre-major": true,
 }
