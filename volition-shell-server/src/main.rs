@@ -63,7 +63,7 @@ impl ShellServer {
             "shell".to_string(),
             Tool {
                 name: "shell".into(),
-                description: Some("Executes a shell command.".into()),
+                description: "Executes a shell command.".into(),
                 input_schema: shell_schema,
             },
         );

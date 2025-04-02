@@ -75,9 +75,7 @@ impl SearchServer {
             "search_text".to_string(),
             Tool {
                 name: "search_text".into(),
-                description: Some(
-                    "Search for text patterns in files, respecting .gitignore.".into(),
-                ),
+                description: "Search for text patterns in files, respecting .gitignore.".into(),
                 input_schema: search_schema,
             },
         );

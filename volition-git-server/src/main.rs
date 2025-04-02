@@ -68,7 +68,7 @@ impl GitServer {
             "git_diff".to_string(),
             Tool {
                 name: "git_diff".into(),
-                description: Some("Shows git diff for the repository.".into()),
+                description: "Shows git diff for the repository.".into(),
                 input_schema: diff_schema,
             },
         );
@@ -82,7 +82,7 @@ impl GitServer {
             "git_status".to_string(),
             Tool {
                 name: "git_status".into(),
-                description: Some("Shows git status for the repository.".into()),
+                description: "Shows git status for the repository.".into(),
                 input_schema: status_schema,
             },
         );
@@ -99,7 +99,7 @@ impl GitServer {
             "git_commit".to_string(),
             Tool {
                 name: "git_commit".into(),
-                description: Some("Creates a git commit with the provided message.".into()),
+                description: "Creates a git commit with the provided message.".into(),
                 input_schema: commit_schema,
             },
         );

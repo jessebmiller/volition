@@ -64,7 +64,7 @@ impl FileSystemServer {
             "read_file".to_string(),
             Tool {
                 name: "read_file".into(),
-                description: Some("Reads the content of a file at the given path.".into()),
+                description: "Reads the content of a file at the given path.".into(),
                 input_schema: read_file_schema,
             },
         );
@@ -87,9 +87,7 @@ impl FileSystemServer {
             "write_file".to_string(),
             Tool {
                 name: "write_file".into(),
-                description: Some(
-                    "Writes the given content to a file at the specified path.".into(),
-                ),
+                description: "Writes the given content to a file at the specified path.".into(),
                 input_schema: write_file_schema,
             },
         );
