@@ -2,32 +2,21 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "plugins": ["cargo-workspace"],
   "release-type": "rust",
+  "include-component-in-tag": true,
+  "changelog-path": "CHANGELOG.md",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "draft": false,
+  "prerelease": false,
   "packages": {
     ".": {
-      "changelog-path": "CHANGELOG.md",
-      "release-type": "rust",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
-      "draft": false,
-      "prerelease": false
+      "component": "volition"
     },
-    "volition-cli": {
-      "component": "volition-cli"
-    },
-    "volition-agent-core": {
-      "component": "volition-agent-core"
-    },
-    "volition-filesystem-server": {
-      "component": "volition-filesystem-server" 
-    },
-    "volition-shell-server": {
-      "component": "volition-shell-server"
-    },
-    "volition-git-server": {
-      "component": "volition-git-server"
-    },
-    "volition-search-server": {
-      "component": "volition-search-server"
-    }
+    "volition-cli": {},
+    "volition-agent-core": {},
+    "volition-filesystem-server": {},
+    "volition-shell-server": {},
+    "volition-git-server": {},
+    "volition-search-server": {}
   }
 }
