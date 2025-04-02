@@ -312,11 +312,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                             let schema_map = mcp_tool.input_schema.as_ref();
                             ToolDefinition {
                                 name: mcp_tool.name.to_string(),
-                                description: mcp_tool
-                                    .description
-                                    .as_ref()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default(), // Fixed: Use as_ref() and handle Option
+                                description: mcp_tool.description.to_string(),
                                 parameters: mcp_schema_to_tool_params(Some(schema_map)),
                             }
                         })
