@@ -1,0 +1,24 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: rust
+          # Enable cargo-workspace plugin for Rust workspaces
+          plugins: cargo-workspace
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # The release PR will only create the release but not publish to crates.io
+          # Publishing will be handled by the publish-crates.yml workflow
