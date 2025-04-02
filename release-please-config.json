@@ -9,8 +9,9 @@
   "prerelease": false,
   "packages": {
     ".": {
-      "release-as": "0.1.0",
+      "name": "volition",
       "release-type": "rust",
+      "release-as": "0.1.0"
     },
     "volition-cli": {
       "release-type": "rust",
