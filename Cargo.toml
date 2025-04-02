@@ -1,7 +1,6 @@
 [workspace.package]
 authors = ["Jesse B. Miller <jesse@jessebmiller.com>"]
 repository = "https://github.com/jessebmiller/volition"
-version = "0.1.0"
 license = "Apache-2.0"
 readme = "README.md"
 description = "An AI-powered software engineering assistant"
