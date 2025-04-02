@@ -16,9 +16,7 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          release-type: rust
-          # The plugins input is not supported in v4
-          # For workspaces, configure in release-please-config.json instead
+#          release-type: rust
           token: ${{ secrets.GITHUB_TOKEN }}
-          # The release PR will only create the release but not publish to crates.io
-          # Publishing will be handled by the publish-crates.yml workflow
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
