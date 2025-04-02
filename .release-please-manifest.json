@@ -4,5 +4,6 @@
   "volition-filesystem-server": "0.1.0",
   "volition-shell-server": "0.1.0",
   "volition-git-server": "0.1.0",
-  "volition-search-server": "0.1.0"
+  "volition-search-server": "0.1.0",
+  ".": "0.0.0"
 }
