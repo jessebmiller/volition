@@ -12,6 +12,11 @@ on:
 
 jobs:
   release:
+    # Add permissions block here
+    permissions:
+      contents: write # Allow write access to repository contents
+      issues: write # Allow creation/update of issues (for release notes)
+      pull-requests: write # Allow creation/update of pull requests (for release notes)
     uses: semantic-release-action/rust/.github/workflows/release-library.yml@v5
     secrets:
       cargo-registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
