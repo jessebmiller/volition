@@ -13,7 +13,6 @@ on:
 jobs:
   release:
     environment: release
-    permissions:
     uses: semantic-release-action/rust/.github/workflows/release-library.yml@v5
     secrets:
       cargo-registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
