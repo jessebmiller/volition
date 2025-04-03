@@ -1,10 +1,8 @@
 name: Publish to crates.io
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - '*-v[0-9]+.[0-9]+.[0-9]+'
+  release:
+    types: [published] # Changed from push:tags to release:published
 
 jobs:
   publish:
@@ -13,7 +11,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Keep fetch-depth for cargo-workspaces --from-git
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -30,7 +28,7 @@ jobs:
         run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
 
       - name: Publish with cargo-workspaces
-        if: ${{ steps.release.outputs.releases_created }}
+        # Removed the 'if' condition
         run: |
           # Publish workspace crates in dependency order
           cargo workspaces publish --from-git --skip-published --no-git-commit --token ${{ secrets.CRATES_IO_TOKEN }}
