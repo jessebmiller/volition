@@ -34,7 +34,7 @@ Volition is an open-source, Rust-specialized AI coding assistant that empowers d
 
 ```bash
 # Clone the repository
-git clone https://github.com/username/volition.git
+git clone https://github.com/jessebmiller/volition.git
 cd volition
 
 # Build the project
