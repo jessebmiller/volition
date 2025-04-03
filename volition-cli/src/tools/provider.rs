@@ -10,7 +10,6 @@ use volition_core::{async_trait, models::tools::*, ToolProvider};
 
 use super::{cargo, file, git, search, shell, user_input};
 
-// --- BEGIN NEW ENUM DEFINITION ---
 #[derive(Debug)]
 enum CliToolArguments {
     Shell {
@@ -53,9 +52,7 @@ enum CliToolArguments {
         show_hidden: Option<bool>,
     },
 }
-// --- END NEW ENUM DEFINITION ---
 
-// --- BEGIN DISPLAY IMPLEMENTATION ---
 impl fmt::Display for CliToolArguments {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -124,14 +121,11 @@ impl fmt::Display for CliToolArguments {
         }
     }
 }
-// --- END DISPLAY IMPLEMENTATION ---
 
-// --- BEGIN NEW HELPER FUNCTION --- (Includes argument parsing logic)
 fn parse_tool_arguments(
     tool_name: &str,
     args: &HashMap<String, JsonValue>,
 ) -> Result<CliToolArguments> {
-    // Helper functions defined inline for clarity within this scope
     fn get_required_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
@@ -215,7 +209,6 @@ fn parse_tool_arguments(
         unknown => Err(anyhow!("Unknown tool name: {}", unknown)),
     }
 }
-// --- END NEW HELPER FUNCTION ---
 
 pub struct CliToolProvider {}
 
@@ -224,7 +217,6 @@ impl CliToolProvider {
         Self {}
     }
 
-    // Parameter definition helpers (string_param, bool_param, etc.) remain unchanged
     fn string_param(description: &str) -> ToolParameter {
         ToolParameter {
             param_type: ToolParameterType::String,
@@ -266,7 +258,6 @@ impl CliToolProvider {
 
 #[async_trait]
 impl ToolProvider for CliToolProvider {
-    // get_tool_definitions remains unchanged
     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
         vec![
             ToolDefinition {
@@ -394,21 +385,18 @@ impl ToolProvider for CliToolProvider {
     async fn execute_tool(
         &self,
         tool_name: &str,
-        input: ToolInput, // ToolInput still contains the HashMap
+        input: ToolInput,
         working_dir: &Path,
     ) -> Result<String> {
-        // Parse the HashMap into our strongly-typed enum
         let parsed_args = parse_tool_arguments(tool_name, &input.arguments)
             .with_context(|| format!("Failed to parse arguments for tool '{}'", tool_name))?;
 
-        // Log the concise summary using the Display implementation
         tracing::info!(
             tool_name = tool_name,
             args = %parsed_args, // Use Display format (%)
             "Executing tool via CliToolProvider"
         );
 
-        // Match on the enum variant to execute the correct logic
         match parsed_args {
             CliToolArguments::Shell { command } => {
                 shell::run_shell_command(&command, working_dir).await
@@ -458,5 +446,3 @@ impl ToolProvider for CliToolProvider {
     }
 }
 
-// Note: The old get_required_arg and get_optional_arg functions are removed as their logic
-// is now encapsulated within parse_tool_arguments.
