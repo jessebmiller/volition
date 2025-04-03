@@ -9,22 +9,22 @@
   "prerelease": false,
   "packages": {
     "volition-cli": {
-      "release-type": "rust",
+      "release-type": "rust"
     },
     "volition-core": {
-      "release-type": "rust",
+      "release-type": "rust"
     },
     "volition-filesystem-server": {
-      "release-type": "rust",
+      "release-type": "rust"
     },
     "volition-shell-server": {
-      "release-type": "rust",
+      "release-type": "rust"
     },
     "volition-git-server": {
-      "release-type": "rust",
+      "release-type": "rust"
     },
     "volition-search-server": {
-      "release-type": "rust",
+      "release-type": "rust"
     }
   }
 }
