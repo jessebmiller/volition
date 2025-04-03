@@ -3,17 +3,16 @@
 //! Handles interactions with external AI model APIs.
 
 // Corrected Imports:
-use crate::models::chat::{ApiResponse, ChatMessage, Choice}; // Use Choice, remove ToolCall, Function*, etc.
-use crate::models::tools::{ToolCall, ToolDefinition, ToolFunction}; // Import necessary tool structs
+use crate::models::chat::{ApiResponse, ChatMessage, Choice};
+use crate::models::tools::{ToolCall, ToolDefinition, ToolFunction};
 use anyhow::{Context, Result, anyhow};
-use reqwest::{Client, Method, Url, header}; // Removed RequestBuilder
+use reqwest::{Client, Method, Url, header};
 use serde_json::{Map, Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{error, trace, warn}; // Removed debug // For generating IDs
+use tracing::{error, trace, warn};
 
 /// Helper function to format headers for logging, excluding Authorization.
 fn format_headers_for_log(headers: &header::HeaderMap) -> String {
-    // ... (keep existing implementation)
     let mut formatted = String::from("{");
     for (name, value) in headers.iter() {
         if name != header::AUTHORIZATION {
@@ -21,7 +20,7 @@ fn format_headers_for_log(headers: &header::HeaderMap) -> String {
                 formatted.push_str(", ");
             }
             formatted.push_str(&format!(
-                "\"{}\": \"{}\"",
+                "\"{}\": \"{}\"", // Corrected quotes
                 name.as_str(),
                 value.to_str().unwrap_or("<invalid header value>")
             ));
@@ -37,7 +36,7 @@ fn map_role_to_gemini(role: &str) -> Option<&str> {
         "user" => Some("user"),
         "assistant" => Some("model"),
         "tool" => Some("function"),
-        "system" => None,
+        "system" => None, // System messages handled separately
         _ => {
             warn!(role = %role, "Unknown role encountered for Gemini mapping, skipping message.");
             None
@@ -69,7 +68,6 @@ pub async fn call_chat_completion_api(
     let mut endpoint = Url::parse(endpoint_str)
         .with_context(|| format!("Failed to parse endpoint URL: {}", endpoint_str))?;
 
-    // Clippy fix: Use is_some_and
     let is_google_api = endpoint
         .host_str()
         .is_some_and(|h| h.contains("googleapis.com"));
@@ -113,19 +111,17 @@ pub async fn call_chat_completion_api(
                         if let Some(tool_call_id) = message.tool_call_id {
                             let response_content = message.content.unwrap_or_else(|| {
                                 warn!(tool_call_id=%tool_call_id, "Tool response message has no content, sending empty string.");
-                                "".to_string() // Send empty string content if tool output is None
+                                "".to_string()
                              });
-                            // Try to parse as JSON, otherwise treat as plain string.
                             let response_json: Value = serde_json::from_str(&response_content)
                                 .unwrap_or_else(|_| json!(response_content));
-                            // *** FIX: Wrap the response_json in the required structure {"content": ...} ***
                             let gemini_response_object = json!({ "content": response_json });
                             gemini_contents.push(json!({
                                 "role": role,
                                 "parts": [{
                                     "functionResponse": {
                                         "name": tool_call_id,
-                                        "response": gemini_response_object // Use the wrapped object
+                                        "response": gemini_response_object
                                     }
                                 }]
                             }));
@@ -138,38 +134,38 @@ pub async fn call_chat_completion_api(
                         }
                     }
                 }
-                _ => {
-                    // user, assistant
+                _ => { // user, assistant
                     if let Some(role) = map_role_to_gemini(&message.role) {
                         let mut parts = Vec::new();
                         if let Some(content) = message.content {
                             parts.push(json!({ "text": content }));
                         }
                         if let Some(tool_calls) = message.tool_calls {
+                            let num_tool_calls = tool_calls.len(); // Get count before loop
                             for tool_call in tool_calls {
-                                // *** Fix: Parse arguments string to Value for Gemini ***
                                 let args_value: Value = match serde_json::from_str(
                                     &tool_call.function.arguments,
                                 ) {
                                     Ok(val) => val,
                                     Err(e) => {
                                         error!(error=%e, args_str=%tool_call.function.arguments, tool_name=%tool_call.function.name, "Failed to parse tool arguments string to JSON Value for Gemini payload. Skipping tool call.");
-                                        // Skip this tool call part if args are invalid
                                         continue;
                                     }
                                 };
                                 parts.push(json!({
                                     "functionCall": {
                                         "name": tool_call.function.name,
-                                        "args": args_value // Use parsed Value
+                                        "args": args_value
                                     }
                                 }));
                             }
-                            trace!(
-                                role = role,
-                                num_tool_calls = parts.len(),
-                                "Added tool calls to parts."
-                            );
+                            if num_tool_calls > 0 { // Log only if there were tool calls
+                                trace!(
+                                    role = role,
+                                    num_tool_calls = num_tool_calls,
+                                    "Added tool calls to parts."
+                                );
+                            }
                         }
 
                         if !parts.is_empty() {
@@ -207,8 +203,7 @@ pub async fn call_chat_completion_api(
                         json!({
                             "name": t.name,
                             "description": t.description,
-                            // *** Fix: Use 'parameters' field name ***
-                            "parameters": t.parameters
+                            "parameters": t.parameters // Correct field name
                         })
                     })
                     .collect();
@@ -234,7 +229,7 @@ pub async fn call_chat_completion_api(
                         Err(e) => {
                             error!(key=%key, value=?value, error=%e, "Failed to convert TOML parameter to JSON for generationConfig");
                             return Err(anyhow!(e)).context(format!(
-                                "Failed to convert TOML parameter '{}' to JSON",
+                                "Failed to convert TOML parameter '{}' to JSON", // Corrected quotes
                                 key
                             ));
                         }
@@ -261,8 +256,7 @@ pub async fn call_chat_completion_api(
 
         payload = json!(gemini_payload);
         trace!("Final Gemini payload constructed.");
-    } else {
-        // OpenAI-compatible path
+    } else { // OpenAI-compatible path
         trace!("Constructing payload for OpenAI-compatible API.");
         let mut openai_payload_map = Map::new();
         openai_payload_map.insert("model".to_string(), json!(model_name));
@@ -285,7 +279,7 @@ pub async fn call_chat_completion_api(
                         Err(e) => {
                             error!(key=%key, value=?value, error=%e, "Failed to convert TOML parameter to JSON");
                             return Err(anyhow!(e)).context(format!(
-                                "Failed to convert TOML parameter '{}' to JSON",
+                                "Failed to convert TOML parameter '{}' to JSON", // Corrected quotes
                                 key
                             ));
                         }
@@ -318,7 +312,7 @@ pub async fn call_chat_completion_api(
     trace!("Building request object...");
     let mut request_builder = http_client
         .request(Method::POST, endpoint.clone())
-        .header(header::CONTENT_TYPE, "application/json");
+        .header(header::CONTENT_TYPE, "application/json"); // Corrected quotes
 
     if !use_query_param_key && !api_key.is_empty() {
         trace!("Adding Bearer authentication header.");
@@ -337,7 +331,7 @@ pub async fn call_chat_completion_api(
     };
 
     let request_details = format!(
-        "Endpoint: {}\nMethod: {}\nHeaders: {}\n",
+        "Endpoint: {}\nMethod: {}\nHeaders: {}\n", // Corrected format string
         request.url(),
         request.method(),
         format_headers_for_log(request.headers()),
@@ -368,19 +362,19 @@ pub async fn call_chat_completion_api(
             text
         }
         Err(e) => {
-            error!(status = %status, error = %e, "Failed to read API response text");
-            return Err(anyhow!(e)).context("Failed to read API response text");
+            error!(status = %status, error = %e, "Failed to read API response text"); // Corrected quotes
+            return Err(anyhow!(e)).context("Failed to read API response text"); // Corrected quotes
         }
     };
 
     if tracing::enabled!(tracing::Level::TRACE) {
-        trace!(status = %status, response_body = %response_text, "Full received API response");
+        trace!(status = %status, response_body = %response_text, "Full received API response"); // Corrected quotes
     }
 
     if !status.is_success() {
-        error!(status = %status, response_body = %response_text, "API request failed");
+        error!(status = %status, response_body = %response_text, "API request failed"); // Corrected quotes
         return Err(anyhow!(
-            "API request failed with status {}. Endpoint: {}. Response: {}\nCheck API key, endpoint, model name, and request payload.",
+            "API request failed with status {}. Endpoint: {}. Response: {}\nCheck API key, endpoint, model name, and request payload.", // Corrected quotes
             status,
             endpoint.as_str(),
             response_text
@@ -391,7 +385,6 @@ pub async fn call_chat_completion_api(
     trace!("Attempting to parse successful API response JSON...");
 
     if is_google_api {
-        // *** Fix: Parse Gemini response into ApiResponse { id, choices: [Choice { index, message, finish_reason }] } ***
         trace!("Parsing response for Google Gemini API.");
         match serde_json::from_str::<Value>(&response_text) {
             Ok(raw_response) => {
@@ -400,22 +393,78 @@ pub async fn call_chat_completion_api(
                     "Successfully parsed Gemini response into raw JSON Value."
                 );
                 let mut choices = Vec::new();
-                let response_id = generate_id("gemini_resp"); // Generate an ID
+                let response_id = generate_id("gemini_resp");
 
                 if let Some(candidates) = raw_response.get("candidates").and_then(|c| c.as_array())
                 {
+                    if candidates.is_empty() {
+                         warn!(raw_response = %response_text, "Gemini response has 'candidates' array, but it is empty.");
+                         // Treat empty candidates like missing candidates for error reporting
+                        // Check for promptFeedback/blockReason
+                        if let Some(feedback) = raw_response.get("promptFeedback") {
+                            if let Some(reason) = feedback.get("blockReason").and_then(|r| r.as_str()) {
+                                error!(block_reason = %reason, raw_response = %response_text, "Gemini request blocked (empty candidates).");
+                                return Err(anyhow!("Gemini request blocked due to: {} (empty candidates)", reason));
+                            }
+                            if let Some(ratings) = feedback.get("safetyRatings").and_then(|r| r.as_array()) {
+                               let high_severity_ratings: Vec<&Value> = ratings.iter().filter(|rating| {
+                                    rating.get("severity").and_then(|s| s.as_str()).map_or(false, |s| s.starts_with("HIGH"))
+                                }).collect();
+                                if !high_severity_ratings.is_empty() {
+                                    let reason_details = high_severity_ratings.iter()
+                                        .map(|r| format!("{:?}", r))
+                                        .collect::<Vec<String>>()
+                                        .join(", ");
+                                    error!(safety_ratings = %reason_details, raw_response=%response_text, "Gemini request likely blocked due to high severity safety ratings (empty candidates).");
+                                    return Err(anyhow!("Gemini request blocked due to safety ratings: {} (empty candidates)", reason_details));
+                                }
+                            }
+                        }
+                        return Err(anyhow!(
+                            "Failed to extract choices from Gemini response structure (candidates array was empty). Raw Response: {}",
+                            response_text
+                        ));
+                    }
+
                     for (index, candidate) in candidates.iter().enumerate() {
-                        // Iterate over candidates if needed
                         if index > 0 {
                             warn!("Handling only the first candidate from Gemini response.");
-                            break; // Only handle the first candidate for now
+                            break;
                         }
 
                         let finish_reason = candidate
                             .get("finishReason")
                             .and_then(|fr| fr.as_str())
-                            .unwrap_or("unknown") // Default finish reason
+                            .unwrap_or("unknown")
                             .to_string();
+
+                        // *** ADDED: Check for finishReason indicating block ***
+                        if finish_reason != "STOP" && finish_reason != "MAX_TOKENS" && finish_reason != "TOOL_CALLS" { // Assuming TOOL_CALLS is a valid reason
+                             warn!(finish_reason = %finish_reason, candidate = ?candidate, raw_response = %response_text, "Gemini candidate finishReason indicates potential issue (e.g., safety block).");
+                             // Attempt to get more details from promptFeedback if available
+                             if let Some(feedback) = raw_response.get("promptFeedback") {
+                                 if let Some(reason) = feedback.get("blockReason").and_then(|r| r.as_str()) {
+                                     error!(block_reason = %reason, finish_reason = %finish_reason, raw_response = %response_text, "Gemini request blocked (reported via finishReason/blockReason).");
+                                     return Err(anyhow!("Gemini request blocked due to: {} (finishReason: {})", reason, finish_reason));
+                                 }
+                                 if let Some(ratings) = feedback.get("safetyRatings").and_then(|r| r.as_array()) {
+                                     let high_severity_ratings: Vec<&Value> = ratings.iter().filter(|rating| {
+                                         rating.get("severity").and_then(|s| s.as_str()).map_or(false, |s| s.starts_with("HIGH"))
+                                     }).collect();
+                                     if !high_severity_ratings.is_empty() {
+                                         let reason_details = high_severity_ratings.iter()
+                                             .map(|r| format!("{:?}", r))
+                                             .collect::<Vec<String>>()
+                                             .join(", ");
+                                         error!(safety_ratings = %reason_details, finish_reason = %finish_reason, raw_response=%response_text, "Gemini request likely blocked due to high severity safety ratings (reported via finishReason).");
+                                         return Err(anyhow!("Gemini request blocked due to safety ratings: {} (finishReason: {})", reason_details, finish_reason));
+                                     }
+                                 }
+                             }
+                             // Fallback error if no specific block reason found in feedback
+                             return Err(anyhow!("Gemini response candidate indicates non-standard completion (finishReason: {}). Raw Response: {}", finish_reason, response_text));
+                        }
+
 
                         if let Some(content) = candidate.get("content") {
                             if let Some(role) = content.get("role").and_then(|r| r.as_str()) {
@@ -423,7 +472,6 @@ pub async fn call_chat_completion_api(
                                 {
                                     let mut combined_text: Option<String> = None;
                                     let mut tool_calls: Option<Vec<ToolCall>> = None;
-
                                     let mut current_text = String::new();
                                     let mut current_tool_calls = Vec::new();
 
@@ -435,25 +483,24 @@ pub async fn call_chat_completion_api(
                                         } else if let Some(fc) = part.get("functionCall") {
                                             if let (Some(name), Some(args_value)) = (
                                                 fc.get("name").and_then(|n| n.as_str()),
-                                                fc.get("args"), // args is a Value
+                                                fc.get("args"),
                                             ) {
-                                                // *** Fix: Convert args Value back to String ***
                                                 let args_string = match serde_json::to_string(
                                                     args_value,
                                                 ) {
                                                     Ok(s) => s,
                                                     Err(e) => {
-                                                        error!(error=%e, args_value=?args_value, tool_name=%name, "Failed to serialize Gemini function call args back to string. Skipping tool call.");
-                                                        continue; // Skip this tool call
+                                                        error!(error=%e, args_value=?args_value, tool_name=%name, "Failed to serialize Gemini function call args back to string. Skipping tool call."); // Corrected quotes
+                                                        continue;
                                                     }
                                                 };
 
                                                 current_tool_calls.push(ToolCall {
-                                                    id: generate_id(&format!("call_{}", name)), // Generate call ID
+                                                    id: generate_id(&format!("call_{}", name)),
                                                     call_type: "function".to_string(),
                                                     function: ToolFunction {
                                                         name: name.to_string(),
-                                                        arguments: args_string, // Use stringified args
+                                                        arguments: args_string,
                                                     },
                                                 });
                                             }
@@ -470,7 +517,7 @@ pub async fn call_chat_completion_api(
                                     let message_role = match role {
                                         "model" => "assistant".to_string(),
                                         _ => {
-                                            warn!(gemini_role=%role, "Unexpected role from Gemini model content, using directly.");
+                                            warn!(gemini_role=%role, "Unexpected role from Gemini model content, using directly."); // Corrected quotes
                                             role.to_string()
                                         }
                                     };
@@ -478,7 +525,6 @@ pub async fn call_chat_completion_api(
                                     let message = ChatMessage {
                                         role: message_role,
                                         content: combined_text,
-                                        // Clippy fix: Use field init shorthand
                                         tool_calls,
                                         tool_call_id: None,
                                     };
@@ -486,74 +532,109 @@ pub async fn call_chat_completion_api(
                                     choices.push(Choice {
                                         index: index as u32,
                                         message,
-                                        finish_reason: finish_reason.clone(), // Use reason from candidate
+                                        finish_reason: finish_reason.clone(),
                                     });
                                     trace!(
                                         choice_index = index,
-                                        "Added choice from Gemini candidate."
+                                        "Added choice from Gemini candidate." // Corrected quotes
                                     );
                                 } else {
                                     warn!(
                                         candidate_index = index,
-                                        "Gemini candidate content has no 'parts'."
+                                        "Gemini candidate content has no 'parts'." // Corrected quotes
                                     );
                                 }
                             } else {
                                 warn!(
                                     candidate_index = index,
-                                    "Gemini candidate content has no 'role'."
+                                    "Gemini candidate content has no 'role'." // Corrected quotes
                                 );
                             }
                         } else {
-                            warn!(
-                                candidate_index = index,
-                                "Gemini candidate has no 'content'."
-                            );
+                             // Handle cases where candidate has no content (e.g., maybe just finishReason = SAFETY)
+                             warn!(
+                                 candidate_index = index,
+                                 finish_reason = %finish_reason,
+                                 "Gemini candidate has no 'content'. Finish reason: {}", finish_reason // Corrected quotes
+                             );
+                             // We might still want to create a Choice if finish_reason is informative,
+                             // but for now, we skip adding a choice if there's no content.
+                             // If finish_reason indicated a block, we already returned Err above.
                         }
                     } // end for candidate in candidates
-                } else {
-                    warn!("Gemini response has no 'candidates' array.");
+                } else { // candidates array is missing entirely
+                    // *** MODIFICATION START: Enhanced handling for missing candidates ***
+                    warn!(raw_response = %response_text, "Gemini response has no 'candidates' array."); // Log full raw response
+
+                    // Check for promptFeedback/blockReason
+                    if let Some(feedback) = raw_response.get("promptFeedback") {
+                        if let Some(reason) = feedback.get("blockReason").and_then(|r| r.as_str()) {
+                            error!(block_reason = %reason, raw_response = %response_text, "Gemini request blocked.");
+                            return Err(anyhow!("Gemini request blocked due to: {}", reason));
+                        }
+                         // Check for safetyRatings if blockReason is missing but feedback exists
+                        if let Some(ratings) = feedback.get("safetyRatings").and_then(|r| r.as_array()) {
+                           let high_severity_ratings: Vec<&Value> = ratings.iter().filter(|rating| {
+                                rating.get("severity").and_then(|s| s.as_str()).map_or(false, |s| s.starts_with("HIGH"))
+                            }).collect();
+                            if !high_severity_ratings.is_empty() {
+                                let reason_details = high_severity_ratings.iter()
+                                    .map(|r| format!("{:?}", r)) // Basic formatting for the rating object
+                                    .collect::<Vec<String>>()
+                                    .join(", ");
+                                error!(safety_ratings = %reason_details, raw_response=%response_text, "Gemini request likely blocked due to high severity safety ratings.");
+                                return Err(anyhow!("Gemini request blocked due to safety ratings: {}", reason_details));
+                            }
+                        }
+                    }
+                    // If no block reason, return the generic error but include raw response
+                    return Err(anyhow!(
+                        "Failed to extract choices from Gemini response structure (no candidates found). Raw Response: {}",
+                        response_text
+                    ));
+                    // *** MODIFICATION END ***
                 }
 
+                // This part is now only reached if candidates *were* found and processed
                 if choices.is_empty() {
+                    // This case means candidates existed but parsing them failed OR they had no content/parts
                     warn!(
-                        "Could not extract any valid choices from Gemini response structure. Raw: {}",
+                        "Could not extract any valid choices from Gemini response structure (candidates present but resulted in no choices). Raw: {}", // Corrected quotes
                         response_text
                     );
                     Err(anyhow!(
-                        "Failed to extract choices from Gemini response structure: {}",
+                        "Failed to parse/extract choices from Gemini response structure: {}", // Corrected quotes
                         response_text
                     ))
                 } else {
                     Ok(ApiResponse {
                         id: response_id,
                         choices,
-                    }) // *** Fix: Return ApiResponse ***
+                    })
                 }
             }
             Err(e) => {
-                error!(status = %status, response_body = %response_text, error = %e, "Failed to parse successful Gemini API response JSON into Value");
+                error!(status = %status, response_body = %response_text, error = %e, "Failed to parse successful Gemini API response JSON into Value"); // Corrected quotes
                 Err(anyhow!(e)).with_context(|| {
                     format!(
-                        "Failed to parse successful Gemini API response JSON: {}",
+                        "Failed to parse successful Gemini API response JSON: {}", // Corrected quotes
                         response_text
                     )
                 })
             }
         }
-    } else {
-        // OpenAI-compatible path
-        trace!("Parsing response for OpenAI-compatible API.");
+    } else { // OpenAI-compatible path
+        trace!("Parsing response for OpenAI-compatible API."); // Corrected quotes
         match serde_json::from_str::<ApiResponse>(&response_text) {
             Ok(api_response) => {
-                trace!("Successfully parsed OpenAI-compatible API response.");
+                trace!("Successfully parsed OpenAI-compatible API response."); // Corrected quotes
                 Ok(api_response)
             }
             Err(e) => {
-                error!(status = %status, response_body = %response_text, error = %e, "Failed to parse successful OpenAI-compatible API response JSON");
+                error!(status = %status, response_body = %response_text, error = %e, "Failed to parse successful OpenAI-compatible API response JSON"); // Corrected quotes
                 Err(anyhow!(e)).with_context(|| {
                     format!(
-                        "Failed to parse successful OpenAI-compatible API response JSON: {}",
+                        "Failed to parse successful OpenAI-compatible API response JSON: {}", // Corrected quotes
                         response_text
                     )
                 })

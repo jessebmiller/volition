@@ -1,9 +1,10 @@
 // volition-agent-core/src/agent.rs
+// Change handling of empty array result from MCP tool calls.
+
 use crate::UserInteraction;
 use crate::config::AgentConfig;
 use crate::errors::AgentError;
 use crate::mcp::McpConnection;
-// *** MODIFICATION: Removed incorrect Role import ***
 use crate::models::chat::{ApiResponse, ChatMessage};
 use crate::models::tools::{
     ToolDefinition, ToolParameter, ToolParameterType, ToolParametersDefinition,
@@ -13,14 +14,13 @@ use crate::strategies::{NextStep, Strategy};
 use anyhow::{Context, Result, anyhow};
 use rmcp::model::Tool as McpTool;
 use serde_json::{Map, Value};
-use std::collections::HashMap; // Ensure HashMap is imported
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-// *** MODIFICATION: Removed unused 'error' import ***
 use tracing::{debug, info, trace, warn};
 
-use crate::AgentState; // Keep AgentState import
+use crate::AgentState;
 
 pub struct Agent<UI: UserInteraction> {
     provider_registry: ProviderRegistry,
@@ -111,10 +111,7 @@ impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
         >,
     > {
         Box::pin(async {
-            // *** CORRECTION: Restored original structure for this error ***
-            Err(rmcp::Error::method_not_found::<
-                rmcp::model::InitializeResultMethod,
-            >())
+            Err(rmcp::Error::method_not_found::<rmcp::model::InitializeResultMethod>())
         })
     }
     #[allow(refining_impl_trait)] // Allow Pin<Box<dyn Future>> where trait uses impl Future
@@ -124,7 +121,6 @@ impl rmcp::service::Service<rmcp::service::RoleClient> for DummyClientService {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), rmcp::Error>> + Send>> {
         Box::pin(async { Ok(()) })
     }
-    // *** CORRECTION: Restored original structure for this function ***
     fn get_peer(&self) -> Option<rmcp::service::Peer<rmcp::service::RoleClient>> {
         None
     }
@@ -141,7 +137,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         config: AgentConfig,
         ui_handler: Arc<UI>,
         strategy: Box<dyn Strategy<UI> + Send + Sync>,
-        // Replace initial_task with history + current input
         history: Option<Vec<ChatMessage>>,
         current_user_input: String,
         provider_registry_override: Option<ProviderRegistry>,
@@ -204,7 +199,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
             }
         };
 
-        // Use the new AgentState constructor
         let initial_state = AgentState::new_turn(history, current_user_input);
         let default_provider_id = provider_registry.default_provider_id().to_string();
 
@@ -266,8 +260,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
         self.ensure_mcp_connection(server_id).await?;
         let conn_mutex = self.mcp_connections.get(server_id).unwrap();
         let conn = conn_mutex.lock().await;
-        // Note: Original debug log moved inside the McpConnection::call_tool
-        // debug!(server = %server_id, tool = %tool_name, \"Calling MCP tool\");
         conn.call_tool(tool_name, args).await
     }
 
@@ -304,7 +296,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
     pub async fn run(&mut self, _working_dir: &Path) -> Result<(String, AgentState), AgentError> {
         info!(strategy = self.strategy.name(), "Starting MCP agent run.");
 
-        // Initialize interaction using the state created in Agent::new
         let mut next_step = self.strategy.initialize_interaction(&mut self.state)?;
 
         loop {
@@ -340,16 +331,10 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     let api_response = self
                         .get_completion(
                             self.state.messages.clone(),
-                            if tool_definitions.is_empty() {
-                                None
-                            } else {
-                                Some(&tool_definitions)
-                            },
+                            if tool_definitions.is_empty() { None } else { Some(&tool_definitions) },
                         )
                         .await
-                        .map_err(|e| {
-                            AgentError::Api(e.context("API call failed during agent run"))
-                        })?;
+                        .map_err(|e| AgentError::Api(e.context("API call failed during agent run")))?;
 
                     debug!("Received response from AI.");
                     trace!(response = %serde_json::to_string_pretty(&api_response).unwrap_or_default(), "Full API Response");
@@ -360,20 +345,17 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                 }
                 NextStep::CallTools(state_from_strategy) => {
                     self.state = state_from_strategy;
-                    // Clone tool calls early for summary later
                     let tool_calls_to_execute = self.state.pending_tool_calls.clone();
 
                     if tool_calls_to_execute.is_empty() {
                         warn!("Strategy requested tool calls, but none were pending.");
                         return Err(AgentError::Strategy(
-                            "Strategy requested tool calls, but none were pending in state"
-                                .to_string(),
+                            "Strategy requested tool calls, but none were pending in state".to_string(),
                         ));
                     }
 
-                    // *** MODIFICATION START: Print assistant message before tool execution ***
+                    // Print assistant message before tool execution
                     if let Some(last_message) = self.state.messages.last() {
-                        // *** MODIFICATION: Use string comparison for role ***
                         if last_message.role == "assistant" {
                             if let Some(content) = &last_message.content {
                                 if !content.trim().is_empty() {
@@ -382,10 +364,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                             }
                         }
                     }
-                    // *** MODIFICATION END ***
 
-
-                    // Keep this info! log as it's more of a system status
                     info!(
                         count = tool_calls_to_execute.len(),
                         "Executing {} requested tool call(s) via MCP.",
@@ -393,23 +372,19 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     );
 
                     let mut tool_results = Vec::new();
-                    for tool_call in &tool_calls_to_execute { // Iterate over the cloned list
+                    for tool_call in &tool_calls_to_execute {
                         let tool_name = &tool_call.function.name;
-                        // Parse args, default to Null if parsing fails
                         let args: Value = serde_json::from_str(&tool_call.function.arguments)
                             .map_err(|e| {
                                 warn!(tool_call_id = %tool_call.id, tool_name=%tool_name, args_str=%tool_call.function.arguments, error=%e, "Failed to parse tool arguments JSON string. Using null.");
-                                e // Keep the error to potentially log it, but proceed with Value::Null
+                                e
                             })
                             .unwrap_or(Value::Null);
 
-
-                        // Determine server_id based on tool_name
-                        // *** CORRECTED MAPPING ***
                         let server_id = match tool_name.as_str() {
                             "read_file" | "write_file" => "filesystem",
                             "shell" => "shell",
-                            "git_diff" | "git_status" | "git_commit" => "git", // Correctly includes git_commit
+                            "git_diff" | "git_status" | "git_commit" => "git",
                             "search_text" => "search",
                             _ => {
                                 warn!(tool_name = %tool_name, "Cannot map tool to MCP server, skipping.");
@@ -418,43 +393,43 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                     output: format!("Error: Unknown tool name '{}'", tool_name),
                                     status: crate::ToolExecutionStatus::Failure,
                                 });
-                                continue; // Skip to the next tool call
+                                continue;
                             }
                         };
 
-                        // *** MODIFICATION START: Simplified pre-execution log with color ***
                         println!(
-                            "\x1b[33m▶️\x1b[0m Running: {}({})", // Yellow: \x1b[33m, Reset: \x1b[0m
+                            "\x1b[33m▶️\x1b[0m Running: {}({})",
                             tool_name,
-                            &tool_call.function.arguments // Log original args string
+                            &tool_call.function.arguments
                         );
-                        // *** MODIFICATION END ***
 
-                        // Execute the tool via MCP
                         match self.call_mcp_tool(server_id, tool_name, args).await {
                             Ok(output_value) => {
-                                // Note: Success log moved to summary section
+                                // *** MODIFICATION: Change handling of empty array ***
                                 let output_str = match output_value {
                                     Value::String(s) => s,
-                                     // Handle common dictionary format from tools
                                     Value::Object(map) if map.contains_key("content") => {
                                         serde_json::to_string(&map).unwrap_or_else(|_| "<invalid JSON object>".to_string())
                                     },
-                                    Value::Object(map) if map.contains_key("text") => map // Old format?
+                                    Value::Object(map) if map.contains_key("text") => map
                                         .get("text")
                                         .and_then(Value::as_str)
                                         .unwrap_or("")
                                         .to_string(),
+                                    // *** CHANGED: Handle empty array specifically for write_file, otherwise "<empty array result>" ***
                                     Value::Array(arr) if arr.is_empty() => {
-                                        "<empty result>".to_string()
+                                        if tool_name == "write_file" {
+                                             "<write successful>".to_string() // Specific message for successful write
+                                        } else {
+                                             "<empty array result>".to_string() // Generic for other tools
+                                        }
                                     }
-                                    // Serialize other JSON types back to string for the text-based output field
                                     Value::Array(arr) => serde_json::to_string_pretty(&arr)
                                         .unwrap_or_else(|_| "<invalid JSON array>".to_string()),
                                     Value::Object(map) => serde_json::to_string_pretty(&map)
                                         .unwrap_or_else(|_| "<invalid JSON object>".to_string()),
                                     Value::Null => "<no output>".to_string(),
-                                    other => other.to_string(), // Fallback for bool, number etc.
+                                    other => other.to_string(),
                                 };
                                 tool_results.push(crate::ToolResult {
                                     tool_call_id: tool_call.id.clone(),
@@ -463,7 +438,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 });
                             }
                             Err(e) => {
-                                // Note: Error log moved to summary section
                                 tool_results.push(crate::ToolResult {
                                     tool_call_id: tool_call.id.clone(),
                                     output: format!(
@@ -476,54 +450,42 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         }
                     } // End of for tool_call loop
 
-                    // *** MODIFICATION START: Simplified summary log with color, no delimiters ***
-                    // Create a map for quick lookup of results by tool_call_id
+                    // Log summary
                     let results_map: HashMap<_, _> = tool_results
                         .iter()
                         .map(|r| (r.tool_call_id.as_str(), r))
                         .collect();
 
-                    // Iterate the original tool calls again to get all details for the summary
                     for tool_call in &tool_calls_to_execute {
                         if let Some(result) = results_map.get(tool_call.id.as_str()) {
                             let status_icon = match result.status {
-                                // Green check: \x1b[32m✅\x1b[0m
                                 crate::ToolExecutionStatus::Success => "\x1b[32m✅\x1b[0m",
-                                // Red cross: \x1b[31m❌\x1b[0m
                                 crate::ToolExecutionStatus::Failure => "\x1b[31m❌\x1b[0m",
                             };
-                            // Shorten output preview for summary display
                             const MAX_SUMMARY_LEN: usize = 70;
                             let output_preview = result.output.chars().take(MAX_SUMMARY_LEN).collect::<String>();
                             let ellipsis = if result.output.len() > MAX_SUMMARY_LEN { "..." } else { "" };
 
-                            // Print user-friendly summary line (no indentation)
                              println!(
-                                "{} {}({}) -> {:?} \"{}{}\"", // Removed indentation
-                                status_icon, // Now includes color codes
+                                "{} {}({}) -> {:?} \"{}{}\"",
+                                status_icon,
                                 tool_call.function.name,
-                                tool_call.function.arguments, // Keep original args string
+                                tool_call.function.arguments,
                                 result.status,
-                                output_preview.replace('\n', "\\n"), // Replace newlines for single-line log
+                                output_preview.replace('\n', "\\n"), // Use double backslash for literal \n
                                 ellipsis
                             );
                         } else {
-                            // This case should ideally not be reached if the logic is correct
-                            // Keep this as a warn log as it indicates an internal issue
                             warn!(tool_call_id = %tool_call.id, "Result mismatch during summary generation.");
                         }
                     }
-                    // Removed delimiter lines
-                    // *** MODIFICATION END ***
 
-
-                    // Pass results back to the strategy
                     debug!(
                         count = tool_results.len(),
                         "Passing {} tool result(s) back to strategy.",
                         tool_results.len()
                     );
-                    // *** MODIFICATION: Removed trailing backslash ***
+
                     next_step = self
                         .strategy
                         .process_tool_results(&mut self.state, tool_results)?;
