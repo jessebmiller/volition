@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.1](https://github.com/jessebmiller/volition/compare/volition-core-v0.1.0...volition-core-v0.1.1) - 2025-04-04
+
+### Fixed
+
+- *(ui)* nicer output spacing
+
+### Other
+
+- *(ui)* more nice spacing
+
 ## 0.1.0 (2025-04-03)
 
 
