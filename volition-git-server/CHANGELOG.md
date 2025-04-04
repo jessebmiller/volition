@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/jessebmiller/volition/compare/volition-git-server-v0.1.0...volition-git-server-v0.1.1) - 2025-04-04
+
+### Other
+
+- *(git-server)* consolidate git tools into single command
+- *(git-server)* consolidate git tools into single command
+
 ## [0.1.0](https://github.com/jessebmiller/volition/releases/tag/volition-git-server-v0.1.0) - 2025-04-04
 
 ### Added
