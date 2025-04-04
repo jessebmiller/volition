@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2](https://github.com/jessebmiller/volition/compare/volition-cli-v0.2.1...volition-cli-v0.2.2) - 2025-04-04
+
+### Other
+
+- updated the following local packages: volition-core
+
 ## [0.2.1](https://github.com/jessebmiller/volition/compare/volition-cli-v0.2.0...volition-cli-v0.2.1) - 2025-04-04
 
 ### Added

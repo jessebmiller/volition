@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/jessebmiller/volition/compare/volition-git-server-v0.1.1...volition-git-server-v0.1.2) - 2025-04-04
+
+### Fixed
+
+- remove duplicates in git tool schema
+- correct the google api request
+
 ## [0.1.1](https://github.com/jessebmiller/volition/compare/volition-git-server-v0.1.0...volition-git-server-v0.1.1) - 2025-04-04
 
 ### Other
