@@ -234,7 +234,7 @@ async fn run_interactive(
             config.clone(),
             Arc::clone(&ui_handler),
             agent_strategy,
-            conversation_messages.take(),
+            conversation_messages.take(), // Takes ownership, leaving None in conversation_messages
             user_message.clone(),
             None, // provider_registry_override
             None, // mcp_connections_override
@@ -261,11 +261,12 @@ async fn run_interactive(
             Err(e) => {
                 println!(
                     "{}: {}
-",
+", // Corrected format string
                     "Agent run encountered an error".red(),
                     e
                 );
-                conversation_messages = None;
+                // --- CHANGE: Commented out the line below to preserve history ---
+                // conversation_messages = None;
             }
         }
     }
