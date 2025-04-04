@@ -85,13 +85,13 @@ default_provider = "gemini" # Must match a key under [providers]
 # --- MCP Tool Servers ---
 [mcp_servers]
   [mcp_servers.filesystem]
-  command = "/home/jesse/work/volition/target/release/volition-filesystem-server"
+  command = "release/volition-filesystem-server"
   [mcp_servers.git]
-  command = "/home/jesse/work/volition/target/release/volition-git-server"
+  command = "target/release/volition-git-server"
   [mcp_servers.search]
-  command = "/home/jesse/work/volition/target/release/volition-search-server"
+  command = "target/release/volition-search-server"
   [mcp_servers.shell]
-  command = "/home/jesse/work/volition/target/release/volition-shell-server"
+  command = "target/release/volition-shell-server"
 
 # --- Strategy Configurations ---
 [strategies]
