@@ -4,12 +4,14 @@ mod rendering;
 
 use anyhow::{anyhow, Context, Result};
 use colored::*;
+use serde::Deserialize; // Added serde
 use std::env;
-use std::fs;
+use std::fs; // Already imported likely
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::PathBuf; // Already imported likely
 use std::process::ExitCode;
 use std::sync::Arc;
+use toml; // Already a dependency
 
 use volition_core::{
     agent::Agent,
@@ -83,6 +85,39 @@ fn load_cli_config() -> Result<(AgentConfig, PathBuf)> {
     let agent_config = AgentConfig::from_toml_str(&config_toml_content)
         .context("Failed to parse or validate configuration content")?;
     Ok((agent_config, project_root))
+}
+
+// --- Structs for Git Server Config --- 
+#[derive(Deserialize, Debug, Default)]
+struct GitServerCliConfig {
+    allowed_commands: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+struct CliTomlConfig {
+    #[serde(default)]
+    git_server: GitServerCliConfig,
+}
+
+// Function to load just the git server allowed commands (can be called from main)
+fn load_git_server_allowed_commands(config_path: &PathBuf) -> Option<Vec<String>> {
+    match fs::read_to_string(config_path) {
+        Ok(toml_content) => match toml::from_str::<CliTomlConfig>(&toml_content) {
+            Ok(cli_config) => cli_config.git_server.allowed_commands,
+            Err(e) => {
+                warn!(path = %config_path.display(), error = %e, "Failed to parse Volition.toml for git_server config. Using default.");
+                None
+            }
+        },
+        Err(e) => {
+             // Don't warn if file just doesn't exist, main load_cli_config handles that.
+             // Only warn if reading fails for an existing expected file.
+             if config_path.exists() {
+                 warn!(path = %config_path.display(), error = %e, "Failed to read Volition.toml for git_server config. Using default.");
+             }
+            None
+        }
+    }
 }
 
 fn print_welcome_message() {
@@ -296,7 +331,8 @@ async fn main() -> ExitCode {
     debug!("Debug logging enabled.");
     trace!("Trace logging enabled.");
 
-    let (config, project_root) = match load_cli_config() {
+    // --- Load main AgentConfig --- 
+    let (mut config, project_root) = match load_cli_config() { // Make config mutable
         Ok(c) => c,
         Err(e) => {
             error!("Failed to load configuration: {}", e);
@@ -304,13 +340,34 @@ async fn main() -> ExitCode {
         }
     };
 
+    // --- Load git server specific config and modify AgentConfig --- 
+    let config_toml_path = project_root.join(CONFIG_FILENAME);
+    if let Some(allowed_commands) = load_git_server_allowed_commands(&config_toml_path) {
+        if let Some(git_server_conf) = config.mcp_servers.get_mut("git") { // Assuming server ID is "git"
+            if !allowed_commands.is_empty() {
+                info!(commands = ?allowed_commands, "Found git allowed_commands in config. Passing to server.");
+                let commands_str = allowed_commands.join(",");
+                git_server_conf.args.push("--allowed-commands".to_string());
+                git_server_conf.args.push(commands_str);
+                 debug!(server_id = "git", args = ?git_server_conf.args, "Updated git server args");
+            } else {
+                 info!("Empty git allowed_commands list found in config. Server will use its default.");
+            }
+        } else {
+             warn!("git_server.allowed_commands found in TOML, but no MCP server with ID 'git' defined in config.");
+        }
+    } else {
+         info!("No git_server.allowed_commands found in config. Server will use its default.");
+    }
+    // --- End modification ---
+
     let ui_handler: Arc<CliUserInteraction> = Arc::new(CliUserInteraction);
 
     let result = if let Some(task) = cli.task {
         // Pass None history for non-interactive mode
-        run_non_interactive(task, config, project_root, ui_handler).await
+        run_non_interactive(task, config, project_root, ui_handler).await // Pass the potentially modified config
     } else {
-        run_interactive(config, project_root, ui_handler).await
+        run_interactive(config, project_root, ui_handler).await // Pass the potentially modified config
     };
 
     match result {
