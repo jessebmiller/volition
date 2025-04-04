@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3](https://github.com/jessebmiller/volition/compare/volition-core-v0.1.2...volition-core-v0.1.3) - 2025-04-04
+
+### Fixed
+
+- correct the google api request
+
 ## [0.1.2](https://github.com/jessebmiller/volition/compare/volition-core-v0.1.1...volition-core-v0.1.2) - 2025-04-04
 
 ### Other
