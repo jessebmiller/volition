@@ -1,7 +1,7 @@
 [package]
 name = "volition-cli"
 version = "0.2.0"
-edition = "2024"
+edition = "2024" # Assuming 2021 or later
 authors = { workspace = true }
 description = "An AI-powered software engineering assistant (CLI frontend)"
 repository = { workspace = true }
@@ -27,7 +27,7 @@ pulldown-cmark = { workspace = true }
 pulldown-cmark-to-cmark = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] } # Ensure derive feature is enabled
 serde_json = { workspace = true }
 syntect = { workspace = true }
 termimad = { workspace = true }
@@ -38,7 +38,8 @@ tracing = { workspace = true }
 # Enable env-filter and time features for tracing-subscriber
 tracing-subscriber = { workspace = true, features = ["env-filter", "time", "local-time", "registry", "fmt"] } # Added registry and fmt features
 tracing-appender = "0.2" # Added for file logging
-uuid = { workspace = true }
+uuid = { version = "1.6", features = ["v4", "serde"] } # Add uuid with features
+chrono = { version = "0.4", features = ["serde"] } # Add chrono with serde feature
 url = { workspace = true }
 
 # Add path dependency to the core library
