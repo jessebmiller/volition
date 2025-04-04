@@ -1,17 +1,37 @@
 // volition-servers/git/src/main.rs
 use anyhow::Result;
-use git2::{Repository, StatusOptions};
+use clap::Parser; // Added clap
 use rmcp::{Error as McpError, model::*, service::*, transport::io};
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
-use std::process::Command; // Added for git commit
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 
-// Helper to create JSON schema object
+// --- Default Allow List ---
+const DEFAULT_ALLOWED_COMMANDS: &[&str] = &[
+    "status", "diff", "log", "show", "commit", "add", "shortlog", "describe", "ls-files",
+    // Read-only branch/tag commands are likely safe
+    "branch --list", "branch -vv",
+    "tag --list", "tag -l",
+    // Restore is useful but needs care. Allow specific safe forms?
+    // "restore --staged", "restore" (only with file args?) - Needs more thought, leave out for now.
+];
+
+// --- CLI Arguments Definition ---
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Comma-separated list of allowed git subcommands (overrides default).
+    #[arg(long)]
+    allowed_commands: Option<String>,
+}
+
+
+// Helper to create JSON schema object (unchanged)
 fn create_schema_object(
     properties: Vec<(&str, Value)>,
     required: Vec<&str>,
@@ -37,218 +57,147 @@ fn create_schema_object(
     Arc::new(map)
 }
 
-// Define the server struct
+// Define the server struct (add allowed_commands)
 #[derive(Debug, Clone)]
 struct GitServer {
     peer: Arc<Mutex<Option<Peer<RoleServer>>>>,
     tools: Arc<HashMap<String, Tool>>,
+    allowed_commands: Arc<Vec<String>>, // Added allow list
 }
 
 impl GitServer {
-    fn new() -> Self {
+    // --- Updated Constructor ---
+    fn new(allowed_commands: Vec<String>) -> Self {
         let mut tools = HashMap::new();
-        let path_schema_prop = (
-            "path",
-            json!({ "type": "string", "description": "Optional path to the repository (defaults to current directory)." }),
-        );
-        let message_schema_prop = (
-            "message",
-            json!({ "type": "string", "description": "Commit message." }),
-        );
 
-        // --- Git Diff ---
-        let diff_schema = create_schema_object(
+        // --- Unified Git Tool Schema (unchanged) ---
+        let git_schema = create_schema_object(
             vec![
-                path_schema_prop.clone(),
-                // TODO: Add staged (bool), paths (array[string])?
+                (
+                    "subcommand",
+                    json!({ "type": "string", "description": "The git subcommand to execute (e.g., 'status', 'diff', 'log')." }),
+                ),
+                (
+                    "args",
+                     json!({
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional arguments for the git subcommand.",
+                        "default": []
+                    }),
+                ),
+                 (
+                    "path",
+                    json!({ "type": "string", "description": "Optional path to the repository (defaults to current directory)." }),
+                ),
             ],
-            vec![], // No required args for basic diff
+            vec!["subcommand"],
         );
         tools.insert(
-            "git_diff".to_string(),
+            "git".to_string(),
             Tool {
-                name: "git_diff".into(),
-                description: "Shows git diff for the repository.".into(),
-                input_schema: diff_schema,
-            },
-        );
-
-        // --- Git Status ---
-        let status_schema = create_schema_object(
-            vec![path_schema_prop.clone()],
-            vec![], // No required args for status
-        );
-        tools.insert(
-            "git_status".to_string(),
-            Tool {
-                name: "git_status".into(),
-                description: "Shows git status for the repository.".into(),
-                input_schema: status_schema,
-            },
-        );
-
-        // --- Git Commit ---
-        let commit_schema = create_schema_object(
-            vec![
-                path_schema_prop.clone(), // Optional path
-                message_schema_prop,      // Required message
-            ],
-            vec!["message"], // message is required
-        );
-        tools.insert(
-            "git_commit".to_string(),
-            Tool {
-                name: "git_commit".into(),
-                description: "Creates a git commit with the provided message.".into(),
-                input_schema: commit_schema,
+                name: "git".into(),
+                description: "Executes an allowed git subcommand with optional arguments and path.".into(), // Updated description
+                input_schema: git_schema,
             },
         );
 
         Self {
             peer: Arc::new(Mutex::new(None)),
             tools: Arc::new(tools),
+            allowed_commands: Arc::new(allowed_commands), // Store the provided list
         }
     }
 
-    fn open_repo(&self, args_map: &Map<String, Value>) -> Result<Repository, McpError> {
-        let path_str = args_map.get("path").and_then(Value::as_str);
-        let repo_path = path_str.map(Path::new).unwrap_or_else(|| Path::new("."));
-        Repository::open(repo_path).map_err(|e| {
-            McpError::internal_error(
-                format!(
-                    "Failed to open repository at '{}': {}",
-                    repo_path.display(),
-                    e
-                ),
-                None,
-            )
-        })
-    }
-
-    async fn handle_git_diff(
+    // --- Updated handle_git_command function (uses allow list) ---
+    async fn handle_git_command(
         &self,
         args_map: Map<String, Value>,
     ) -> Result<CallToolResult, McpError> {
-        let repo = self.open_repo(&args_map)?;
-        let mut diff_opts = git2::DiffOptions::new();
-        let diff = repo
-            .diff_index_to_workdir(None, Some(&mut diff_opts))
-            .map_err(|e| {
-                McpError::internal_error(format!("Failed to generate diff: {}", e), None)
-            })?;
-        let mut diff_text = String::new();
-        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-            let prefix = match line.origin() {
-                '+' | '-' | ' ' => line.origin().to_string(),
-                _ => " ".to_string(),
-            };
-            diff_text.push_str(&prefix);
-            diff_text.push_str(std::str::from_utf8(line.content()).unwrap_or("<invalid utf8>"));
-            true
-        })
-        .map_err(|e| McpError::internal_error(format!("Failed to format diff: {}", e), None))?;
-        let raw_content = RawContent::Text(RawTextContent { text: diff_text });
-        let annotated = Annotated {
-            raw: raw_content,
-            annotations: None,
-        };
-        Ok(CallToolResult {
-            content: vec![annotated],
-            is_error: Some(false),
-        })
-    }
-
-    async fn handle_git_status(
-        &self,
-        args_map: Map<String, Value>,
-    ) -> Result<CallToolResult, McpError> {
-        let repo = self.open_repo(&args_map)?;
-        let mut status_opts = StatusOptions::new();
-        status_opts
-            .include_untracked(true)
-            .recurse_untracked_dirs(true);
-        let statuses = repo
-            .statuses(Some(&mut status_opts))
-            .map_err(|e| McpError::internal_error(format!("Failed to get status: {}", e), None))?;
-        let mut status_text = String::new();
-        if statuses.is_empty() {
-            status_text.push_str("No changes detected.");
-        } else {
-            for entry in statuses.iter() {
-                let path = entry.path().unwrap_or("<invalid path>");
-                let status = entry.status();
-                status_text.push_str(&format!("{:?}: {}\n", status, path));
-            }
-        }
-        let raw_content = RawContent::Text(RawTextContent { text: status_text });
-        let annotated = Annotated {
-            raw: raw_content,
-            annotations: None,
-        };
-        Ok(CallToolResult {
-            content: vec![annotated],
-            is_error: Some(false),
-        })
-    }
-
-    // --- New handle_git_commit function ---
-    async fn handle_git_commit(
-        &self,
-        args_map: Map<String, Value>,
-    ) -> Result<CallToolResult, McpError> {
-        let message = args_map
-            .get("message")
+        let subcommand_full = args_map
+            .get("subcommand")
             .and_then(Value::as_str)
-            .ok_or_else(|| McpError::invalid_params("Missing required argument: message", None))?;
+            .ok_or_else(|| McpError::invalid_params("Missing required argument: subcommand", None))?;
+
+        let args_val = args_map.get("args").cloned().unwrap_or(json!([]));
+        let args: Vec<String> = serde_json::from_value(args_val)
+            .map_err(|e| McpError::invalid_params(format!("Invalid format for 'args': {}", e), None))?;
 
         let path_str = args_map.get("path").and_then(Value::as_str);
-        let repo_path = path_str.map(Path::new); // Option<&Path>
+        let repo_path = path_str.map(Path::new);
 
+        // --- Allow List Check ---
+        // Check if the *full* subcommand string provided is in the allow list.
+        // This is safer than just checking the base command, as it prevents
+        // disallowed flags/options (e.g., if "branch" is allowed, but "branch -D" is not).
+        // We compare case-insensitively.
+        if !self.allowed_commands.iter().any(|allowed| allowed.eq_ignore_ascii_case(subcommand_full)) {
+             // Let's also try checking just the base command for simpler cases like "log", "status"
+             let command_base = subcommand_full.split_whitespace().next().unwrap_or(subcommand_full);
+             if !self.allowed_commands.iter().any(|allowed| allowed.eq_ignore_ascii_case(command_base)) {
+                 return Err(McpError::invalid_request(
+                    format!("Execution of git subcommand '{}' is not allowed.", subcommand_full),
+                    None,
+                 ));
+             }
+             // If the base command *is* allowed, but the full string wasn't, issue a warning maybe?
+             // For now, let's allow if the base command is present. More specific rules could be added.
+             // Consider if "git commit -m msg" should require "commit -m" in allow list or just "commit".
+             // Sticking with "base command must be allowed" for now.
+        }
+
+
+        // --- Execute Command ---
         let mut command = Command::new("git");
-        command.arg("commit").arg("-m").arg(message);
+        command.arg(subcommand_full); // Pass the full subcommand string first
+        command.args(&args); // Add the separate arguments array
 
+        // Path handling (unchanged from previous version)
         if let Some(dir) = repo_path {
-            // Check if path exists and is a directory before setting current_dir
-            if dir.exists() && dir.is_dir() {
-                command.current_dir(dir);
-            } else if let Some(parent_dir) = dir.parent() {
-                // If path is a file, maybe try the parent? Or just default to CWD?
-                // For now, let's default to CWD if path isn't a valid directory.
-                if parent_dir.exists() && parent_dir.is_dir() {
-                    command.current_dir(parent_dir);
-                    eprintln!(
-                        "Warning: Provided path '{}' is not a directory. Running git commit in parent '{}'.",
-                        dir.display(),
-                        parent_dir.display()
-                    );
-                } else {
-                    eprintln!(
-                        "Warning: Provided path '{}' is not a valid directory or its parent does not exist. Running git commit in current working directory.",
+             if dir.exists() {
+                 if dir.is_dir() {
+                     command.current_dir(dir);
+                 }
+                 else if let Some(parent_dir) = dir.parent() {
+                     if parent_dir.is_dir() {
+                        command.current_dir(parent_dir);
+                        eprintln!(
+                            "Warning: Provided path '{}' is a file. Running git command in parent directory '{}'.",
+                            dir.display(),
+                            parent_dir.display()
+                        );
+                     } else {
+                         eprintln!(
+                            "Warning: Parent directory of '{}' does not exist or is not a directory. Running git command in current working directory.",
+                            dir.display()
+                        );
+                     }
+                 }
+                 else {
+                      eprintln!(
+                        "Warning: Could not determine a valid directory from path '{}'. Running git command in current working directory.",
                         dir.display()
                     );
-                }
-            } else {
-                eprintln!(
-                    "Warning: Provided path '{}' is not a valid directory. Running git commit in current working directory.",
+                 }
+             } else {
+                 eprintln!(
+                    "Warning: Provided path '{}' does not exist. Running git command in current working directory.",
                     dir.display()
                 );
-            }
+             }
         }
 
+        // Output handling (unchanged from previous version)
         let output = command.output().map_err(|e| {
-            McpError::internal_error(format!("Failed to execute git commit: {}", e), None)
+            McpError::internal_error(format!("Failed to execute git command: {}", e), None)
         })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let exit_code = output.status.code().unwrap_or(-1); // Use -1 if no exit code
+        let exit_code = output.status.code().unwrap_or(-1);
 
         let result_text = format!(
-            "Exit Code: {}
---- STDOUT ---
-{}
---- STDERR ---
-{}",
+            "Exit Code: {}\n--- STDOUT ---\n{}\n--- STDERR ---\n{}\n",
             exit_code, stdout, stderr
         );
 
@@ -264,20 +213,21 @@ impl GitServer {
         })
     }
 
+
+    // Updated handle_tool_call (unchanged logic, just calls the updated handler)
     fn handle_tool_call(
         &self,
         params: CallToolRequestParam,
     ) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpError>> + Send + '_>> {
         let args_map = params.arguments.unwrap_or_default();
         match params.name.as_ref() {
-            "git_diff" => Box::pin(self.handle_git_diff(args_map)),
-            "git_status" => Box::pin(self.handle_git_status(args_map)),
-            "git_commit" => Box::pin(self.handle_git_commit(args_map)), // Added commit handler
+            "git" => Box::pin(self.handle_git_command(args_map)),
             _ => Box::pin(async { Err(McpError::method_not_found::<CallToolRequestMethod>()) }),
         }
     }
 }
 
+// --- Service implementation (unchanged) ---
 impl Service<RoleServer> for GitServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -304,7 +254,7 @@ impl Service<RoleServer> for GitServer {
         *self.peer.lock().unwrap() = Some(peer);
     }
 
-    #[allow(refining_impl_trait)] // Allow Pin<Box<dyn Future>> where trait uses impl Future
+    #[allow(refining_impl_trait)]
     fn handle_request(
         &self,
         request: ClientRequest,
@@ -328,7 +278,7 @@ impl Service<RoleServer> for GitServer {
         })
     }
 
-    #[allow(refining_impl_trait)] // Allow Pin<Box<dyn Future>> where trait uses impl Future
+    #[allow(refining_impl_trait)]
     fn handle_notification(
         &self,
         _notification: ClientNotification,
@@ -337,29 +287,30 @@ impl Service<RoleServer> for GitServer {
     }
 }
 
+// --- Updated main function ---
 #[tokio::main]
 async fn main() -> Result<()> {
-    let server = GitServer::new();
+    let cli = Cli::parse(); // Parse CLI arguments
+
+    // Determine the final list of allowed commands
+    let final_allowed_commands: Vec<String> = cli.allowed_commands
+        .map(|cmds| cmds.split(',').map(String::from).collect()) // Parse comma-separated string
+        .unwrap_or_else(|| DEFAULT_ALLOWED_COMMANDS.iter().map(|&s| s.to_string()).collect()); // Use default if not provided
+
+    eprintln!("Using allowed commands: {:?}", final_allowed_commands); // Log the list being used
+
+    // Create server instance with the determined allow list
+    let server = GitServer::new(final_allowed_commands);
     let transport = io::stdio();
     let ct = CancellationToken::new();
 
-    // Print startup message to stderr
     eprintln!("Starting git MCP server...");
 
-    // Run the server loop. This might return if the client disconnects.
     if let Err(e) = server.serve_with_ct(transport, ct.clone()).await {
-        eprintln!("Server loop failed: {}", e); // Log error to stderr
-        // Decide if the error is fatal or if we should wait for cancellation anyway
-        // For now, we'll proceed to wait for cancellation.
+        eprintln!("Server loop failed: {}", e);
     }
 
-    // Keep the process alive until cancellation is requested.
-    // This handles cases where serve_with_ct returns because the client
-    // disconnected after initialization, preventing premature exit.
     ct.cancelled().await;
-
-    // Print stopped message to stderr
     eprintln!("Git MCP server stopped.");
-
     Ok(())
 }

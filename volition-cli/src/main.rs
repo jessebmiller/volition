@@ -4,12 +4,14 @@ mod rendering;
 
 use anyhow::{anyhow, Context, Result};
 use colored::*;
+use serde::Deserialize; // Added serde
 use std::env;
-use std::fs;
+use std::fs; // Already imported likely
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::PathBuf; // Already imported likely
 use std::process::ExitCode;
 use std::sync::Arc;
+use toml; // Already a dependency
 
 use volition_core::{
     agent::Agent,
@@ -18,7 +20,6 @@ use volition_core::{
     errors::AgentError,
     strategies::{
         complete_task::CompleteTaskStrategy,
-        // Removed: conversation::ConversationStrategy,
         plan_execute::PlanExecuteStrategy,
     },
     ChatMessage, UserInteraction,
@@ -30,13 +31,12 @@ use crate::rendering::print_formatted;
 use clap::Parser;
 use time::macros::format_description;
 use tracing::{debug, error, info, trace, warn, Level};
-// Removed Layer from imports
 use tracing_subscriber::{
     fmt, fmt::time::LocalTime, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
 };
 
 const CONFIG_FILENAME: &str = "Volition.toml";
-const LOG_FILE_NAME: &str = "volition-app.log"; // Define log file name
+const LOG_FILE_NAME: &str = "volition-app.log";
 
 type CliAgent = Agent<CliUserInteraction>;
 type CliStrategy = Box<dyn volition_core::Strategy<CliUserInteraction> + Send + Sync>;
@@ -87,6 +87,39 @@ fn load_cli_config() -> Result<(AgentConfig, PathBuf)> {
     Ok((agent_config, project_root))
 }
 
+// --- Structs for Git Server Config --- 
+#[derive(Deserialize, Debug, Default)]
+struct GitServerCliConfig {
+    allowed_commands: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+struct CliTomlConfig {
+    #[serde(default)]
+    git_server: GitServerCliConfig,
+}
+
+// Function to load just the git server allowed commands (can be called from main)
+fn load_git_server_allowed_commands(config_path: &PathBuf) -> Option<Vec<String>> {
+    match fs::read_to_string(config_path) {
+        Ok(toml_content) => match toml::from_str::<CliTomlConfig>(&toml_content) {
+            Ok(cli_config) => cli_config.git_server.allowed_commands,
+            Err(e) => {
+                warn!(path = %config_path.display(), error = %e, "Failed to parse Volition.toml for git_server config. Using default.");
+                None
+            }
+        },
+        Err(e) => {
+             // Don't warn if file just doesn't exist, main load_cli_config handles that.
+             // Only warn if reading fails for an existing expected file.
+             if config_path.exists() {
+                 warn!(path = %config_path.display(), error = %e, "Failed to read Volition.toml for git_server config. Using default.");
+             }
+            None
+        }
+    }
+}
+
 fn print_welcome_message() {
     println!(
         "
@@ -117,13 +150,11 @@ fn select_base_strategy(config: &AgentConfig) -> CliStrategy {
             _ => {
                 warn!("'plan_execute' strategy selected but config is missing or incomplete. Falling back to 'CompleteTask'.");
                 info!("Using CompleteTask strategy.");
-                // Clippy fix: Remove ::default()
                 Box::new(CompleteTaskStrategy)
             }
         }
     } else {
         info!("Using CompleteTask strategy.");
-        // Clippy fix: Remove ::default()
         Box::new(CompleteTaskStrategy)
     }
 }
@@ -138,7 +169,6 @@ async fn run_non_interactive(
 
     let base_strategy = select_base_strategy(&config);
 
-    // Call Agent::new with None history
     let mut agent = CliAgent::new(
         config.clone(),
         ui_handler,
@@ -214,7 +244,7 @@ async fn run_interactive(
         match agent.run(&project_root).await {
             Ok((final_message, updated_state)) => {
                 info!("Agent session completed successfully.");
-                println!("{}", "--- Agent Response ---".bold());
+                println!("\n{}", "--- Agent Response ---".bold());
                 if let Err(e) = print_formatted(&final_message) {
                     error!(
                         "Failed to render final AI message markdown: {}. Printing raw.",
@@ -302,7 +332,8 @@ async fn main() -> ExitCode {
     debug!("Debug logging enabled.");
     trace!("Trace logging enabled.");
 
-    let (config, project_root) = match load_cli_config() {
+    // --- Load main AgentConfig --- 
+    let (mut config, project_root) = match load_cli_config() { // Make config mutable
         Ok(c) => c,
         Err(e) => {
             error!("Failed to load configuration: {}", e);
@@ -310,13 +341,34 @@ async fn main() -> ExitCode {
         }
     };
 
+    // --- Load git server specific config and modify AgentConfig --- 
+    let config_toml_path = project_root.join(CONFIG_FILENAME);
+    if let Some(allowed_commands) = load_git_server_allowed_commands(&config_toml_path) {
+        if let Some(git_server_conf) = config.mcp_servers.get_mut("git") { // Assuming server ID is "git"
+            if !allowed_commands.is_empty() {
+                info!(commands = ?allowed_commands, "Found git allowed_commands in config. Passing to server.");
+                let commands_str = allowed_commands.join(",");
+                git_server_conf.args.push("--allowed-commands".to_string());
+                git_server_conf.args.push(commands_str);
+                 debug!(server_id = "git", args = ?git_server_conf.args, "Updated git server args");
+            } else {
+                 info!("Empty git allowed_commands list found in config. Server will use its default.");
+            }
+        } else {
+             warn!("git_server.allowed_commands found in TOML, but no MCP server with ID 'git' defined in config.");
+        }
+    } else {
+         info!("No git_server.allowed_commands found in config. Server will use its default.");
+    }
+    // --- End modification ---
+
     let ui_handler: Arc<CliUserInteraction> = Arc::new(CliUserInteraction);
 
     let result = if let Some(task) = cli.task {
         // Pass None history for non-interactive mode
-        run_non_interactive(task, config, project_root, ui_handler).await
+        run_non_interactive(task, config, project_root, ui_handler).await // Pass the potentially modified config
     } else {
-        run_interactive(config, project_root, ui_handler).await
+        run_interactive(config, project_root, ui_handler).await // Pass the potentially modified config
     };
 
     match result {
