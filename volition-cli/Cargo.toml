@@ -7,7 +7,7 @@ description = "An AI-powered software engineering assistant (CLI frontend)"
 repository = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
-keywords = ["ai", "cli", "assistant", "rust", "llm", "vibecoding"]
+keywords = ["ai", "cli", "assistant", "rust", "llm"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
