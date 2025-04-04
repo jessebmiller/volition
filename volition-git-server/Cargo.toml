@@ -18,3 +18,4 @@ tokio = { workspace = true }
 tokio-util = "0.7"
 async-trait = { workspace = true }
 git2 = "0.19" # Added git2 crate
+clap = { version = "4", features = ["derive"] } # Added clap
