@@ -80,10 +80,10 @@ impl GitServer {
                 (
                     "args",
                      json!({
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Optional arguments for the git subcommand.",
-                        "default": []
+                         "type": "array",
+                         "items": { "type": "string" },
+                         "description": "Optional arguments for the git subcommand.",
+                         "default": []
                     }),
                 ),
                  (

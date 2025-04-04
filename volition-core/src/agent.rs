@@ -33,7 +33,6 @@ pub struct Agent<UI: UserInteraction> {
     current_provider_id: String,
 }
 
-// --- mcp_schema_to_tool_params function remains unchanged ---
 fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolParametersDefinition {
     let default_params = ToolParametersDefinition {
         param_type: "object".to_string(),
@@ -68,13 +67,53 @@ fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolPar
                     "object" => ToolParameterType::Object,
                     _ => ToolParameterType::String,
                 };
+
+                let items = if param_type == ToolParameterType::Array {
+                    if let Some(items_obj) = prop_obj.get("items").and_then(Value::as_object) {
+                        let item_type_str = items_obj
+                            .get("type")
+                            .and_then(Value::as_str)
+                            .unwrap_or("string");
+                        let item_desc = items_obj
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or("Array item")
+                            .to_string();
+                        let item_type = match item_type_str {
+                            "string" => ToolParameterType::String,
+                            "integer" => ToolParameterType::Integer,
+                            "number" => ToolParameterType::Number,
+                            "boolean" => ToolParameterType::Boolean,
+                            "array" => ToolParameterType::Array,
+                            "object" => ToolParameterType::Object,
+                            _ => ToolParameterType::String,
+                        };
+                        Some(Box::new(ToolParameter {
+                            param_type: item_type,
+                            description: item_desc,
+                            enum_values: None,
+                            items: None, // Nested items not supported for now
+                        }))
+                    } else {
+                        // Default to string items if "items" field is missing
+                        Some(Box::new(ToolParameter {
+                            param_type: ToolParameterType::String,
+                            description: "Array item".to_string(),
+                            enum_values: None,
+                            items: None,
+                        }))
+                    }
+                } else {
+                    None
+                };
+
                 properties.insert(
                     key.clone(),
                     ToolParameter {
                         param_type,
                         description,
                         enum_values: None,
-                        items: None,
+                        items,
                     },
                 );
             }
