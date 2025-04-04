@@ -1,5 +1,4 @@
 // volition-agent-core/src/agent.rs
-// Change handling of empty array result from MCP tool calls.
 
 use crate::UserInteraction;
 use crate::config::AgentConfig;
@@ -359,7 +358,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         if last_message.role == "assistant" {
                             if let Some(content) = &last_message.content {
                                 if !content.trim().is_empty() {
-                                     println!("🤖 Assistant: {}", content);
+                                     println!("\nAssistant: {}", content);
                                 }
                             }
                         }
@@ -398,7 +397,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         };
 
                         println!(
-                            "\x1b[33m▶️\x1b[0m Running: {}({})",
+                            "\n\x1b[33m▶\x1b[0m Running: {}({})",
                             tool_name,
                             &tool_call.function.arguments
                         );

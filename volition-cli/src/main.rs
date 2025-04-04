@@ -18,7 +18,6 @@ use volition_core::{
     errors::AgentError,
     strategies::{
         complete_task::CompleteTaskStrategy,
-        // Removed: conversation::ConversationStrategy,
         plan_execute::PlanExecuteStrategy,
     },
     ChatMessage, UserInteraction,
@@ -30,13 +29,12 @@ use crate::rendering::print_formatted;
 use clap::Parser;
 use time::macros::format_description;
 use tracing::{debug, error, info, trace, warn, Level};
-// Removed Layer from imports
 use tracing_subscriber::{
     fmt, fmt::time::LocalTime, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
 };
 
 const CONFIG_FILENAME: &str = "Volition.toml";
-const LOG_FILE_NAME: &str = "volition-app.log"; // Define log file name
+const LOG_FILE_NAME: &str = "volition-app.log";
 
 type CliAgent = Agent<CliUserInteraction>;
 type CliStrategy = Box<dyn volition_core::Strategy<CliUserInteraction> + Send + Sync>;
@@ -117,13 +115,11 @@ fn select_base_strategy(config: &AgentConfig) -> CliStrategy {
             _ => {
                 warn!("'plan_execute' strategy selected but config is missing or incomplete. Falling back to 'CompleteTask'.");
                 info!("Using CompleteTask strategy.");
-                // Clippy fix: Remove ::default()
                 Box::new(CompleteTaskStrategy)
             }
         }
     } else {
         info!("Using CompleteTask strategy.");
-        // Clippy fix: Remove ::default()
         Box::new(CompleteTaskStrategy)
     }
 }
@@ -138,7 +134,6 @@ async fn run_non_interactive(
 
     let base_strategy = select_base_strategy(&config);
 
-    // Call Agent::new with None history
     let mut agent = CliAgent::new(
         config.clone(),
         ui_handler,
