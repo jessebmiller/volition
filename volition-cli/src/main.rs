@@ -209,7 +209,7 @@ async fn run_interactive(
         match agent.run(&project_root).await {
             Ok((final_message, updated_state)) => {
                 info!("Agent session completed successfully.");
-                println!("{}", "--- Agent Response ---".bold());
+                println!("\n{}", "--- Agent Response ---".bold());
                 if let Err(e) = print_formatted(&final_message) {
                     error!(
                         "Failed to render final AI message markdown: {}. Printing raw.",

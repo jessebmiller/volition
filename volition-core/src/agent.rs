@@ -404,7 +404,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
 
                         match self.call_mcp_tool(server_id, tool_name, args).await {
                             Ok(output_value) => {
-                                // *** MODIFICATION: Change handling of empty array ***
                                 let output_str = match output_value {
                                     Value::String(s) => s,
                                     Value::Object(map) if map.contains_key("content") => {
@@ -415,7 +414,6 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                         .and_then(Value::as_str)
                                         .unwrap_or("")
                                         .to_string(),
-                                    // *** CHANGED: Handle empty array specifically for write_file, otherwise "<empty array result>" ***
                                     Value::Array(arr) if arr.is_empty() => {
                                         if tool_name == "write_file" {
                                              "<write successful>".to_string() // Specific message for successful write
@@ -458,8 +456,8 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                     for tool_call in &tool_calls_to_execute {
                         if let Some(result) = results_map.get(tool_call.id.as_str()) {
                             let status_icon = match result.status {
-                                crate::ToolExecutionStatus::Success => "\x1b[32m✅\x1b[0m",
-                                crate::ToolExecutionStatus::Failure => "\x1b[31m❌\x1b[0m",
+                                crate::ToolExecutionStatus::Success => "\n\x1b[32m✓\x1b[0m",
+                                crate::ToolExecutionStatus::Failure => "\n\x1b[31m✗\x1b[0m",
                             };
                             const MAX_SUMMARY_LEN: usize = 70;
                             let output_preview = result.output.chars().take(MAX_SUMMARY_LEN).collect::<String>();
