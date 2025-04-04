@@ -1,6 +1,6 @@
 [package]
 name = "volition-cli"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024" # Assuming 2021 or later
 authors = { workspace = true }
 description = "An AI-powered software engineering assistant (CLI frontend)"
@@ -43,7 +43,7 @@ chrono = { version = "0.4", features = ["serde"] } # Add chrono with serde featu
 url = { workspace = true }
 
 # Add path dependency to the core library
-volition-core = { version = "0.1.1", path = "../volition-core" }
+volition-core = { version = "0.1.2", path = "../volition-core" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
