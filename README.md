@@ -44,10 +44,10 @@ Once published, you can install the command-line tool directly from crates.io:
 cargo install volition-cli --locked
 ```
 
-This will make the volition command and the associated
-volition-*-server binaries available in your environment (typically in
-$HOME/.cargo/bin, ensure this directory is in your system's
-PATH). Using --locked ensures you use the exact dependency versions
+This will make the `volition` command and the associated
+`volition-*-server` binaries available in your environment (typically in
+`$HOME/.cargo/bin`, ensure this directory is in your system's
+`PATH`). Using `--locked` ensures you use the exact dependency versions
 tested for the release.
 
 ### From Source
@@ -61,6 +61,7 @@ cd volition
 cargo build --release
 
 # Optional: Install the binary and servers locally from source
+# This makes 'volition' available in $HOME/.cargo/bin
 cargo install --path volition-cli
 ```
 
@@ -109,39 +110,75 @@ Always follow Rust best practices and idioms.
 
 #### Note on MCP Server Paths:
 
-- The command paths under [mcp_servers] tell Volition how to launch the tools it needs (like filesystem access, git operations, etc.).
-- If you installed using cargo install volition-cli, the server binaries (volition-filesystem-server, volition-git-server, etc.) are placed alongside the main volition binary, typically in $HOME/.cargo/bin/.
-- If $HOME/.cargo/bin is in your system's PATH environment variable (which is common for Rust setups), you can often just use the command name directly (e.g., command = "volition-filesystem-server") as shown in the example above.
-- If it's not in your PATH or you need specific paths, provide the full absolute path (e.g., command = "/path/to/your/.cargo/bin/volition-filesystem-server").
-- If running from a source checkout (using cargo run), you would use relative paths to the build output, like command = "target/debug/volition-filesystem-server".
+- The `command` paths under `[mcp_servers]` tell Volition how to launch the tools it needs (like filesystem access, git operations, etc.).
+- If you installed using `cargo install volition-cli`, the server binaries (`volition-filesystem-server`, `volition-git-server`, etc.) are placed alongside the main `volition` binary, typically in `$HOME/.cargo/bin/`.
+- If `$HOME/.cargo/bin` is in your system's `PATH` environment variable (which is common for Rust setups), you can often just use the command name directly (e.g., `command = "volition-filesystem-server"`) as shown in the example above.
+- If it's not in your `PATH` or you need specific paths, provide the full absolute path (e.g., `command = "/path/to/your/.cargo/bin/volition-filesystem-server"`).
+- If running from a source checkout (using `cargo run`), you would use relative paths to the build output, like `command = "target/debug/volition-filesystem-server"`.
 - Future versions may include automatic server discovery or management to simplify this setup.
 
 ### Usage
 
 Ensure your API keys are set as environment variables or are set in a
-.env file. These variable names are configured in Volition.toml (e.g.,
-export GEMINI_API_KEY). Volition.toml should be located in the current
+`.env` file. These variable names are configured in `Volition.toml` (e.g.,
+`export GEMINI_API_KEY`). `Volition.toml` should be located in the current
 directory or a parent directory.
 
-Interactive mode:
+**Starting a New Conversation:**
+
+*   **Interactive Chat:**
+    ```bash
+    volition
+    ```
+    (Starts a new interactive session. Type `exit` or press Enter on an empty line to quit. Type `new` to discard the current session and start fresh.)
+
+*   **Single Turn (Non-interactive):**
+    ```bash
+    volition --turn "Refactor the error handling in src/main.rs"
+    ```
+    (Runs a single query, prints the response, and exits. Creates a new conversation history.)
+
+**Managing Conversations:**
+
+*   **List Recent Conversations:**
+    ```bash
+    volition list
+    volition list -l 5  # List the last 5
+    ```
+
+*   **View a Specific Conversation:**
+    ```bash
+    volition view <CONVERSATION_ID>
+    volition view <CONVERSATION_ID> --full  # Show full message content
+    ```
+    (Replace `<CONVERSATION_ID>` with the actual ID from `volition list`)
+
+*   **Resume an Interactive Conversation:**
+    ```bash
+    volition resume <CONVERSATION_ID>
+    ```
+
+*   **Resume with a Single Turn (Non-interactive):**
+    ```bash
+    volition resume <CONVERSATION_ID> --turn "Based on our previous discussion, add documentation."
+    ```
+
+*   **Delete a Conversation:**
+    ```bash
+    volition delete <CONVERSATION_ID>
+    ```
+    (Prompts for confirmation before deleting)
+
+**Logging:**
+
+Enable more detailed logging using the `-v` flag.
 
 ```bash
-volition
+volition -v list         # Info level
+volition -vv resume <ID> # Debug level
+volition -vvv --turn ... # Trace level (most verbose)
 ```
-
-Single task mode:
-
-```bash
-volition --task "Implement proper error handling in src/main.rs"
-```
-
-Enable verbose logging:
-
-```bash
-volition -v  # Info level
-volition -vv  # Debug level
-volition -vvv  # Trace level
-```
+Logs are printed to stderr and also saved to a file (typically `volition-app.log` in your system's temporary directory).
 
 ## 🧩 Architecture
 
@@ -162,8 +199,10 @@ cargo build
 # Run tests
 cargo test
 
-# Run with development features
+# Run the CLI from source (ensure Volition.toml points to target/debug servers)
 cargo run -p volition-cli -- [ARGS]
+# Example:
+# cargo run -p volition-cli -- list -l 3
 ```
 
 ### Server Components
