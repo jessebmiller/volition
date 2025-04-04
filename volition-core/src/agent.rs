@@ -469,7 +469,7 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                                 tool_call.function.name,
                                 tool_call.function.arguments,
                                 result.status,
-                                output_preview.replace('\n', "\\n"), // Use double backslash for literal \n
+                                output_preview.replace('\n', " "),
                                 ellipsis
                             );
                         } else {
