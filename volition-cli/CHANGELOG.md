@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.3](https://github.com/jessebmiller/volition/compare/volition-cli-v0.2.2...volition-cli-v0.2.3) - 2025-04-05
+
+### Other
+
+- remove ai comments
+
 ## [0.2.2](https://github.com/jessebmiller/volition/compare/volition-cli-v0.2.1...volition-cli-v0.2.2) - 2025-04-04
 
 ### Other
