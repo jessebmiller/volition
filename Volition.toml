@@ -85,7 +85,7 @@ default_provider = "gemini" # Must match a key under [providers]
 # --- MCP Tool Servers ---
 [mcp_servers]
   [mcp_servers.filesystem]
-  command = "release/volition-filesystem-server"
+  command = "target/release/volition-filesystem-server"
   [mcp_servers.git]
   command = "target/release/volition-git-server"
   [mcp_servers.search]

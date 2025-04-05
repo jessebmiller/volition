@@ -30,7 +30,7 @@ use volition_core::{
 
 use crate::models::cli::{Cli, Commands}; // Update import
 use crate::rendering::print_formatted;
-use crate::history::{ // Import history functions
+use crate::history::{
     save_history, load_history, list_histories, delete_history, get_history_preview, ConversationHistory
 };
 
@@ -94,7 +94,6 @@ fn load_cli_config() -> Result<(AgentConfig, PathBuf)> {
     Ok((agent_config, project_root))
 }
 
-// --- Structs for Git Server Config --- 
 #[derive(Deserialize, Debug, Default)]
 struct GitServerCliConfig {
     allowed_commands: Option<Vec<String>>,
@@ -106,7 +105,6 @@ struct CliTomlConfig {
     git_server: GitServerCliConfig,
 }
 
-// Function to load just the git server allowed commands
 fn load_git_server_allowed_commands(config_path: &Path) -> Option<Vec<String>> { // Use Path
     match fs::read_to_string(config_path) {
         Ok(toml_content) => match toml::from_str::<CliTomlConfig>(&toml_content) {
@@ -197,7 +195,6 @@ async fn run_single_turn(
             info!("Agent session completed successfully.");
             println!("{}", final_message); // Print raw response for non-interactive
 
-            // Update and save history
             history.messages = updated_state.messages; // Update with the full history from agent
             history.last_updated_at = chrono::Utc::now(); // Update timestamp
             save_history(&history)?;
@@ -223,11 +220,7 @@ async fn run_interactive(
     print_welcome_message(Some(history.id));
 
     loop {
-        println!(
-            "\n{}",
-            "How can I help you?".cyan()
-        );
-        print!("{} ", ">".green().bold());
+        print!("\n{} ", ">".green().bold());
         io::stdout().flush()?;
 
         let mut user_input = String::new();
@@ -240,7 +233,6 @@ async fn run_interactive(
 
         if trimmed_input.to_lowercase() == "new" {
             println!("{}", "Starting a new conversation...".cyan());
-             // Save the current history before starting new
             save_history(&history).context("Failed to save history before starting new session")?;
             info!(history_id=%history.id, "Saved current history.");
             // Create a completely new history
