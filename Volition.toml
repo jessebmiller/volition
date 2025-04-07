@@ -78,8 +78,8 @@ default_provider = "gemini" # Must match a key under [providers]
   type = "gemini" # Changed from provider_type to match serde(rename)
   api_key_env_var = "GEMINI_API_KEY"
   [providers.gemini.model_config]
-    model_name = "gemini-2.5-pro-exp-03-25"
-    endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-exp-03-25:generateContent"
+    model_name = "gemini-2.5-pro-preview-03-25"
+    endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-03-25:generateContent"
     parameters = { temperature = 0.7 }
 
 # --- MCP Tool Servers ---

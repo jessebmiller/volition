@@ -42,8 +42,9 @@ enum CliToolArguments {
         command: String,
         args: Option<Vec<String>>,
     },
+    // Keep internal enum variant name, just change parsing/definition
     GitCommand {
-        command: String,
+        command: String, // This field will hold the 'subcommand' value after parsing
         args: Option<Vec<String>>,
     },
     ListDirectory {
@@ -97,8 +98,9 @@ impl fmt::Display for CliToolArguments {
                 }
                 Ok(())
             }
+            // Display format remains the same internally
             CliToolArguments::GitCommand { command, args } => {
-                write!(f, "command: {}", command)?;
+                write!(f, "subcommand: {}", command)?;
                 if let Some(a) = args {
                     write!(f, ", args: {:?}", a)?;
                 }
@@ -197,8 +199,10 @@ fn parse_tool_arguments(
             command: get_required_arg(args, "command")?,
             args: get_optional_arg(args, "args")?,
         }),
-        "git_command" => Ok(CliToolArguments::GitCommand {
-            command: get_required_arg(args, "command")?,
+        // Changed tool name from "git_command" to "git"
+        "git" => Ok(CliToolArguments::GitCommand {
+            // Changed argument name from "command" to "subcommand"
+            command: get_required_arg(args, "subcommand")?,
             args: get_optional_arg(args, "args")?,
         }),
         "list_directory" => Ok(CliToolArguments::ListDirectory {
@@ -260,6 +264,7 @@ impl CliToolProvider {
 impl ToolProvider for CliToolProvider {
     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
         vec![
+            // ... other tool definitions ...
             ToolDefinition {
                 name: "shell".to_string(),
                 description: "Run a shell command and get the output".to_string(),
@@ -330,22 +335,26 @@ impl ToolProvider for CliToolProvider {
                     required: vec!["prompt".to_string()],
                 },
             },
+            // Changed tool name and parameter name
             ToolDefinition {
-                name: "git_command".to_string(),
-                description: "Run a safe git command. Denied commands: push, reset, rebase, checkout, branch -D, etc.".to_string(),
+                name: "git".to_string(), // Changed from "git_command"
+                description: "Executes an allowed git subcommand with optional arguments and path. Denied commands: push, reset, rebase, checkout, branch -D, etc.".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
                         (
-                            "command".to_string(),
-                             Self::string_param("The git subcommand to run (e.g., \"status\", \"diff\", \"add\", \"commit\", \"log\")"),
+                            "subcommand".to_string(), // Changed from "command"
+                             Self::string_param("The git subcommand to execute (e.g., 'status', 'diff', 'log')"),
                         ),
                         (
                             "args".to_string(),
-                             Self::string_array_param("Arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"])"),
+                             Self::string_array_param("Optional arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"])"),
                         ),
+                        // Note: The 'path' argument from the API definition is not explicitly handled here.
+                        // The tool execution uses the 'working_dir' passed to 'execute_tool'.
+                        // This seems consistent with how other tools like 'shell' operate.
                     ]),
-                    required: vec!["command".to_string()],
+                    required: vec!["subcommand".to_string()], // Changed from "command"
                 },
             },
             ToolDefinition {
@@ -434,6 +443,7 @@ impl ToolProvider for CliToolProvider {
                 cargo::run_cargo_command(&command, args.as_deref().unwrap_or(&[]), working_dir)
                     .await
             }
+            // This arm still matches GitCommand, which now holds the subcommand in its 'command' field
             CliToolArguments::GitCommand { command, args } => {
                 git::run_git_command(&command, args.as_deref().unwrap_or(&[]), working_dir).await
             }
