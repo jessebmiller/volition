@@ -6,13 +6,12 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::{BufReader, BufWriter, Write},
-    // Path removed, PathBuf kept
-    path::PathBuf,
+    path::{Path, PathBuf}, // Added Path
 };
 use uuid::Uuid;
-use volition_core::models::chat::ChatMessage; // Kept as it's used below
+use volition_core::models::chat::ChatMessage;
 
-const HISTORY_DIR_NAME: &str = "volition/history";
+const HISTORY_SUBDIR: &str = ".volition/history"; // Store history relative to project root
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConversationHistory {
@@ -24,9 +23,6 @@ pub struct ConversationHistory {
     // pub title: Option<String>,
 }
 
-// Allow dead code for append methods as they are not used in the CLI directly
-// but might be useful for the struct elsewhere.
-#[allow(dead_code)]
 impl ConversationHistory {
     pub fn new(messages: Vec<ChatMessage>) -> Self {
         let now = Utc::now();
@@ -37,38 +33,28 @@ impl ConversationHistory {
             messages,
         }
     }
-
-    pub fn append_message(&mut self, message: ChatMessage) {
-        self.messages.push(message);
-        self.last_updated_at = Utc::now();
-    }
-
-     pub fn append_messages(&mut self, messages: Vec<ChatMessage>) {
-        self.messages.extend(messages);
-        self.last_updated_at = Utc::now();
-    }
+    // Removed append_message and append_messages as they were unused dead code
 }
 
 // --- Helper Functions ---
 
-/// Gets the path to the history storage directory, creating it if necessary.
-fn get_history_dir() -> Result<PathBuf> {
-    let data_dir = dirs::data_local_dir()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get local data directory"))?;
-    let history_path = data_dir.join(HISTORY_DIR_NAME);
+/// Gets the path to the project-specific history storage directory, creating it if necessary.
+fn ensure_history_dir(project_root: &Path) -> Result<PathBuf> {
+    let history_path = project_root.join(HISTORY_SUBDIR);
     fs::create_dir_all(&history_path)
         .with_context(|| format!("Failed to create history directory at {:?}", history_path))?;
     Ok(history_path)
 }
 
-/// Gets the full path for a history file given its ID.
-fn get_history_file_path(id: Uuid) -> Result<PathBuf> {
-    Ok(get_history_dir()?.join(format!("{}.json", id)))
+/// Gets the full path for a history file given its ID and project root.
+fn get_history_file_path(project_root: &Path, id: Uuid) -> Result<PathBuf> {
+    let history_dir = ensure_history_dir(project_root)?; // Ensure directory exists first
+    Ok(history_dir.join(format!("{}.json", id)))
 }
 
-/// Saves a conversation history to a JSON file.
-pub fn save_history(history: &ConversationHistory) -> Result<()> {
-    let file_path = get_history_file_path(history.id)?;
+/// Saves a conversation history to a JSON file within the project's history directory.
+pub fn save_history(project_root: &Path, history: &ConversationHistory) -> Result<()> {
+    let file_path = get_history_file_path(project_root, history.id)?;
     let file = File::create(&file_path)
         .with_context(|| format!("Failed to create history file at {:?}", file_path))?;
     let mut writer = BufWriter::new(file);
@@ -79,9 +65,13 @@ pub fn save_history(history: &ConversationHistory) -> Result<()> {
     Ok(())
 }
 
-/// Loads a conversation history from a JSON file by ID.
-pub fn load_history(id: Uuid) -> Result<ConversationHistory> {
-    let file_path = get_history_file_path(id)?;
+/// Loads a conversation history from a JSON file by ID from the project's history directory.
+pub fn load_history(project_root: &Path, id: Uuid) -> Result<ConversationHistory> {
+    let file_path = get_history_file_path(project_root, id)?;
+    if !file_path.exists() {
+         // Check existence before trying to open to give a clearer error
+         return Err(anyhow::anyhow!("History file not found at {:?}", file_path));
+    }
     let file = File::open(&file_path)
         .with_context(|| format!("Failed to open history file at {:?}", file_path))?;
     let reader = BufReader::new(file);
@@ -90,22 +80,29 @@ pub fn load_history(id: Uuid) -> Result<ConversationHistory> {
     Ok(history)
 }
 
-/// Deletes a conversation history file by ID.
-pub fn delete_history(id: Uuid) -> Result<()> {
-    let file_path = get_history_file_path(id)?;
+/// Deletes a conversation history file by ID from the project's history directory.
+pub fn delete_history(project_root: &Path, id: Uuid) -> Result<()> {
+    let file_path = get_history_file_path(project_root, id)?;
     if file_path.exists() {
         fs::remove_file(&file_path)
             .with_context(|| format!("Failed to delete history file at {:?}", file_path))?;
         Ok(())
     } else {
-        Err(anyhow::anyhow!("History with ID {} not found.", id))
+        Err(anyhow::anyhow!("History with ID {} not found in project.", id))
     }
 }
 
-/// Lists all available conversation histories, sorted by last updated time (desc).
-pub fn list_histories() -> Result<Vec<ConversationHistory>> {
-    let history_dir = get_history_dir()?;
+/// Lists all available conversation histories within the project, sorted by last updated time (desc).
+pub fn list_histories(project_root: &Path) -> Result<Vec<ConversationHistory>> {
+    let history_dir = ensure_history_dir(project_root)?; // Ensures the dir exists, even if empty
     let mut histories = Vec::new();
+
+    // Check if the directory actually exists before trying to read it
+    if !history_dir.is_dir() {
+        // This case should theoretically be handled by ensure_history_dir, but double-check
+         return Ok(histories); // Return empty list if dir doesn't exist or isn't a dir
+    }
+
 
     for entry in fs::read_dir(&history_dir)
         .with_context(|| format!("Failed to read history directory at {:?}", history_dir))?
@@ -115,9 +112,9 @@ pub fn list_histories() -> Result<Vec<ConversationHistory>> {
         if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 if let Ok(id) = Uuid::parse_str(stem) {
-                    // Load only necessary metadata for listing if performance becomes an issue
-                    // For now, load the full history to sort easily
-                    match load_history(id) {
+                    // Load the full history to sort easily
+                    // Pass project_root to the load_history call
+                    match load_history(project_root, id) {
                         Ok(history) => histories.push(history),
                         Err(e) => {
                             // Log error or handle corrupted files?
@@ -135,7 +132,7 @@ pub fn list_histories() -> Result<Vec<ConversationHistory>> {
     Ok(histories)
 }
 
-/// Gets a short preview string of the first user message.
+/// Gets a short preview string of the first user message. (No changes needed here)
 pub fn get_history_preview(history: &ConversationHistory) -> String {
     history.messages
         .iter()
