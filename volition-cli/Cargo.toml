@@ -1,6 +1,6 @@
 [package]
 name = "volition-cli"
-version = "0.2.3" # Increment patch version for the change
+version = "0.2.4"
 edition = "2024" # Assuming 2021 or later
 authors = { workspace = true }
 description = "An AI-powered software engineering assistant (CLI frontend)"
