@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/jessebmiller/volition/compare/volition-cli-v0.2.3...volition-cli-v0.2.4) - 2025-04-07
+
+### Added
+
+- Update git tool provider so it's found by the CLI
+- *(history)* Store history in project-local .volition/history dir
+
 ## [0.2.2](https://github.com/jessebmiller/volition/compare/volition-cli-v0.2.1...volition-cli-v0.2.2) - 2025-04-04
 
 ### Other
