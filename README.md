@@ -27,6 +27,7 @@ Volition supports multiple AI providers and interaction strategies.
 - **Strategy Pattern Architecture**: Flexible interaction models including PlanExecute and CompleteTask strategies
 - **MCP (Model Context Protocol) First**: Native support for the emerging MCP standard
 - **CLI + Library Separation**: Use as a command-line tool or integrate the core library into your applications
+- **Project-Scoped History**: Conversation history is stored within your project directory.
 - **Free and Open Source**: Licensed under Apache 2.0
 
 ## 📦 Installation
@@ -38,16 +39,23 @@ Volition supports multiple AI providers and interaction strategies.
 
 ### From crates.io (Recommended)
 
-Once published, you can install the command-line tool directly from crates.io:
+Once published, you can install the command-line tool and the required MCP servers directly from crates.io. You need to install the main CLI first, followed by the servers:
 
 ```bash
+# Install the main Volition CLI
 cargo install volition-cli --locked
+
+# Install the required MCP servers
+cargo install volition-filesystem-server --locked
+cargo install volition-git-server --locked
+cargo install volition-search-server --locked
+cargo install volition-shell-server --locked
 ```
 
-This will make the `volition` command and the associated
-`volition-*-server` binaries available in your environment (typically in
-`$HOME/.cargo/bin`, ensure this directory is in your system's
-`PATH`). Using `--locked` ensures you use the exact dependency versions
+These commands will make the `volition` command and the associated
+`volition-*-server` binaries available in your Cargo binary path (typically
+`$HOME/.cargo/bin`). Ensure this directory is included in your system's
+`PATH` environment variable. Using `--locked` ensures you use the exact dependency versions
 tested for the release.
 
 ### From Source
@@ -60,9 +68,13 @@ cd volition
 # Build the project
 cargo build --release
 
-# Optional: Install the binary and servers locally from source
-# This makes 'volition' available in $HOME/.cargo/bin
+# Optional: Install the CLI and servers locally from the built source
+# This makes 'volition' and the servers available in $HOME/.cargo/bin
 cargo install --path volition-cli
+cargo install --path volition-filesystem-server
+cargo install --path volition-git-server
+cargo install --path volition-search-server
+cargo install --path volition-shell-server
 ```
 
 ## 🚀 Quick Start
@@ -108,10 +120,17 @@ Always follow Rust best practices and idioms.
   execution_provider = "gemini"
 ```
 
+**Important:** Volition now stores conversation history in a `.volition/history/` directory within your project root. It's recommended to add `.volition/` to your project's `.gitignore` file to prevent committing history files.
+
+```gitignore
+# .gitignore
+.volition/
+```
+
 #### Note on MCP Server Paths:
 
 - The `command` paths under `[mcp_servers]` tell Volition how to launch the tools it needs (like filesystem access, git operations, etc.).
-- If you installed using `cargo install volition-cli`, the server binaries (`volition-filesystem-server`, `volition-git-server`, etc.) are placed alongside the main `volition` binary, typically in `$HOME/.cargo/bin/`.
+- If you installed the CLI and servers using `cargo install <crate_name>` (from crates.io) or `cargo install --path <crate_path>` (from source), the server binaries (`volition-filesystem-server`, `volition-git-server`, etc.) are placed in your Cargo binary path, typically `$HOME/.cargo/bin/`, alongside the main `volition` binary.
 - If `$HOME/.cargo/bin` is in your system's `PATH` environment variable (which is common for Rust setups), you can often just use the command name directly (e.g., `command = "volition-filesystem-server"`) as shown in the example above.
 - If it's not in your `PATH` or you need specific paths, provide the full absolute path (e.g., `command = "/path/to/your/.cargo/bin/volition-filesystem-server"`).
 - If running from a source checkout (using `cargo run`), you would use relative paths to the build output, like `command = "target/debug/volition-filesystem-server"`.
@@ -130,15 +149,15 @@ directory or a parent directory.
     ```bash
     volition
     ```
-    (Starts a new interactive session. Type `exit` or press Enter on an empty line to quit. Type `new` to discard the current session and start fresh.)
+    (Starts a new interactive session. History is saved in `.volition/history/`. Type `exit` or press Enter on an empty line to quit. Type `new` to discard the current session and start fresh within the project.)
 
 *   **Single Turn (Non-interactive):**
     ```bash
     volition --turn "Refactor the error handling in src/main.rs"
     ```
-    (Runs a single query, prints the response, and exits. Creates a new conversation history.)
+    (Runs a single query, prints the response, and exits. Creates a new conversation history in `.volition/history/`.)
 
-**Managing Conversations:**
+**Managing Conversations (within the current project):**
 
 *   **List Recent Conversations:**
     ```bash
@@ -186,7 +205,7 @@ Volition is built with a modular architecture:
 
 - **volition-cli**: Command-line interface
 - **volition-core**: Core agent library with providers, strategies, and tools
-- (Individual server crates also exist in the workspace but are built/installed via volition-cli)
+- **volition-*-server**: Individual MCP server crates (e.g., `volition-filesystem-server`). These must be installed separately from `volition-cli`.
 
 ## 🛠 Development
 
