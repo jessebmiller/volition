@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.4](https://github.com/jessebmiller/volition/compare/volition-core-v0.1.3...volition-core-v0.1.4) - 2025-04-08
+
+### Added
+
+- adds the OpenAI provider
+
 ## [0.1.3](https://github.com/jessebmiller/volition/compare/volition-core-v0.1.2...volition-core-v0.1.3) - 2025-04-04
 
 ### Fixed
