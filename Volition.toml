@@ -74,6 +74,13 @@ default_provider = "gemini" # Must match a key under [providers]
 
 # --- AI Model Providers ---
 [providers]
+  [providers.hf]
+  type = "openai"
+  api_key_env_var = "HUGGING_FACE_API_KEY"
+  [providers.hf.model_config]
+    model_name = "gpt-4o-mini"
+#    model_name = "qwen/qwq-32b"
+#    endpoint = "https://router.huggingface.co/novita/v3/openai/chat/completions"
   [providers.gemini]
   type = "gemini" # Changed from provider_type to match serde(rename)
   api_key_env_var = "GEMINI_API_KEY"

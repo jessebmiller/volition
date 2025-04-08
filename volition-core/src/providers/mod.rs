@@ -52,3 +52,4 @@ impl ProviderRegistry {
 
 pub mod gemini;
 pub mod ollama;
+pub mod openai; // Added OpenAI module
