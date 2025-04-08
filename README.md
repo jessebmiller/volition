@@ -275,7 +275,6 @@ Distributed under the Apache License 2.0. See [LICENSE](LICENSE) for more inform
 - [Discord](https://discord.gg/TeCzH7Vf6K)
 - [GitHub Repository](https://github.com/jessebmiller/volition)
 - [Issue Tracker](https://github.com/jessebmiller/volition/issues)
-- [MCP Protocol Specification](https://github.com/modelcontextprotocol/mcp)
 
 The author of Volition is looking for full time product and
 engineering work. Please contact him at jesse@jessebmiller.com.
