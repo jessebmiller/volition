@@ -1,5 +1,8 @@
 # Volition
 
+The author of Volition is looking for full time product and
+engineering work. Please contact him at jesse@jessebmiller.com.
+
 <div align="center">
 
 [![Crates.io](https://img.shields.io/crates/v/volition-cli.svg)](https://crates.io/crates/volition-cli)
@@ -275,6 +278,3 @@ Distributed under the Apache License 2.0. See [LICENSE](LICENSE) for more inform
 - [Discord](https://discord.gg/TeCzH7Vf6K)
 - [GitHub Repository](https://github.com/jessebmiller/volition)
 - [Issue Tracker](https://github.com/jessebmiller/volition/issues)
-
-The author of Volition is looking for full time product and
-engineering work. Please contact him at jesse@jessebmiller.com.
