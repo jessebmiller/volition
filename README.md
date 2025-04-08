@@ -39,7 +39,7 @@ Volition supports multiple AI providers and interaction strategies.
 
 ### From crates.io (Recommended)
 
-Once published, you can install the command-line tool and the required MCP servers directly from crates.io. You need to install the main CLI first, followed by the servers:
+You can install the command-line tool and the required MCP servers directly from crates.io. You need to install the main CLI first, followed by the servers:
 
 ```bash
 # Install the main Volition CLI
