@@ -210,16 +210,22 @@ impl<UI: UserInteraction + 'static> Agent<UI> {
                         "ollama" => Box::new(crate::providers::ollama::OllamaProvider::new(
                             model_config,
                             http_client.clone(),
+                            api_key, // Note: OllamaProvider ignores the key in its `new` fn
+                        )),
+                        "openai" => Box::new(crate::providers::openai::OpenAIProvider::new(
+                            model_config,
+                            http_client.clone(),
                             api_key,
                         )),
                         _ => {
                             return Err(anyhow!(
-                                "Unsupported provider type: {}",
-                                provider_conf.provider_type
+                                "Unsupported provider type: '{}' specified for provider ID '{}'. Supported types: gemini, ollama, openai.",
+                                provider_conf.provider_type,
+                                id // Added provider ID to error message for clarity
                             ));
                         }
                     };
-                    registry.register(id, provider);
+                    registry.register(id.clone(), provider); // Register the created provider instance
                 }
                 registry
             }
