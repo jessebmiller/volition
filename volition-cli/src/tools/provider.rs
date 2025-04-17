@@ -8,6 +8,7 @@ use std::path::Path;
 use volition_core::tools::fs::{list_directory_contents, read_file as read_file_core};
 use volition_core::{async_trait, models::tools::*, ToolProvider};
 
+// Remove lsp imports
 use super::{cargo, file, git, search, shell, user_input};
 
 #[derive(Debug)]
@@ -52,6 +53,7 @@ enum CliToolArguments {
         depth: Option<usize>,
         show_hidden: Option<bool>,
     },
+    // Remove LSP variants
 }
 
 impl fmt::Display for CliToolArguments {
@@ -120,6 +122,7 @@ impl fmt::Display for CliToolArguments {
                 }
                 Ok(())
             }
+            // Remove LSP display arms
         }
     }
 }
@@ -128,6 +131,7 @@ fn parse_tool_arguments(
     tool_name: &str,
     args: &HashMap<String, JsonValue>,
 ) -> Result<CliToolArguments> {
+    // Helper functions remain the same
     fn get_required_arg<T>(args: &HashMap<String, JsonValue>, key: &str) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
@@ -210,6 +214,7 @@ fn parse_tool_arguments(
             depth: get_optional_arg(args, "depth")?,
             show_hidden: get_optional_arg(args, "show_hidden")?,
         }),
+        // Remove LSP parsing arms
         unknown => Err(anyhow!("Unknown tool name: {}", unknown)),
     }
 }
@@ -221,12 +226,15 @@ impl CliToolProvider {
         Self {}
     }
 
+    // --- Parameter definition helpers (remove unused ones if desired) ---
     fn string_param(description: &str) -> ToolParameter {
         ToolParameter {
             param_type: ToolParameterType::String,
             description: description.to_string(),
             enum_values: None,
             items: None,
+            properties: None, // Added properties/required fields here based on core model
+            required: None,
         }
     }
     fn bool_param(description: &str) -> ToolParameter {
@@ -235,6 +243,8 @@ impl CliToolProvider {
             description: description.to_string(),
             enum_values: None,
             items: None,
+            properties: None,
+            required: None,
         }
     }
     fn int_param(description: &str) -> ToolParameter {
@@ -243,6 +253,8 @@ impl CliToolProvider {
             description: description.to_string(),
             enum_values: None,
             items: None,
+            properties: None,
+            required: None,
         }
     }
     fn string_array_param(description: &str) -> ToolParameter {
@@ -255,16 +267,25 @@ impl CliToolProvider {
                 description: "A single string item".to_string(),
                 enum_values: None,
                 items: None,
+                properties: None,
+                required: None,
             })),
+            properties: None,
+            required: None,
         }
     }
+    // Remove object_param and array_param helpers if no longer used
+    // fn object_param(...) -> ToolParameter { ... }
+    // fn array_param(...) -> ToolParameter { ... }
 }
 
 #[async_trait]
 impl ToolProvider for CliToolProvider {
     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
-        vec![
-            // ... other tool definitions ...
+        // Remove LSP parameter definitions (lsp_position_param, etc.)
+
+        vec![ // Changed from `let mut definitions = vec![...]; definitions.extend(...)`
+            // --- Existing Tool Definitions ---
             ToolDefinition {
                 name: "shell".to_string(),
                 description: "Run a shell command and get the output".to_string(),
@@ -335,26 +356,22 @@ impl ToolProvider for CliToolProvider {
                     required: vec!["prompt".to_string()],
                 },
             },
-            // Changed tool name and parameter name
             ToolDefinition {
-                name: "git".to_string(), // Changed from "git_command"
+                name: "git".to_string(),
                 description: "Executes an allowed git subcommand with optional arguments and path. Denied commands: push, reset, rebase, checkout, branch -D, etc.".to_string(),
                 parameters: ToolParametersDefinition {
                     param_type: "object".to_string(),
                     properties: HashMap::from([
                         (
-                            "subcommand".to_string(), // Changed from "command"
+                            "subcommand".to_string(),
                              Self::string_param("The git subcommand to execute (e.g., 'status', 'diff', 'log')"),
                         ),
                         (
                             "args".to_string(),
                              Self::string_array_param("Optional arguments for the git subcommand (e.g., [\"--porcelain\"], [\"--staged\"], [\"src/main.rs\"], [\"-m\", \"My message\"])"),
                         ),
-                        // Note: The 'path' argument from the API definition is not explicitly handled here.
-                        // The tool execution uses the 'working_dir' passed to 'execute_tool'.
-                        // This seems consistent with how other tools like 'shell' operate.
                     ]),
-                    required: vec!["subcommand".to_string()], // Changed from "command"
+                    required: vec!["subcommand".to_string()],
                 },
             },
             ToolDefinition {
@@ -388,8 +405,11 @@ impl ToolProvider for CliToolProvider {
                     required: vec!["path".to_string()],
                 },
             },
+            // Remove LSP tool definitions
         ]
+        // Remove definitions.extend(...)
     }
+
 
     async fn execute_tool(
         &self,
@@ -443,7 +463,6 @@ impl ToolProvider for CliToolProvider {
                 cargo::run_cargo_command(&command, args.as_deref().unwrap_or(&[]), working_dir)
                     .await
             }
-            // This arm still matches GitCommand, which now holds the subcommand in its 'command' field
             CliToolArguments::GitCommand { command, args } => {
                 git::run_git_command(&command, args.as_deref().unwrap_or(&[]), working_dir).await
             }
@@ -452,7 +471,7 @@ impl ToolProvider for CliToolProvider {
                 depth,
                 show_hidden,
             } => list_directory_contents(&path, depth, show_hidden.unwrap_or(false), working_dir),
+            // Remove LSP execution arms
         }
     }
 }
-
