@@ -16,19 +16,24 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] } # Add chrono with serde feature
 clap = { workspace = true }
 colored = { workspace = true }
+dialoguer = { version = "0.11", features = ["fuzzy-select"] } # Added dialoguer
 dirs = { workspace = true }
 dotenvy = { workspace = true }
 duct = { workspace = true }
 ignore = { workspace = true }
+indicatif = "0.17" # Added for spinners
 lazy_static = { workspace = true }
 pulldown-cmark = { workspace = true }
 pulldown-cmark-to-cmark = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
+rustyline = { version = "14.0", features = ["derive"] } # Added rustyline
 serde = { workspace = true, features = ["derive"] } # Ensure derive feature is enabled
 serde_json = { workspace = true }
+# shlex = "0.1.1" # Removed shlex dependency
 syntect = { workspace = true }
 termimad = { workspace = true }
 time = { workspace = true, features = ["macros", "local-offset"] }
@@ -38,12 +43,8 @@ tracing = { workspace = true }
 # Enable env-filter and time features for tracing-subscriber
 tracing-subscriber = { workspace = true, features = ["env-filter", "time", "local-time", "registry", "fmt"] } # Added registry and fmt features
 tracing-appender = "0.2" # Added for file logging
-uuid = { version = "1.6", features = ["v4", "serde"] } # Add uuid with features
-chrono = { version = "0.4", features = ["serde"] } # Add chrono with serde feature
 url = { workspace = true }
-indicatif = "0.17" # Added for spinners
-rustyline = { version = "14.0", features = ["derive"] } # Added rustyline
-dialoguer = { version = "0.11", features = ["fuzzy-select"] } # Added dialoguer
+uuid = { version = "1.6", features = ["v4", "serde"] } # Add uuid with features
 
 # Add path dependency to the core library
 # Ensure version is appropriate or use workspace inheritance if set up for path deps
