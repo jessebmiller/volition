@@ -4,51 +4,83 @@ This guide explains how to add a new API provider to the Volition core system. W
 
 ## 1. Create the Provider File
 
-Create a new file in `volition-core/src/api/` named after your provider (e.g., `anthropic.rs`).
+Create a new file in `volition-core/src/providers/` named after your provider (e.g., `anthropic.rs`).
 
 ## 2. Define the Provider Structure
 
 ```rust
-use super::ChatApiProvider;
+use super::Provider;
+use crate::config::ModelConfig;
 use crate::models::chat::{ApiResponse, ChatMessage, Choice};
 use crate::models::tools::{ToolCall, ToolDefinition};
 use anyhow::{Result, anyhow, Context};
+use async_trait::async_trait;
+use reqwest::Client;
 use serde_json::{json, Value};
-use std::collections::HashMap;
-use toml::Value as TomlValue;
-use tracing::warn;
+use tracing::debug;
 
 pub struct AnthropicProvider {
+    config: ModelConfig,
+    http_client: Client,
     api_key: String,
-    endpoint: String,
 }
 
 impl AnthropicProvider {
-    pub fn new(api_key: String, endpoint: Option<String>) -> Self {
+    pub fn new(config: ModelConfig, http_client: Client, api_key: String) -> Self {
+        debug!("Creating new Anthropic provider with model: {}", config.model_name);
         Self {
+            config,
+            http_client,
             api_key,
-            endpoint: endpoint.unwrap_or_else(|| "https://api.anthropic.com/v1/messages".to_string()),
         }
     }
 }
 ```
 
-## 3. Implement the ChatApiProvider Trait
+## 3. Implement the Provider Trait
 
-Implement the `ChatApiProvider` trait for your provider:
+Implement the `Provider` trait for your provider:
 
 ```rust
-impl ChatApiProvider for AnthropicProvider {
-    fn build_payload(
+#[async_trait]
+impl Provider for AnthropicProvider {
+    fn name(&self) -> &str {
+        &self.config.model_name
+    }
+
+    async fn get_completion(
         &self,
-        model_name: &str,
         messages: Vec<ChatMessage>,
         tools: Option<&[ToolDefinition]>,
-        parameters: Option<&TomlValue>,
+    ) -> Result<ApiResponse> {
+        self.call_chat_completion_api(messages, tools).await
+    }
+}
+```
+
+## 4. Implement API Methods
+
+Add the necessary methods for API communication:
+
+```rust
+impl AnthropicProvider {
+    fn build_payload(
+        &self,
+        messages: Vec<ChatMessage>,
+        tools: Option<&[ToolDefinition]>,
     ) -> Result<Value> {
+        debug!("Building Anthropic payload...");
+        debug!("Model name: {}", self.config.model_name);
+        debug!("Message count: {}", messages.len());
+
         let mut payload = json!({
-            "model": model_name,
-            "messages": messages
+            "model": self.config.model_name,
+            "messages": messages.iter().map(|msg| {
+                json!({
+                    "role": msg.role,
+                    "content": msg.content.as_deref().unwrap_or_default()
+                })
+            }).collect::<Vec<_>>()
         });
 
         // Add tools if present
@@ -72,72 +104,57 @@ impl ChatApiProvider for AnthropicProvider {
         }
 
         // Add parameters if present
-        if let Some(params) = parameters {
+        if let Some(params) = &self.config.parameters {
             if let Some(temperature) = params.get("temperature").and_then(|t| t.as_float()) {
                 payload["temperature"] = json!(temperature);
             }
         }
 
+        debug!("Final payload: {}", serde_json::to_string_pretty(&payload)?);
         Ok(payload)
     }
 
     fn parse_response(&self, response_body: &str) -> Result<ApiResponse> {
-        match serde_json::from_str::<Value>(response_body) {
-            Ok(raw_response) => {
-                // Parse the response into ApiResponse format
-                // This will be specific to the Anthropic API response structure
-                todo!("Implement response parsing")
-            }
-            Err(e) => Err(anyhow!(e)).context(format!(
-                "Failed to parse Anthropic response: {}", 
-                response_body
-            )),
-        }
+        debug!("Parsing Anthropic response...");
+        debug!("Response body: {}", response_body);
+
+        let raw_response: Value = serde_json::from_str(response_body)?;
+        
+        // Parse the response into ApiResponse format
+        // This will be specific to the Anthropic API response structure
+        todo!("Implement response parsing")
     }
 
-    fn build_headers(&self) -> Result<HashMap<String, String>> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Content-Type".to_string(),
-            "application/json".to_string(),
-        );
-        if !self.api_key.is_empty() {
-            headers.insert(
-                "Authorization".to_string(),
-                format!("Bearer {}", self.api_key),
-            );
-        }
-        Ok(headers)
-    }
+    async fn call_chat_completion_api(
+        &self,
+        messages: Vec<ChatMessage>,
+        tools: Option<&[ToolDefinition]>,
+    ) -> Result<ApiResponse> {
+        let endpoint = self.config.endpoint.as_deref().unwrap_or("https://api.anthropic.com/v1/messages");
+        debug!("Using Anthropic endpoint: {}", endpoint);
 
-    fn get_endpoint(&self) -> String {
-        self.endpoint.clone()
+        let payload = self.build_payload(messages, tools)?;
+
+        debug!("Sending request to Anthropic API...");
+        let response = self
+            .http_client
+            .post(endpoint)
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.api_key)
+            .json(&payload)
+            .send()
+            .await
+            .context("Failed to send request to Anthropic API")?;
+
+        debug!("Received response from Anthropic API, status: {}", response.status());
+        let response_body = response
+            .text()
+            .await
+            .context("Failed to read response from Anthropic API")?;
+
+        self.parse_response(&response_body)
     }
 }
-```
-
-## 4. Expose the Module
-
-Add your provider module to `volition-core/src/api/mod.rs`:
-
-```rust
-pub mod anthropic;
-```
-
-## 5. Update Provider Selection
-
-Update the provider selection in `call_chat_completion_api` in `volition-core/src/api/mod.rs`:
-
-```rust
-let provider: Box<dyn ChatApiProvider> = if endpoint_str.contains("googleapis.com") {
-    Box::new(gemini::GeminiProvider::new(api_key, Some(endpoint_str.to_string())))
-} else if endpoint_str.contains("openai.com") {
-    Box::new(openai::OpenAIProvider::new(api_key, Some(endpoint_str.to_string())))
-} else if endpoint_str.contains("anthropic.com") {
-    Box::new(anthropic::AnthropicProvider::new(api_key, Some(endpoint_str.to_string())))
-} else {
-    Box::new(ollama::OllamaProvider::new(api_key, Some(endpoint_str.to_string())))
-};
 ```
 
 ## Key Considerations
@@ -154,9 +171,9 @@ let provider: Box<dyn ChatApiProvider> = if endpoint_str.contains("googleapis.co
 
 For a complete example, see the implementation of other providers in the codebase:
 
-- `volition-core/src/api/openai.rs`
-- `volition-core/src/api/gemini.rs`
-- `volition-core/src/api/ollama.rs`
+- `volition-core/src/providers/openai.rs`
+- `volition-core/src/providers/gemini.rs`
+- `volition-core/src/providers/ollama.rs`
 
 ## Testing Your Provider
 
