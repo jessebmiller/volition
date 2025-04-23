@@ -1,5 +1,5 @@
 ---
-title: Creating simple tools with the help of Claude
+title: Dogfooding an Agentic Coding Assistant 
 date: 2025-03-25
 tags: Rust, AI, VibeCoding, DevTooling
 ---
