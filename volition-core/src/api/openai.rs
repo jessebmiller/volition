@@ -1,20 +1,27 @@
 use super::ChatApiProvider;
 use crate::models::chat::{ApiResponse, ChatMessage, Choice};
-use crate::models::tools::{ToolCall, ToolDefinition};
-use anyhow::{Result, anyhow, Context};
+use crate::models::tools::ToolDefinition;
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use toml::Value as TomlValue;
-use tracing::warn;
 
-pub struct OpenAIProvider;
+pub struct OpenAIProvider {
+    api_key: String,
+    endpoint: String,
+}
 
 impl OpenAIProvider {
-    pub fn new() -> Self {
-        Self
+    pub fn new(api_key: String, endpoint: Option<String>) -> Self {
+        Self {
+            api_key,
+            endpoint: endpoint.unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string()),
+        }
     }
 }
 
+#[async_trait]
 impl ChatApiProvider for OpenAIProvider {
     fn build_payload(
         &self,
@@ -23,35 +30,40 @@ impl ChatApiProvider for OpenAIProvider {
         tools: Option<&[ToolDefinition]>,
         parameters: Option<&TomlValue>,
     ) -> Result<Value> {
+        // Build the base payload
         let mut payload = json!({
             "model": model_name,
-            "messages": messages
+            "messages": messages,
+            "temperature": 0.7,
+            "top_p": 0.8,
         });
 
-        // Add tools if present
+        // Add tools if provided
         if let Some(tools) = tools {
-            if !tools.is_empty() {
-                let tools_with_type: Vec<Value> = tools
-                    .iter()
-                    .map(|t| {
-                        json!({
-                            "type": "function",
-                            "function": {
-                                "name": t.name,
-                                "description": t.description,
-                                "parameters": t.parameters
-                            }
-                        })
+            let tools_json = tools
+                .iter()
+                .map(|tool| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": tool.parameters
+                        }
                     })
-                    .collect();
-                payload["tools"] = json!(tools_with_type);
-            }
+                })
+                .collect::<Vec<_>>();
+            payload["tools"] = json!(tools_json);
         }
 
-        // Add parameters if present
+        // Add any additional parameters
         if let Some(params) = parameters {
-            if let Some(temperature) = params.get("temperature").and_then(|t| t.as_float()) {
-                payload["temperature"] = json!(temperature);
+            if let Some(toml::Value::Table(table)) = params.get("generation_config") {
+                for (key, value) in table {
+                    if let Some(num) = value.as_float() {
+                        payload[key] = json!(num);
+                    }
+                }
             }
         }
 
@@ -59,99 +71,58 @@ impl ChatApiProvider for OpenAIProvider {
     }
 
     fn parse_response(&self, response_body: &str) -> Result<ApiResponse> {
-        match serde_json::from_str::<Value>(response_body) {
-            Ok(raw_response) => {
-                let response_id = raw_response
-                    .get("id")
-                    .and_then(|id| id.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| {
-                        warn!("No ID in OpenAI response, generating one");
-                        generate_id("openai_resp")
-                    });
+        let response: Value = serde_json::from_str(response_body)?;
+        
+        // Extract the generated text
+        let content = response["choices"][0]["message"]["content"]
+            .as_str()
+            .ok_or_else(|| anyhow!("No text content in response"))?
+            .to_string();
 
-                let choices = if let Some(choices_array) = raw_response.get("choices").and_then(|c| c.as_array()) {
-                    choices_array
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(index, choice)| {
-                            let message = choice.get("message")?;
-                            let role = message.get("role")?.as_str()?;
-                            let content = message.get("content").and_then(|c| c.as_str());
-                            let tool_calls = message.get("tool_calls").and_then(|tc| tc.as_array()).map(|tc| {
-                                tc.iter().filter_map(|tc| {
-                                    let id = tc.get("id")?.as_str()?;
-                                    let function = tc.get("function")?;
-                                    let name = function.get("name")?.as_str()?;
-                                    let arguments = function.get("arguments")?.as_str()?;
-                                    Some(ToolCall {
-                                        id: id.to_string(),
-                                        function: crate::models::tools::ToolFunction {
-                                            name: name.to_string(),
-                                            arguments: arguments.to_string(),
-                                        },
-                                        call_type: "function".to_string(),
-                                    })
-                                }).collect()
-                            });
-                            let finish_reason = choice.get("finish_reason")?.as_str()?;
+        // Extract the finish reason
+        let finish_reason = response["choices"][0]["finish_reason"]
+            .as_str()
+            .unwrap_or("stop")
+            .to_string();
 
-                            Some(Choice {
-                                index: index as u32,
-                                message: ChatMessage {
-                                    role: role.to_string(),
-                                    content: content.map(|s| s.to_string()),
-                                    tool_calls,
-                                    tool_call_id: None,
-                                },
-                                finish_reason: finish_reason.to_string(),
-                            })
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
+        // Extract usage information
+        let prompt_tokens = response["usage"]["prompt_tokens"].as_i64().unwrap_or(0) as u32;
+        let completion_tokens = response["usage"]["completion_tokens"].as_i64().unwrap_or(0) as u32;
+        let total_tokens = response["usage"]["total_tokens"].as_i64().unwrap_or(0) as u32;
 
-                if choices.is_empty() {
-                    Err(anyhow!(
-                        "Failed to extract choices from OpenAI response structure: {}",
-                        response_body
-                    ))
-                } else {
-                    Ok(ApiResponse {
-                        id: response_id,
-                        choices,
-                    })
-                }
-            }
-            Err(e) => Err(anyhow!(e)).context(format!("Failed to parse OpenAI response: {}", response_body)),
-        }
+        // Create a choice from the response
+        let choice = Choice {
+            index: 0,
+            message: ChatMessage {
+                role: "assistant".to_string(),
+                content: Some(content.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            finish_reason: finish_reason.clone(),
+        };
+
+        Ok(ApiResponse {
+            id: response["id"].as_str().unwrap_or("").to_string(),
+            content,
+            finish_reason,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            choices: vec![choice],
+        })
     }
 
-    fn build_headers(&self, api_key: &str) -> Result<HashMap<String, String>> {
+    fn build_headers(&self) -> Result<HashMap<String, String>> {
         let mut headers = HashMap::new();
-        headers.insert(
-            "Content-Type".to_string(),
-            "application/json".to_string(),
-        );
-        if !api_key.is_empty() {
-            headers.insert(
-                "Authorization".to_string(),
-                format!("Bearer {}", api_key),
-            );
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        if !self.api_key.is_empty() {
+            headers.insert("Authorization".to_string(), format!("Bearer {}", self.api_key));
         }
         Ok(headers)
     }
 
-    fn adapt_endpoint(&self, endpoint: &str, _api_key: &str) -> Result<String> {
-        Ok(endpoint.to_string())
+    fn get_endpoint(&self) -> String {
+        self.endpoint.clone()
     }
-}
-
-fn generate_id(prefix: &str) -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("{}_{}", prefix, nanos)
 } 
