@@ -28,6 +28,68 @@ pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) 
 }
 
 pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
+    fn list_recursive(path: &Path, files: &mut Vec<FileInfo>) -> Result<(), String> {
+        let entries = match fs::read_dir(path) {
+            Ok(entries) => entries,
+            Err(e) => return Err(format!("Failed to read directory: {}", e)),
+        };
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    eprintln!("Error reading directory entry: {}", e);
+                    continue;
+                }
+            };
+
+            let metadata = match entry.metadata() {
+                Ok(meta) => meta,
+                Err(e) => {
+                    eprintln!("Error reading metadata: {}", e);
+                    continue;
+                }
+            };
+
+            let file_type = if metadata.is_dir() {
+                "directory"
+            } else if metadata.is_file() {
+                "file"
+            } else if metadata.is_symlink() {
+                "symlink"
+            } else {
+                "unknown"
+            };
+
+            let size = if metadata.is_file() {
+                Some(metadata.len())
+            } else {
+                None
+            };
+
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs());
+
+            let file_info = FileInfo {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                path: entry.path().to_string_lossy().into_owned(),
+                file_type: file_type.to_string(),
+                size,
+                modified,
+            };
+
+            files.push(file_info);
+
+            if metadata.is_dir() {
+                list_recursive(&entry.path(), files)?;
+            }
+        }
+        Ok(())
+    }
+
     let path = Path::new(path);
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
@@ -37,62 +99,8 @@ pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
         return Err(format!("Path is not a directory: {}", path.display()));
     }
 
-    let entries = match fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(e) => return Err(format!("Failed to read directory: {}", e)),
-    };
-
     let mut files = Vec::new();
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(e) => {
-                eprintln!("Error reading directory entry: {}", e);
-                continue;
-            }
-        };
-
-        let metadata = match entry.metadata() {
-            Ok(meta) => meta,
-            Err(e) => {
-                eprintln!("Error reading metadata: {}", e);
-                continue;
-            }
-        };
-
-        let file_type = if metadata.is_dir() {
-            "directory"
-        } else if metadata.is_file() {
-            "file"
-        } else if metadata.is_symlink() {
-            "symlink"
-        } else {
-            "unknown"
-        };
-
-        let size = if metadata.is_file() {
-            Some(metadata.len())
-        } else {
-            None
-        };
-
-        let modified = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|duration| duration.as_secs());
-
-        let file_info = FileInfo {
-            name: entry.file_name().to_string_lossy().into_owned(),
-            path: entry.path().to_string_lossy().into_owned(),
-            file_type: file_type.to_string(),
-            size,
-            modified,
-        };
-
-        files.push(file_info);
-    }
-
+    list_recursive(path, &mut files)?;
     Ok(files)
 }
 
