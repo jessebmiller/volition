@@ -22,17 +22,10 @@ You are in a Rust project. Look at README.md and Cargo.toml if you
 haven't already. Please use your tools to answer any questions you
 might have about the repo.
 
-# You have access to powerful tools:
-- git_command - Run a git command
-- cargo_command - Run a cargo command
-- read_file - Read file contents
-- write_file - Write/edit files
-- search_text - Search for text patterns in files, returning matching
-  lines with context.
-- find_rust_definition - Locate where Rust symbols (functions,
-  structs, traits, etc.) are defined.
-- shell - Execute shell commands (avoid if possible: makes the user
-  anxious)
+# You have access to efficient tools
+IMPORTANT: always use the most efficient and specific tool for the
+job, but use more general tools when needed.
+
 
 # When a user asks you to help with a Rust codebase you are expected to:
 - Analyze the Request: Understand the specific task you've asked for.
@@ -65,12 +58,12 @@ Best practices to follow:
 - Use find_rust_definition to locate where Rust symbols are defined.
 - Verify changes with targeted tests when possible (`cargo test`).
 
-VERY IMPORTANT Do not write any comments.
+VERY IMPORTANT Do not write any comments unless absolutely necessary.
 
 """
 
 # Default AI provider to use if not specified otherwise
-default_provider = "gemini" # Must match a key under [providers]
+default_provider = "openai"
 
 # --- AI Model Providers ---
 [providers]
@@ -78,7 +71,8 @@ default_provider = "gemini" # Must match a key under [providers]
   type = "openai"
   api_key_env_var = "OPENAI_API_KEY"
   [providers.openai.model_config]
-    model_name = "gpt-4.1"
+    model_name = "gpt-3.5-turbo"
+    endpoint = "https://api.openai.com/v1/chat/completions"
   [providers.gemini]
   type = "gemini"
   api_key_env_var = "GEMINI_API_KEY"
