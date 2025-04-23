@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use toml::Value as TomlValue;
 
-const DEFAULT_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
+pub const DEFAULT_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
 
 pub struct GeminiProvider {
     api_key: String,
