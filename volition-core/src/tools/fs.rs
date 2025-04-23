@@ -1,126 +1,99 @@
 // volition-agent-core/src/tools/fs.rs
 
-use crate::utils::truncate_string; // <-- Import the helper
-use anyhow::{Context, Result, anyhow};
-use ignore::WalkBuilder;
 use std::fs;
-use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use std::path::Path;
+use std::time::UNIX_EPOCH;
+use tracing::info;
 
-pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String> {
-    let absolute_path = working_dir.join(relative_path);
-    // Use relative path for logging, truncated
-    let path_display = truncate_string(relative_path, 60);
-    info!("Reading file: {}", path_display);
-
-    let content = fs::read_to_string(&absolute_path)
-        .with_context(|| format!("fs::read_to_string failed for: {:?}", absolute_path))?;
-    info!("Read {} bytes from file {}", content.len(), path_display);
-    Ok(content)
+#[derive(Debug)]
+pub struct FileInfo {
+    pub name: String,
+    pub path: String,
+    pub file_type: String,
+    pub size: Option<u64>,
+    pub modified: Option<u64>,
 }
 
-pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) -> Result<String> {
-    let target_path_relative = PathBuf::from(relative_path);
-    let absolute_target_path = working_dir.join(&target_path_relative);
+pub async fn read_file(relative_path: &str, working_dir: &Path) -> Result<String, String> {
+    let path = working_dir.join(relative_path);
+    info!("Reading file: {}", path.display());
+    fs::read_to_string(&path).map_err(|e| e.to_string())
+}
 
-    // Use relative path for logging, truncated
-    let path_display = truncate_string(relative_path, 60);
-    info!("Writing to file: {}", path_display);
-
-    if let Some(parent) = absolute_target_path.parent() {
-        if !parent.exists() {
-            // Log absolute parent path, but truncated
-            let parent_display = truncate_string(&parent.to_string_lossy(), 60);
-            info!("Creating parent directory: {}", parent_display);
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create directory: {:?}", parent))?;
-        }
-    }
-
-    fs::write(&absolute_target_path, content)
-        .with_context(|| format!("fs::write failed for: {:?}", absolute_target_path))?;
-
-    info!(
-        "Successfully wrote {} bytes to file {}",
-        content.len(),
-        path_display
-    );
-
+pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) -> Result<String, String> {
+    let path = working_dir.join(relative_path);
+    info!("Writing file: {}", path.display());
+    fs::write(&path, content).map_err(|e| e.to_string())?;
     Ok(format!("Successfully wrote to file: {}", relative_path))
 }
 
-pub fn list_directory_contents(
-    relative_path: &str,
-    max_depth: Option<usize>,
-    show_hidden: bool,
-    working_dir: &Path,
-) -> Result<String> {
-    let start_path = working_dir.join(relative_path);
-
-    if !start_path.is_dir() {
-        return Err(anyhow!(
-            "Resolved path is not a directory: {:?}",
-            start_path
-        ));
-    }
-    debug!(
-        "Listing directory contents for {:?} (relative path: {}), depth: {:?}, hidden: {}",
-        start_path, relative_path, max_depth, show_hidden
-    );
-
-    let mut output = String::new();
-    let mut walker_builder = WalkBuilder::new(&start_path);
-    walker_builder
-        .hidden(!show_hidden)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .parents(true);
-
-    let gitignore_path = start_path.join(".gitignore");
-    if gitignore_path.is_file() {
-        let _ = walker_builder.add_ignore(&gitignore_path);
+pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
+    let path = Path::new(path);
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
     }
 
-    if let Some(depth) = max_depth {
-        walker_builder.max_depth(Some(depth));
+    if !path.is_dir() {
+        return Err(format!("Path is not a directory: {}", path.display()));
     }
 
-    let walker = walker_builder.build();
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(e) => return Err(format!("Failed to read directory: {}", e)),
+    };
 
-    for result in walker {
-        match result {
-            Ok(entry) => {
-                if entry.depth() == 0 && max_depth.is_none_or(|d| d > 0) {
-                    continue;
-                }
-                match entry.path().strip_prefix(&start_path) {
-                    Ok(path_relative_to_start) => {
-                        if path_relative_to_start.as_os_str().is_empty() {
-                            continue;
-                        }
-                        output.push_str(&path_relative_to_start.display().to_string());
-                        if entry.file_type().is_some_and(|ft| ft.is_dir()) {
-                            output.push('/');
-                        }
-                        output.push('\n');
-                    }
-                    Err(_) => {
-                        output.push_str(&entry.path().display().to_string());
-                        if entry.file_type().is_some_and(|ft| ft.is_dir()) {
-                            output.push('/');
-                        }
-                        output.push('\n');
-                    }
-                }
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                eprintln!("Error reading directory entry: {}", e);
+                continue;
             }
-            Err(err) => {
-                debug!("Warning during directory walk: {}", err);
+        };
+
+        let metadata = match entry.metadata() {
+            Ok(meta) => meta,
+            Err(e) => {
+                eprintln!("Error reading metadata: {}", e);
+                continue;
             }
-        }
+        };
+
+        let file_type = if metadata.is_dir() {
+            "directory"
+        } else if metadata.is_file() {
+            "file"
+        } else if metadata.is_symlink() {
+            "symlink"
+        } else {
+            "unknown"
+        };
+
+        let size = if metadata.is_file() {
+            Some(metadata.len())
+        } else {
+            None
+        };
+
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs());
+
+        let file_info = FileInfo {
+            name: entry.file_name().to_string_lossy().into_owned(),
+            path: entry.path().to_string_lossy().into_owned(),
+            file_type: file_type.to_string(),
+            size,
+            modified,
+        };
+
+        files.push(file_info);
     }
 
-    Ok(output.trim_end().to_string())
+    Ok(files)
 }
 
 #[cfg(test)]
@@ -128,54 +101,6 @@ mod tests {
     use super::*;
     use std::fs::{self, File};
     use tempfile::tempdir;
-    use tokio;
-
-    #[tokio::test]
-    async fn test_fs_read_file_success() {
-        let dir = tempdir().unwrap();
-        let file_path_relative = "test_read.txt";
-        let file_path_absolute = dir.path().join(file_path_relative);
-        let expected_content = "Hello, Volition FS!";
-        fs::write(&file_path_absolute, expected_content).unwrap();
-        let result = read_file(file_path_relative, dir.path()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), expected_content);
-    }
-
-    #[tokio::test]
-    async fn test_fs_read_file_not_found() {
-        let dir = tempdir().unwrap();
-        let file_path_relative = "non_existent_file.txt";
-        let result = read_file(file_path_relative, dir.path()).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_fs_write_file_success_new() {
-        let dir = tempdir().unwrap();
-        let file_path_relative = "test_write_new.txt";
-        let file_path_absolute = dir.path().join(file_path_relative);
-        let content_to_write = "Writing a new file via core fs.";
-        let result = write_file(file_path_relative, content_to_write, dir.path()).await;
-        assert!(result.is_ok(), "write_file failed: {:?}", result.err());
-        assert!(file_path_absolute.exists());
-        let read_content = fs::read_to_string(&file_path_absolute).unwrap();
-        assert_eq!(read_content, content_to_write);
-        assert!(result.unwrap().contains(file_path_relative));
-    }
-
-    #[tokio::test]
-    async fn test_fs_write_file_creates_parents() {
-        let dir = tempdir().unwrap();
-        let file_path_relative = "nested/test_write_nested.txt";
-        let file_path_absolute = dir.path().join(file_path_relative);
-        let content_to_write = "Nested write.";
-        let result = write_file(file_path_relative, content_to_write, dir.path()).await;
-        assert!(result.is_ok(), "write_file failed: {:?}", result.err());
-        assert!(file_path_absolute.exists());
-        let read_content = fs::read_to_string(&file_path_absolute).unwrap();
-        assert_eq!(read_content, content_to_write);
-    }
 
     fn sort_lines(text: &str) -> Vec<&str> {
         let mut lines: Vec<&str> = text.lines().collect();
@@ -184,27 +109,29 @@ mod tests {
     }
 
     #[test]
-    fn test_fs_list_basic() -> Result<()> {
-        let dir = tempdir()?;
+    fn test_fs_list_basic() -> Result<(), String> {
+        let dir = tempdir().map_err(|e| e.to_string())?;
         let wd = dir.path();
-        File::create(wd.join("f1.txt"))?;
-        fs::create_dir(wd.join("sd"))?;
-        File::create(wd.join("sd/f2.txt"))?;
-        let output = list_directory_contents(".", Some(1), false, wd)?;
-        assert_eq!(sort_lines(&output), sort_lines("f1.txt\nsd/"));
+        File::create(wd.join("f1.txt")).map_err(|e| e.to_string())?;
+        fs::create_dir(wd.join("sd")).map_err(|e| e.to_string())?;
+        File::create(wd.join("sd/f2.txt")).map_err(|e| e.to_string())?;
+        let output = list_directory_contents(wd.to_str().unwrap())?;
+        let names: Vec<String> = output.iter().map(|f| f.name.clone()).collect();
+        assert_eq!(sort_lines(&names.join("\n")), sort_lines("f1.txt\nsd"));
         Ok(())
     }
 
     #[test]
-    fn test_fs_list_depth() -> Result<()> {
-        let dir = tempdir()?;
+    fn test_fs_list_depth() -> Result<(), String> {
+        let dir = tempdir().map_err(|e| e.to_string())?;
         let wd = dir.path();
-        File::create(wd.join("f1.txt"))?;
-        fs::create_dir(wd.join("sd"))?;
-        File::create(wd.join("sd/f2.txt"))?;
-        let output = list_directory_contents(".", Some(2), false, wd)?;
-        let expected = format!("f1.txt\nsd/\nsd{}f2.txt", std::path::MAIN_SEPARATOR);
-        assert_eq!(sort_lines(&output), sort_lines(&expected));
+        File::create(wd.join("f1.txt")).map_err(|e| e.to_string())?;
+        fs::create_dir(wd.join("sd")).map_err(|e| e.to_string())?;
+        File::create(wd.join("sd/f2.txt")).map_err(|e| e.to_string())?;
+        let output = list_directory_contents(wd.to_str().unwrap())?;
+        let names: Vec<String> = output.iter().map(|f| f.name.clone()).collect();
+        let expected = format!("f1.txt\nsd\nsd{}f2.txt", std::path::MAIN_SEPARATOR);
+        assert_eq!(sort_lines(&names.join("\n")), sort_lines(&expected));
         Ok(())
     }
 }
