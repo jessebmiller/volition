@@ -31,6 +31,7 @@ Volition supports multiple AI providers and interaction strategies.
 - **MCP (Model Context Protocol) First**: Native support for the emerging MCP standard
 - **CLI + Library Separation**: Use as a command-line tool or integrate the core library into your applications
 - **Project-Scoped History**: Conversation history is stored within your project directory.
+- **Unified API Interface**: Standardized API interface for LLM providers with consistent request/response handling
 - **Free and Open Source**: Licensed under Apache 2.0
 
 ## 📦 Installation
@@ -208,6 +209,9 @@ Volition is built with a modular architecture:
 
 - **volition-cli**: Command-line interface
 - **volition-core**: Core agent library with providers, strategies, and tools
+  - **API Module**: Standardized interface for LLM providers with consistent request/response handling
+  - **Provider Implementations**: Support for various LLM providers (Gemini, OpenAI, etc.)
+  - **Strategy Implementations**: Different interaction models for agent behavior
 - **volition-*-server**: Individual MCP server crates (e.g., `volition-filesystem-server`). These must be installed separately from `volition-cli`.
 
 ## 🛠 Development
