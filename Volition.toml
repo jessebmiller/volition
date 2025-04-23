@@ -63,7 +63,7 @@ VERY IMPORTANT Do not write any comments unless absolutely necessary.
 """
 
 # Default AI provider to use if not specified otherwise
-default_provider = "gemini"
+default_provider = "ollama"
 
 # --- AI Model Providers ---
 [providers]
@@ -79,6 +79,11 @@ default_provider = "gemini"
   [providers.gemini.model_config]
     model_name = "gemini-2.0-flash-lite"
     parameters = { temperature = 0.7 }
+  [providers.ollama]
+  type = "ollama"
+  api_key_env_var = "ignored" # TODO make this not required in config validation. ollama ignores it, we shouldn't require it.
+  [providers.ollama.model_config]
+    model_name = "qwen2.5-coder:7b"
 
 # --- MCP Tool Servers ---
 [mcp_servers]
