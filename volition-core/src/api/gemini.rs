@@ -7,6 +7,8 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use toml::Value as TomlValue;
 
+pub const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+
 pub const DEFAULT_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 pub struct GeminiProvider {
@@ -39,15 +41,11 @@ impl GeminiProvider {
 impl ChatApiProvider for GeminiProvider {
     fn build_payload(
         &self,
-        model_name: &str,
+        _model_name: &str,
         messages: Vec<ChatMessage>,
         tools: Option<&[ToolDefinition]>,
         parameters: Option<&TomlValue>,
     ) -> Result<Value> {
-        println!("[DEBUG] Building Gemini payload...");
-        println!("[DEBUG] Model name: {}", model_name);
-        println!("[DEBUG] Message count: {}", messages.len());
-        
         // Convert messages to Gemini format
         let contents = messages
             .iter()
@@ -91,7 +89,6 @@ impl ChatApiProvider for GeminiProvider {
             .and_then(|p| p.get("generation_config"))
             .and_then(|v| v.as_table())
             .map(|table| {
-                println!("[DEBUG] Adding generation config parameters");
                 table.iter()
                     .filter_map(|(key, value)| value.as_float().map(|num| (key, num)))
                     .for_each(|(key, num)| {
@@ -99,14 +96,10 @@ impl ChatApiProvider for GeminiProvider {
                     });
             });
 
-        println!("[DEBUG] Final payload: {}", serde_json::to_string_pretty(&payload)?);
         Ok(payload)
     }
 
     fn parse_response(&self, response_body: &str) -> Result<ApiResponse> {
-        println!("[DEBUG] Parsing Gemini response...");
-        println!("[DEBUG] Response body: {}", response_body);
-        
         let response: Value = serde_json::from_str(response_body)?;
         
         // Extract the generated text
@@ -114,21 +107,17 @@ impl ChatApiProvider for GeminiProvider {
             .as_str()
             .ok_or_else(|| anyhow!("No text content in response"))?
             .to_string();
-        println!("[DEBUG] Extracted content: {}", content);
 
         // Extract the finish reason
         let finish_reason = response["candidates"][0]["finishReason"]
             .as_str()
             .unwrap_or("stop")
             .to_string();
-        println!("[DEBUG] Finish reason: {}", finish_reason);
 
         // Extract usage information if available
         let prompt_tokens = response["usageMetadata"]["promptTokenCount"].as_i64().unwrap_or(0) as u32;
         let completion_tokens = response["usageMetadata"]["candidatesTokenCount"].as_i64().unwrap_or(0) as u32;
         let total_tokens = prompt_tokens + completion_tokens;
-        println!("[DEBUG] Token usage - prompt: {}, completion: {}, total: {}", 
-            prompt_tokens, completion_tokens, total_tokens);
 
         // Create a choice from the response
         let choice = Choice {
@@ -152,15 +141,12 @@ impl ChatApiProvider for GeminiProvider {
             choices: vec![choice],
         };
         
-        println!("[DEBUG] Parsed response: {:?}", result);
         Ok(result)
     }
 
     fn build_headers(&self) -> Result<HashMap<String, String>> {
-        println!("[DEBUG] Building Gemini headers...");
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
-        println!("[DEBUG] Headers: {:?}", headers);
         Ok(headers)
     }
 
