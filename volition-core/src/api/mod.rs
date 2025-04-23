@@ -22,10 +22,10 @@ pub trait ChatApiProvider: Send + Sync {
     fn parse_response(&self, response_body: &str) -> Result<ApiResponse>;
 
     /// Builds the headers for the API request
-    fn build_headers(&self, api_key: &str) -> Result<HashMap<String, String>>;
+    fn build_headers(&self) -> Result<HashMap<String, String>>;
 
-    /// Adapts the endpoint URL if needed (e.g., adding query parameters)
-    fn adapt_endpoint(&self, endpoint: &str, api_key: &str) -> Result<String>;
+    /// Gets the endpoint URL for the API request
+    fn get_endpoint(&self) -> String;
 }
 
 pub mod gemini;
@@ -35,25 +35,15 @@ pub mod ollama;
 /// Generic function to make a request to an AI chat completion API
 pub async fn call_chat_completion_api(
     http_client: &Client,
-    endpoint_str: &str,
-    api_key: &str,
+    provider: Box<dyn ChatApiProvider>,
     model_name: &str,
     messages: Vec<ChatMessage>,
     tools: Option<&[ToolDefinition]>,
     parameters: Option<&TomlValue>,
 ) -> Result<ApiResponse> {
-    // Determine which provider to use based on the endpoint
-    let provider: Box<dyn ChatApiProvider> = if endpoint_str.contains("googleapis.com") {
-        Box::new(gemini::GeminiProvider::new())
-    } else if endpoint_str.contains("openai.com") {
-        Box::new(openai::OpenAIProvider::new())
-    } else {
-        Box::new(ollama::OllamaProvider::new())
-    };
-
     // Use the provider to build the request
-    let endpoint = provider.adapt_endpoint(endpoint_str, api_key)?;
-    let headers = provider.build_headers(api_key)?;
+    let endpoint = provider.get_endpoint();
+    let headers = provider.build_headers()?;
     let payload = provider.build_payload(model_name, messages, tools, parameters)?;
 
     // Make the HTTP request
@@ -83,4 +73,7 @@ pub async fn call_chat_completion_api(
     }
 
     provider.parse_response(&response_text)
-} 
+}
+
+#[cfg(test)]
+mod tests; 
