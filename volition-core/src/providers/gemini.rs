@@ -30,7 +30,7 @@ impl GeminiProvider {
         if let Some(endpoint) = &self.config.endpoint {
             endpoint.clone()
         } else {
-            format!("{}/{}/generateContent", DEFAULT_BASE_URL, self.config.model_name)
+            format!("{}/{}:generateContent?key={}", DEFAULT_BASE_URL, self.config.model_name, self.api_key)
         }
     }
 }
@@ -46,14 +46,20 @@ impl Provider for GeminiProvider {
         messages: Vec<ChatMessage>,
         tools: Option<&[ToolDefinition]>,
     ) -> Result<ApiResponse> {
+        println!("[DEBUG] Building Gemini endpoint...");
         let endpoint = self.build_endpoint();
+        println!("[DEBUG] Endpoint: {}", endpoint);
+        println!("[DEBUG] Model name: {}", self.config.model_name);
+        println!("[DEBUG] API key length: {}", self.api_key.len());
 
         let provider = Box::new(api::gemini::GeminiProvider::new(
             self.api_key.clone(),
             Some(endpoint),
+            self.config.model_name.clone(),
         ));
 
-        api::call_chat_completion_api(
+        println!("[DEBUG] Calling chat completion API...");
+        let result = api::call_chat_completion_api(
             &self.http_client,
             provider,
             &self.config.model_name,
@@ -61,6 +67,13 @@ impl Provider for GeminiProvider {
             tools,
             self.config.parameters.as_ref(),
         )
-        .await
+        .await;
+        
+        match &result {
+            Ok(_) => println!("[DEBUG] API call successful"),
+            Err(e) => println!("[DEBUG] API call failed: {}", e),
+        }
+        
+        result
     }
 }

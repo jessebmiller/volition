@@ -2,7 +2,6 @@ use super::*;
 use crate::models::chat::ChatMessage;
 use crate::models::tools::{ToolDefinition, ToolParametersDefinition};
 use std::collections::HashMap;
-use crate::api::gemini::DEFAULT_ENDPOINT;
 
 #[cfg(test)]
 mod tests {
@@ -18,11 +17,22 @@ mod tests {
 
     #[test]
     fn test_gemini_provider_construction() {
-        let provider = gemini::GeminiProvider::new("test_key".to_string(), None);
-        assert_eq!(provider.get_endpoint(), DEFAULT_ENDPOINT);
+        let provider = gemini::GeminiProvider::new(
+            "test_key".to_string(),
+            None,
+            "gemini-pro".to_string(),
+        );
+        assert_eq!(
+            provider.get_endpoint(),
+            format!("{}/gemini-pro:generateContent", gemini::BASE_ENDPOINT)
+        );
 
         let custom_endpoint = "https://custom-endpoint.com".to_string();
-        let provider = gemini::GeminiProvider::new("test_key".to_string(), Some(custom_endpoint.clone()));
+        let provider = gemini::GeminiProvider::new(
+            "test_key".to_string(),
+            Some(custom_endpoint.clone()),
+            "gemini-pro".to_string(),
+        );
         assert_eq!(provider.get_endpoint(), custom_endpoint);
     }
 
@@ -52,7 +62,11 @@ mod tests {
 
     #[test]
     fn test_gemini_build_payload() {
-        let provider = gemini::GeminiProvider::new("test_key".to_string(), None);
+        let provider = gemini::GeminiProvider::new(
+            "test_key".to_string(),
+            None,
+            "gemini-pro".to_string(),
+        );
         let messages = vec![
             ChatMessage {
                 role: "user".to_string(),
@@ -142,7 +156,11 @@ mod tests {
 
     #[test]
     fn test_gemini_parse_response() {
-        let provider = gemini::GeminiProvider::new("test_key".to_string(), None);
+        let provider = gemini::GeminiProvider::new(
+            "test_key".to_string(),
+            None,
+            "gemini-pro".to_string(),
+        );
         let response_body = r#"
         {
             "candidates": [{
@@ -218,12 +236,20 @@ mod tests {
 
     #[test]
     fn test_gemini_build_headers() {
-        let provider = gemini::GeminiProvider::new("test_key".to_string(), None);
+        let provider = gemini::GeminiProvider::new(
+            "test_key".to_string(),
+            None,
+            "gemini-pro".to_string(),
+        );
         let headers = provider.build_headers().unwrap();
         assert_eq!(headers["Content-Type"], "application/json");
         assert_eq!(headers["x-goog-api-key"], "test_key");
 
-        let provider = gemini::GeminiProvider::new("".to_string(), None);
+        let provider = gemini::GeminiProvider::new(
+            "".to_string(),
+            None,
+            "gemini-pro".to_string(),
+        );
         let headers = provider.build_headers().unwrap();
         assert_eq!(headers["Content-Type"], "application/json");
         assert!(!headers.contains_key("x-goog-api-key"));
