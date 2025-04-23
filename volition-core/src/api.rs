@@ -264,7 +264,20 @@ pub async fn call_chat_completion_api(
 
         if let Some(tools) = tools {
             if !tools.is_empty() {
-                openai_payload_map.insert("tools".to_string(), json!(tools));
+                let tools_with_type: Vec<Value> = tools
+                    .iter()
+                    .map(|t| {
+                        json!({
+                            "type": "function",
+                            "function": {
+                                "name": t.name,
+                                "description": t.description,
+                                "parameters": t.parameters
+                            }
+                        })
+                    })
+                    .collect();
+                openai_payload_map.insert("tools".to_string(), json!(tools_with_type));
                 trace!(num_tools = tools.len(), "Added tools to OpenAI payload.");
             }
         }
@@ -312,7 +325,7 @@ pub async fn call_chat_completion_api(
     trace!("Building request object...");
     let mut request_builder = http_client
         .request(Method::POST, endpoint.clone())
-        .header(header::CONTENT_TYPE, "application/json"); // Corrected quotes
+        .header(header::CONTENT_TYPE, "application/json");
 
     if !use_query_param_key && !api_key.is_empty() {
         trace!("Adding Bearer authentication header.");
