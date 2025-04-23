@@ -44,7 +44,16 @@ pub struct Choice {
 pub struct ApiResponse {
     /// A unique identifier for the API response.
     pub id: String,
+    /// The generated text content.
+    pub content: String,
+    /// The reason the AI model stopped generating tokens (e.g., "stop", "tool_calls").
+    pub finish_reason: String,
+    /// Number of tokens used in the prompt.
+    pub prompt_tokens: u32,
+    /// Number of tokens used in the completion.
+    pub completion_tokens: u32,
+    /// Total number of tokens used.
+    pub total_tokens: u32,
     /// A list of completion choices. Currently, only the first choice is used by the [`Agent`](crate::Agent).
     pub choices: Vec<Choice>,
-    // Note: Usage information (token counts) is often included but not deserialized here.
 }
