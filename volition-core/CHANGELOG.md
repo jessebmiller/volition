@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.2.0](https://github.com/jessebmiller/volition/compare/volition-core-v0.1.4...volition-core-v0.2.0) - 2025-04-23
+
+### Added
+
+- add recursive option to list_directory_contents
+- enhance ApiResponse with token usage and content fields
+
+### Fixed
+
+- improve Gemini provider implementation
+- resolve lifetime issues in list_directory_contents
+- use relative paths in list_directory_contents output
+- make list_directory_contents recursive
+- make DEFAULT_ENDPOINT public for testing
+- corrects tool format for openai API
+
+### Other
+
+- update provider implementation documentation to reflect direct integration approach
+- integrate API functionality directly into provider implementations
+- remove api module as functionality is now integrated into providers
+- remove api module
+- remove API module implementation files
+- clean up api module
+- simplify provider architecture by removing ChatApiProvider trait
+- update OpenAI provider to use new ChatApiProvider interface
+- update Ollama provider to use new ChatApiProvider interface
+- update mock provider to match new ApiResponse structure
+- improve schema to tool parameters conversion
+- improve filesystem tool implementation with better error handling and FileInfo struct
+- improve Ollama provider implementation
+- improve OpenAI provider implementation and error handling
+- simplify ChatApiProvider trait and improve error handling
+- update Gemini model configuration documentation
+- *(gemini)* improve endpoint construction with model name
+- refactors api providers code for simpler provider creation
+
 ## [0.1.4](https://github.com/jessebmiller/volition/compare/volition-core-v0.1.3...volition-core-v0.1.4) - 2025-04-08
 
 ### Added

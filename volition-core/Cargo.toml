@@ -1,6 +1,6 @@
 [package]
 name = "volition-core"
-version = "0.1.4"
+version = "0.2.0"
 edition = "2024"
 authors = { workspace = true }
 description = "Core library for the Volition AI agent"

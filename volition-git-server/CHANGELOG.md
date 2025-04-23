@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/jessebmiller/volition/compare/volition-git-server-v0.1.2...volition-git-server-v0.1.3) - 2025-04-23
+
+### Other
+
+- update provider implementation documentation to reflect direct integration approach
+- update Gemini model configuration documentation
+- Update README.md
+- Update README.md
+- Update README.md
+- Update README installation instructions
+
 ## [0.1.2](https://github.com/jessebmiller/volition/compare/volition-git-server-v0.1.1...volition-git-server-v0.1.2) - 2025-04-04
 
 ### Fixed
