@@ -105,12 +105,18 @@ impl Provider for MockToolProvider {
             .push(messages.clone());
         Ok(ApiResponse {
             id: "mock_resp_".to_string() + &generate_id(""),
+            content: "Mock response".to_string(),
+            finish_reason: "stop".to_string(),
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
             choices: vec![Choice {
                 index: 0,
                 message: ChatMessage {
                     role: "assistant".to_string(),
                     content: Some("Mock response".to_string()),
-                    ..Default::default()
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 finish_reason: "stop".to_string(),
             }],
