@@ -28,8 +28,8 @@ pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) 
 }
 
 pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
-    fn list_recursive(path: &Path, files: &mut Vec<FileInfo>) -> Result<(), String> {
-        let entries = match fs::read_dir(path) {
+    fn list_recursive(base_path: &Path, current_path: &Path, files: &mut Vec<FileInfo>) -> Result<(), String> {
+        let entries = match fs::read_dir(current_path) {
             Ok(entries) => entries,
             Err(e) => return Err(format!("Failed to read directory: {}", e)),
         };
@@ -73,8 +73,11 @@ pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
                 .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
                 .map(|duration| duration.as_secs());
 
+            let relative_path = entry.path().strip_prefix(base_path).unwrap_or(&entry.path());
+            let name = relative_path.to_string_lossy().into_owned();
+
             let file_info = FileInfo {
-                name: entry.file_name().to_string_lossy().into_owned(),
+                name,
                 path: entry.path().to_string_lossy().into_owned(),
                 file_type: file_type.to_string(),
                 size,
@@ -84,7 +87,7 @@ pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
             files.push(file_info);
 
             if metadata.is_dir() {
-                list_recursive(&entry.path(), files)?;
+                list_recursive(base_path, &entry.path(), files)?;
             }
         }
         Ok(())
@@ -100,7 +103,7 @@ pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
     }
 
     let mut files = Vec::new();
-    list_recursive(path, &mut files)?;
+    list_recursive(path, path, &mut files)?;
     Ok(files)
 }
 
