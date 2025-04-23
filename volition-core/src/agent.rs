@@ -39,37 +39,47 @@ fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolPar
         properties: HashMap::new(),
         required: Vec::new(),
     };
+
     let schema = match schema_val {
         Some(s) => s,
         None => return default_params,
     };
+
     let props_val = schema.get("properties").and_then(Value::as_object);
     let required_val = schema.get("required").and_then(Value::as_array);
     let mut properties = HashMap::new();
+
     if let Some(props_map) = props_val {
         for (key, val) in props_map {
-            if let Some(prop_obj) = val.as_object() {
-                let param_type_str = prop_obj
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .unwrap_or("string");
-                let description = prop_obj
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
-                let param_type = match param_type_str {
-                    "string" => ToolParameterType::String,
-                    "integer" => ToolParameterType::Integer,
-                    "number" => ToolParameterType::Number,
-                    "boolean" => ToolParameterType::Boolean,
-                    "array" => ToolParameterType::Array,
-                    "object" => ToolParameterType::Object,
-                    _ => ToolParameterType::String,
-                };
+            let prop_obj = match val.as_object() {
+                Some(obj) => obj,
+                None => continue,
+            };
 
-                let items = if param_type == ToolParameterType::Array {
-                    if let Some(items_obj) = prop_obj.get("items").and_then(Value::as_object) {
+            let param_type_str = prop_obj
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("string");
+            let description = prop_obj
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+
+            let param_type = match param_type_str {
+                "string" => ToolParameterType::String,
+                "integer" => ToolParameterType::Integer,
+                "number" => ToolParameterType::Number,
+                "boolean" => ToolParameterType::Boolean,
+                "array" => ToolParameterType::Array,
+                "object" => ToolParameterType::Object,
+                _ => ToolParameterType::String,
+            };
+
+            let items = if param_type == ToolParameterType::Array {
+                prop_obj.get("items")
+                    .and_then(Value::as_object)
+                    .map(|items_obj| {
                         let item_type_str = items_obj
                             .get("type")
                             .and_then(Value::as_str)
@@ -88,45 +98,43 @@ fn mcp_schema_to_tool_params(schema_val: Option<&Map<String, Value>>) -> ToolPar
                             "object" => ToolParameterType::Object,
                             _ => ToolParameterType::String,
                         };
-                        Some(Box::new(ToolParameter {
+                        Box::new(ToolParameter {
                             param_type: item_type,
                             description: item_desc,
                             enum_values: None,
                             items: None, // Nested items not supported for now
-                        }))
-                    } else {
-                        // Default to string items if "items" field is missing
-                        Some(Box::new(ToolParameter {
-                            param_type: ToolParameterType::String,
-                            description: "Array item".to_string(),
-                            enum_values: None,
-                            items: None,
-                        }))
-                    }
-                } else {
-                    None
-                };
-
-                properties.insert(
-                    key.clone(),
-                    ToolParameter {
-                        param_type,
-                        description,
+                        })
+                    })
+                    .or_else(|| Some(Box::new(ToolParameter {
+                        param_type: ToolParameterType::String,
+                        description: "Array item".to_string(),
                         enum_values: None,
-                        items,
-                    },
-                );
-            }
+                        items: None,
+                    })))
+            } else {
+                None
+            };
+
+            properties.insert(
+                key.clone(),
+                ToolParameter {
+                    param_type,
+                    description,
+                    enum_values: None,
+                    items,
+                },
+            );
         }
     }
+
     let required = required_val
         .map(|arr| {
             arr.iter()
-                .filter_map(Value::as_str)
-                .map(String::from)
+                .filter_map(|v| v.as_str().map(String::from))
                 .collect()
         })
         .unwrap_or_default();
+
     ToolParametersDefinition {
         param_type: "object".to_string(),
         properties,
