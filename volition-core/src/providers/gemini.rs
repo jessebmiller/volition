@@ -8,8 +8,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 
-const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
-
 #[derive(Clone)]
 pub struct GeminiProvider {
     config: ModelConfig,
@@ -27,10 +25,11 @@ impl GeminiProvider {
     }
 
     fn build_endpoint(&self) -> String {
+        println!("[DEBUG] Building Gemini endpoint...");
         if let Some(endpoint) = &self.config.endpoint {
             endpoint.clone()
         } else {
-            format!("{}/{}:generateContent?key={}", DEFAULT_BASE_URL, self.config.model_name, self.api_key)
+            format!("{}/{}:generateContent?key={}", api::gemini::DEFAULT_BASE_URL, self.config.model_name, self.api_key)
         }
     }
 }
@@ -46,19 +45,13 @@ impl Provider for GeminiProvider {
         messages: Vec<ChatMessage>,
         tools: Option<&[ToolDefinition]>,
     ) -> Result<ApiResponse> {
-        println!("[DEBUG] Building Gemini endpoint...");
         let endpoint = self.build_endpoint();
-        println!("[DEBUG] Endpoint: {}", endpoint);
-        println!("[DEBUG] Model name: {}", self.config.model_name);
-        println!("[DEBUG] API key length: {}", self.api_key.len());
-
         let provider = Box::new(api::gemini::GeminiProvider::new(
             self.api_key.clone(),
             Some(endpoint),
             self.config.model_name.clone(),
         ));
 
-        println!("[DEBUG] Calling chat completion API...");
         let result = api::call_chat_completion_api(
             &self.http_client,
             provider,
@@ -68,11 +61,6 @@ impl Provider for GeminiProvider {
             self.config.parameters.as_ref(),
         )
         .await;
-        
-        match &result {
-            Ok(_) => println!("[DEBUG] API call successful"),
-            Err(e) => println!("[DEBUG] API call failed: {}", e),
-        }
         
         result
     }
