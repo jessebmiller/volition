@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.6](https://github.com/jessebmiller/volition/compare/volition-cli-v0.2.5...volition-cli-v0.2.6) - 2025-04-23
+
+### Fixed
+
+- corrects tool format for openai API
+
+### Other
+
+- update provider implementation documentation to reflect direct integration approach
+- update Gemini model configuration documentation
+- move project to kanban to avoid llm confusion
+
 ## [0.2.5](https://github.com/jessebmiller/volition/compare/volition-cli-v0.2.4...volition-cli-v0.2.5) - 2025-04-08
 
 ### Other

@@ -1,6 +1,6 @@
 [package]
 name = "volition-cli"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2024" # Assuming 2021 or later
 authors = { workspace = true }
 description = "An AI-powered software engineering assistant (CLI frontend)"
@@ -48,7 +48,7 @@ uuid = { version = "1.6", features = ["v4", "serde"] } # Add uuid with features
 
 # Add path dependency to the core library
 # Ensure version is appropriate or use workspace inheritance if set up for path deps
-volition-core = { version = "0.1.4", path = "../volition-core" }
+volition-core = { version = "0.2.0", path = "../volition-core" }
 
 
 [dev-dependencies]
