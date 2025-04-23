@@ -18,11 +18,17 @@ use std::collections::HashMap;
 use toml::Value as TomlValue;
 use tracing::warn;
 
-pub struct AnthropicProvider;
+pub struct AnthropicProvider {
+    api_key: String,
+    endpoint: String,
+}
 
 impl AnthropicProvider {
-    pub fn new() -> Self {
-        Self
+    pub fn new(api_key: String, endpoint: Option<String>) -> Self {
+        Self {
+            api_key,
+            endpoint: endpoint.unwrap_or_else(|| "https://api.anthropic.com/v1/messages".to_string()),
+        }
     }
 }
 ```
@@ -89,23 +95,23 @@ impl ChatApiProvider for AnthropicProvider {
         }
     }
 
-    fn build_headers(&self, api_key: &str) -> Result<HashMap<String, String>> {
+    fn build_headers(&self) -> Result<HashMap<String, String>> {
         let mut headers = HashMap::new();
         headers.insert(
             "Content-Type".to_string(),
             "application/json".to_string(),
         );
-        if !api_key.is_empty() {
+        if !self.api_key.is_empty() {
             headers.insert(
                 "Authorization".to_string(),
-                format!("Bearer {}", api_key),
+                format!("Bearer {}", self.api_key),
             );
         }
         Ok(headers)
     }
 
-    fn adapt_endpoint(&self, endpoint: &str, _api_key: &str) -> Result<String> {
-        Ok(endpoint.to_string())
+    fn get_endpoint(&self) -> String {
+        self.endpoint.clone()
     }
 }
 ```
@@ -124,13 +130,13 @@ Update the provider selection in `call_chat_completion_api` in `volition-core/sr
 
 ```rust
 let provider: Box<dyn ChatApiProvider> = if endpoint_str.contains("googleapis.com") {
-    Box::new(gemini::GeminiProvider::new())
+    Box::new(gemini::GeminiProvider::new(api_key, Some(endpoint_str.to_string())))
 } else if endpoint_str.contains("openai.com") {
-    Box::new(openai::OpenAIProvider::new())
+    Box::new(openai::OpenAIProvider::new(api_key, Some(endpoint_str.to_string())))
 } else if endpoint_str.contains("anthropic.com") {
-    Box::new(anthropic::AnthropicProvider::new())
+    Box::new(anthropic::AnthropicProvider::new(api_key, Some(endpoint_str.to_string())))
 } else {
-    Box::new(ollama::OllamaProvider::new())
+    Box::new(ollama::OllamaProvider::new(api_key, Some(endpoint_str.to_string())))
 };
 ```
 
@@ -138,10 +144,11 @@ let provider: Box<dyn ChatApiProvider> = if endpoint_str.contains("googleapis.co
 
 1. **Error Handling**: Implement proper error handling for API requests and responses.
 2. **Rate Limiting**: Consider implementing rate limiting if the API has restrictions.
-3. **Authentication**: Handle API authentication appropriately.
+3. **Authentication**: Handle API authentication appropriately using the provider's `api_key` field.
 4. **Response Parsing**: Ensure proper parsing of API responses into the `ApiResponse` format.
 5. **Tool Support**: If the API supports tools/functions, implement the necessary mapping.
 6. **Testing**: Add tests for your provider implementation.
+7. **Configuration**: Support both default and custom endpoints through the provider's constructor.
 
 ## Example Implementation
 
@@ -157,6 +164,7 @@ For a complete example, see the implementation of other providers in the codebas
 2. Test error cases and edge conditions
 3. Test tool/function calling if supported
 4. Test rate limiting and retry logic if implemented
+5. Test both default and custom endpoint configurations
 
 ## Adding to the Build System
 
