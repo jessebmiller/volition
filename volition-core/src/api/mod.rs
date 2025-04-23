@@ -41,10 +41,18 @@ pub async fn call_chat_completion_api(
     tools: Option<&[ToolDefinition]>,
     parameters: Option<&TomlValue>,
 ) -> Result<ApiResponse> {
+    println!("[DEBUG] Starting API call...");
+    println!("[DEBUG] Model name: {}", model_name);
+    
     // Use the provider to build the request
     let endpoint = provider.get_endpoint();
+    println!("[DEBUG] Endpoint: {}", endpoint);
+    
     let headers = provider.build_headers()?;
+    println!("[DEBUG] Headers: {:?}", headers);
+    
     let payload = provider.build_payload(model_name, messages, tools, parameters)?;
+    println!("[DEBUG] Payload: {}", serde_json::to_string_pretty(&payload)?);
 
     // Make the HTTP request
     let mut header_map = HeaderMap::new();
@@ -53,6 +61,7 @@ pub async fn call_chat_completion_api(
             header_map.insert(name, val);
         }
     }
+    println!("[DEBUG] Sending HTTP request...");
     let response = http_client
         .post(&endpoint)
         .headers(header_map)
@@ -62,7 +71,9 @@ pub async fn call_chat_completion_api(
 
     // Parse the response
     let status = response.status();
+    println!("[DEBUG] Response status: {}", status);
     let response_text = response.text().await?;
+    println!("[DEBUG] Response body: {}", response_text);
 
     if !status.is_success() {
         return Err(anyhow::anyhow!(
@@ -72,7 +83,13 @@ pub async fn call_chat_completion_api(
         ));
     }
 
-    provider.parse_response(&response_text)
+    println!("[DEBUG] Parsing response...");
+    let result = provider.parse_response(&response_text);
+    match &result {
+        Ok(_) => println!("[DEBUG] Response parsed successfully"),
+        Err(e) => println!("[DEBUG] Failed to parse response: {}", e),
+    }
+    result
 }
 
 #[cfg(test)]

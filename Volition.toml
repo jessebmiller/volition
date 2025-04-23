@@ -63,7 +63,7 @@ VERY IMPORTANT Do not write any comments unless absolutely necessary.
 """
 
 # Default AI provider to use if not specified otherwise
-default_provider = "openai"
+default_provider = "gemini"
 
 # --- AI Model Providers ---
 [providers]
@@ -77,8 +77,7 @@ default_provider = "openai"
   type = "gemini"
   api_key_env_var = "GEMINI_API_KEY"
   [providers.gemini.model_config]
-    model_name = "gemini-2.5-pro-preview-03-25"
-    endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-03-25:generateContent"
+    model_name = "gemini-2.0-flash-lite"
     parameters = { temperature = 0.7 }
 
 # --- MCP Tool Servers ---
