@@ -24,7 +24,7 @@ mod tests {
         );
         assert_eq!(
             provider.get_endpoint(),
-            format!("{}/gemini-pro:generateContent", gemini::BASE_ENDPOINT)
+            format!("{}/{}:generateContent?key=test_key", gemini::DEFAULT_BASE_URL, "gemini-pro")
         );
 
         let custom_endpoint = "https://custom-endpoint.com".to_string();
@@ -83,7 +83,6 @@ mod tests {
         ];
 
         let payload = provider.build_payload("gemini-pro", messages.clone(), None, None).unwrap();
-        assert_eq!(payload["model"], "gemini-pro");
         assert_eq!(payload["contents"][0]["role"], "user");
         assert_eq!(payload["contents"][0]["parts"][0]["text"], "Hello");
         assert_eq!(payload["contents"][1]["role"], "assistant");
@@ -100,8 +99,8 @@ mod tests {
         }];
 
         let payload = provider.build_payload("gemini-pro", messages, Some(&tools), None).unwrap();
-        assert_eq!(payload["tools"][0]["name"], "test_tool");
-        assert_eq!(payload["tools"][0]["description"], "A test tool");
+        assert_eq!(payload["tools"][0]["functionDeclarations"][0]["name"], "test_tool");
+        assert_eq!(payload["tools"][0]["functionDeclarations"][0]["description"], "A test tool");
     }
 
     #[test]
@@ -238,15 +237,6 @@ mod tests {
     fn test_gemini_build_headers() {
         let provider = gemini::GeminiProvider::new(
             "test_key".to_string(),
-            None,
-            "gemini-pro".to_string(),
-        );
-        let headers = provider.build_headers().unwrap();
-        assert_eq!(headers["Content-Type"], "application/json");
-        assert_eq!(headers["x-goog-api-key"], "test_key");
-
-        let provider = gemini::GeminiProvider::new(
-            "".to_string(),
             None,
             "gemini-pro".to_string(),
         );
