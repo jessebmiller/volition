@@ -73,12 +73,14 @@ pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
                 .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
                 .map(|duration| duration.as_secs());
 
-            let relative_path = entry.path().strip_prefix(base_path).unwrap_or(&entry.path());
+            let entry_path = entry.path();
+            let relative_path = entry_path.strip_prefix(base_path).unwrap_or(&entry_path);
             let name = relative_path.to_string_lossy().into_owned();
+            let full_path = entry_path.to_string_lossy().into_owned();
 
             let file_info = FileInfo {
                 name,
-                path: entry.path().to_string_lossy().into_owned(),
+                path: full_path,
                 file_type: file_type.to_string(),
                 size,
                 modified,
@@ -87,7 +89,7 @@ pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
             files.push(file_info);
 
             if metadata.is_dir() {
-                list_recursive(base_path, &entry.path(), files)?;
+                list_recursive(base_path, &entry_path, files)?;
             }
         }
         Ok(())
