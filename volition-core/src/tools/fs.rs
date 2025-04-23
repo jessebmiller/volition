@@ -27,8 +27,8 @@ pub async fn write_file(relative_path: &str, content: &str, working_dir: &Path) 
     Ok(format!("Successfully wrote to file: {}", relative_path))
 }
 
-pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
-    fn list_recursive(base_path: &Path, current_path: &Path, files: &mut Vec<FileInfo>) -> Result<(), String> {
+pub fn list_directory_contents(path: &str, recursive: bool) -> Result<Vec<FileInfo>, String> {
+    fn list_recursive(base_path: &Path, current_path: &Path, files: &mut Vec<FileInfo>, recursive: bool) -> Result<(), String> {
         let entries = match fs::read_dir(current_path) {
             Ok(entries) => entries,
             Err(e) => return Err(format!("Failed to read directory: {}", e)),
@@ -88,8 +88,8 @@ pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
 
             files.push(file_info);
 
-            if metadata.is_dir() {
-                list_recursive(base_path, &entry_path, files)?;
+            if metadata.is_dir() && recursive {
+                list_recursive(base_path, &entry_path, files, recursive)?;
             }
         }
         Ok(())
@@ -105,7 +105,7 @@ pub fn list_directory_contents(path: &str) -> Result<Vec<FileInfo>, String> {
     }
 
     let mut files = Vec::new();
-    list_recursive(path, path, &mut files)?;
+    list_recursive(path, path, &mut files, recursive)?;
     Ok(files)
 }
 
@@ -128,7 +128,7 @@ mod tests {
         File::create(wd.join("f1.txt")).map_err(|e| e.to_string())?;
         fs::create_dir(wd.join("sd")).map_err(|e| e.to_string())?;
         File::create(wd.join("sd/f2.txt")).map_err(|e| e.to_string())?;
-        let output = list_directory_contents(wd.to_str().unwrap())?;
+        let output = list_directory_contents(wd.to_str().unwrap(), false)?;
         let names: Vec<String> = output.iter().map(|f| f.name.clone()).collect();
         assert_eq!(sort_lines(&names.join("\n")), sort_lines("f1.txt\nsd"));
         Ok(())
@@ -141,7 +141,7 @@ mod tests {
         File::create(wd.join("f1.txt")).map_err(|e| e.to_string())?;
         fs::create_dir(wd.join("sd")).map_err(|e| e.to_string())?;
         File::create(wd.join("sd/f2.txt")).map_err(|e| e.to_string())?;
-        let output = list_directory_contents(wd.to_str().unwrap())?;
+        let output = list_directory_contents(wd.to_str().unwrap(), true)?;
         let names: Vec<String> = output.iter().map(|f| f.name.clone()).collect();
         let expected = format!("f1.txt\nsd\nsd{}f2.txt", std::path::MAIN_SEPARATOR);
         assert_eq!(sort_lines(&names.join("\n")), sort_lines(&expected));
