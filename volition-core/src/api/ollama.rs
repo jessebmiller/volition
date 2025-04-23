@@ -5,15 +5,19 @@ use anyhow::{Result, anyhow, Context};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use toml::Value as TomlValue;
+use async_trait::async_trait;
 
-pub struct OllamaProvider;
+pub struct OllamaProvider {
+    endpoint: String,
+}
 
 impl OllamaProvider {
-    pub fn new() -> Self {
-        Self
+    pub fn new(endpoint: String) -> Self {
+        Self { endpoint }
     }
 }
 
+#[async_trait]
 impl ChatApiProvider for OllamaProvider {
     fn build_payload(
         &self,
@@ -88,6 +92,11 @@ impl ChatApiProvider for OllamaProvider {
                 } else {
                     Ok(ApiResponse {
                         id: response_id,
+                        content: choices[0].message.content.clone().unwrap_or_default(),
+                        finish_reason: choices[0].finish_reason.clone(),
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
                         choices,
                     })
                 }
@@ -96,7 +105,7 @@ impl ChatApiProvider for OllamaProvider {
         }
     }
 
-    fn build_headers(&self, _api_key: &str) -> Result<HashMap<String, String>> {
+    fn build_headers(&self) -> Result<HashMap<String, String>> {
         let mut headers = HashMap::new();
         headers.insert(
             "Content-Type".to_string(),
@@ -105,8 +114,8 @@ impl ChatApiProvider for OllamaProvider {
         Ok(headers)
     }
 
-    fn adapt_endpoint(&self, endpoint: &str, _api_key: &str) -> Result<String> {
-        Ok(endpoint.to_string())
+    fn get_endpoint(&self) -> String {
+        self.endpoint.clone()
     }
 }
 
