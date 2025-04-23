@@ -39,29 +39,26 @@ impl Provider for OpenAIProvider {
         messages: Vec<ChatMessage>,
         tools: Option<&[ToolDefinition]>,
     ) -> Result<ApiResponse> {
-        // Use configured endpoint or default to OpenAI's standard endpoint
         let endpoint = self.config.endpoint.as_deref().unwrap_or_else(|| {
             warn!("No endpoint specified for OpenAI provider model {}, using default: {}", self.config.model_name, DEFAULT_OPENAI_ENDPOINT);
             DEFAULT_OPENAI_ENDPOINT
         });
 
         if self.api_key.is_empty() {
-            // Although api::call_chat_completion_api warns, we add a specific check here
-            // because OpenAI *always* requires a key.
             warn!(
                 "API key is empty for OpenAI provider model {}. The API call will likely fail.",
                 self.config.model_name
             );
-            // Potentially return an error here instead of just warning?
-            // For now, align with existing behaviour and let the API call fail.
-            // return Err(anyhow!("API key is missing for OpenAI provider model {}", self.config.model_name));
         }
 
-        // Call the generic API function
+        let provider = Box::new(api::openai::OpenAIProvider::new(
+            self.api_key.clone(),
+            Some(endpoint.to_string()),
+        ));
+
         api::call_chat_completion_api(
             &self.http_client,
-            endpoint,
-            &self.api_key, // Pass the API key
+            provider,
             &self.config.model_name,
             messages,
             tools,
