@@ -4,10 +4,11 @@ use crate::api;
 use crate::config::ModelConfig;
 use crate::models::chat::{ApiResponse, ChatMessage};
 use crate::models::tools::ToolDefinition;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
-use tracing::{error, trace}; // Removed info, warn
+
+const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 #[derive(Clone)]
 pub struct GeminiProvider {
@@ -24,6 +25,14 @@ impl GeminiProvider {
             api_key,
         }
     }
+
+    fn build_endpoint(&self) -> String {
+        if let Some(endpoint) = &self.config.endpoint {
+            endpoint.clone()
+        } else {
+            format!("{}/{}/generateContent", DEFAULT_BASE_URL, self.config.model_name)
+        }
+    }
 }
 
 #[async_trait]
@@ -35,37 +44,23 @@ impl Provider for GeminiProvider {
     async fn get_completion(
         &self,
         messages: Vec<ChatMessage>,
-        tools: Option<&[ToolDefinition]>, // Use tools argument again
+        tools: Option<&[ToolDefinition]>,
     ) -> Result<ApiResponse> {
-        trace!("Entering GeminiProvider::get_completion");
-        let endpoint = self.config.endpoint.as_deref().ok_or_else(|| {
-            anyhow!(
-                "Endpoint missing for Gemini provider model {}",
-                self.config.model_name
-            )
-        })?;
-        trace!(endpoint = %endpoint, "Endpoint retrieved.");
+        let endpoint = self.build_endpoint();
 
-        // Restore passing tools if available
-        // warn!("TEMPORARY: Sending request to Gemini without tools.");
+        let provider = Box::new(api::gemini::GeminiProvider::new(
+            self.api_key.clone(),
+            Some(endpoint),
+        ));
 
-        trace!("Calling api::call_chat_completion_api...");
-        let result = api::call_chat_completion_api(
+        api::call_chat_completion_api(
             &self.http_client,
-            endpoint,
-            &self.api_key,
+            provider,
             &self.config.model_name,
             messages,
-            tools,                           // Pass tools argument down
-            self.config.parameters.as_ref(), // Restore parameters
+            tools,
+            self.config.parameters.as_ref(),
         )
-        .await;
-
-        match &result {
-            Ok(_) => trace!("api::call_chat_completion_api returned Ok"),
-            Err(e) => error!(error = %e, "api::call_chat_completion_api returned Err"),
-        }
-
-        result // Return the original result
+        .await
     }
 }
