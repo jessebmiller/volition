@@ -209,8 +209,7 @@ Volition is built with a modular architecture:
 
 - **volition-cli**: Command-line interface
 - **volition-core**: Core agent library with providers, strategies, and tools
-  - **API Module**: Standardized interface for LLM providers with consistent request/response handling
-  - **Provider Implementations**: Support for various LLM providers (Gemini, OpenAI, etc.)
+  - **Provider Implementations**: Direct integration with various LLM providers (Gemini, OpenAI, Ollama, etc.)
   - **Strategy Implementations**: Different interaction models for agent behavior
 - **volition-*-server**: Individual MCP server crates (e.g., `volition-filesystem-server`). These must be installed separately from `volition-cli`.
 
